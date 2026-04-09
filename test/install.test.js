@@ -30,6 +30,14 @@ function runCmd(cmd, args, cwd) {
   });
 }
 
+function createFakeNpmScript(scriptBody) {
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-npm-'));
+  const fakeNpmPath = path.join(fakeBin, 'npm');
+  fs.writeFileSync(fakeNpmPath, `#!/usr/bin/env bash\nset -e\n${scriptBody}\n`, 'utf8');
+  fs.chmodSync(fakeNpmPath, 0o755);
+  return fakeNpmPath;
+}
+
 function initRepo() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-'));
   const repoDir = path.join(tempDir, 'repo');
@@ -220,6 +228,62 @@ test('setup dry-run accepts explicit global install approval flags', () => {
   result = runNode(['setup', '--target', repoDir, '--dry-run', '--no-global-install'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Dry run setup done/);
+});
+
+test('setup skips global install when OMX/OpenSpec are already installed', () => {
+  const repoDir = initRepo();
+  const marker = path.join(repoDir, '.global-install-called');
+  const fakeNpm = createFakeNpmScript(`
+if [[ "$1" == "list" ]]; then
+  cat <<'JSON'
+{"dependencies":{"oh-my-codex":{"version":"1.0.0"},"@fission-ai/openspec":{"version":"1.0.0"}}}
+JSON
+  exit 0
+fi
+if [[ "$1" == "i" && "$2" == "-g" ]]; then
+  echo "$@" > "${marker}"
+  exit 0
+fi
+echo "unexpected npm args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(['setup', '--target', repoDir, '--yes-global-install'], repoDir, {
+    MUSAFETY_NPM_BIN: fakeNpm,
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Already installed globally/);
+  assert.match(result.stdout, /already installed\. Skipping/);
+  assert.equal(fs.existsSync(marker), false, 'global install should be skipped');
+});
+
+test('setup installs only missing global tools', () => {
+  const repoDir = initRepo();
+  const marker = path.join(repoDir, '.global-install-called');
+  const fakeNpm = createFakeNpmScript(`
+if [[ "$1" == "list" ]]; then
+  cat <<'JSON'
+{"dependencies":{"oh-my-codex":{"version":"1.0.0"}}}
+JSON
+  exit 0
+fi
+if [[ "$1" == "i" && "$2" == "-g" ]]; then
+  echo "$@" > "${marker}"
+  exit 0
+fi
+echo "unexpected npm args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(['setup', '--target', repoDir, '--yes-global-install'], repoDir, {
+    MUSAFETY_NPM_BIN: fakeNpm,
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.existsSync(marker), true, 'global install should run for missing package');
+  const args = fs.readFileSync(marker, 'utf8').trim();
+  assert.equal(args, 'i -g @fission-ai/openspec');
 });
 
 test('release fails outside the maintainer repo path', () => {

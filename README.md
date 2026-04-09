@@ -28,10 +28,15 @@ musafety setup
 
 That one command runs:
 
-1. asks Y/N approval to install global OMX + OpenSpec tools,
-2. installs guardrail scripts/hooks,
-3. repairs common safety problems,
-4. scans and reports final status.
+1. detects whether OMX/OpenSpec are already globally installed,
+2. asks strict Y/N approval only if something is missing,
+3. installs guardrail scripts/hooks,
+4. repairs common safety problems,
+5. scans and reports final status.
+
+## Setup screenshot
+
+![musafety setup success screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/setup-success.svg)
 
 ## Copy prompt for your AI (Codex / Claude)
 
@@ -50,8 +55,9 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
 2) Bootstrap safety in this repo:
    musafety setup
 
-   - When asked "Install global OMX + OpenSpec tools now?" reply:
-     - y = run: npm i -g oh-my-codex @fission-ai/openspec
+   - Setup detects global OMX/OpenSpec first.
+   - If one is missing and setup asks for approval, reply explicitly:
+     - y = run: npm i -g oh-my-codex @fission-ai/openspec (missing ones only)
      - n = skip global installs
 
 3) If setup reports warnings/errors, repair + re-check:
@@ -75,6 +81,7 @@ musafety release   # maintainer-only publish (guarded)
 No command defaults to `musafety setup`.
 
 - Interactive setup: prompts for Y/N approval before global OMX/OpenSpec install.
+- Interactive prompt is strict (`[y/n]`) and waits for explicit answer.
 - Non-interactive setup: skips global installs by default; use `--yes-global-install` to force.
 
 ## Advanced commands
@@ -125,6 +132,13 @@ npm pack --dry-run
 ```
 
 ## Release notes
+
+### v0.4.2
+
+- Setup now detects existing global OMX/OpenSpec installs first.
+- If tools are already present, setup skips global install automatically.
+- Interactive approval is now strict `[y/n]` (waits for explicit answer).
+- Added setup screenshot to README.
 
 ### v0.4.1
 

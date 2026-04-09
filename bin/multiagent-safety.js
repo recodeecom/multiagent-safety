@@ -13,6 +13,7 @@ const GLOBAL_TOOLCHAIN_PACKAGES = ['oh-my-codex', '@fission-ai/openspec'];
 const MAINTAINER_RELEASE_REPO = path.resolve(
   process.env.MUSAFETY_RELEASE_REPO || '/tmp/multiagent-safety',
 );
+const NPM_BIN = process.env.MUSAFETY_NPM_BIN || 'npm';
 
 const TEMPLATE_ROOT = path.resolve(__dirname, '..', 'templates');
 
@@ -51,8 +52,9 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in
 2) Bootstrap safety in this repo:
    musafety setup
 
-   - When asked "Install global OMX + OpenSpec tools now?" reply:
-     - y = run: npm i -g oh-my-codex @fission-ai/openspec
+   - Setup detects global OMX/OpenSpec first.
+   - If one is missing and setup asks for approval, reply explicitly:
+     - y = run: npm i -g oh-my-codex @fission-ai/openspec (missing ones only)
      - n = skip global installs
 
 3) If setup reports warnings/errors, repair + re-check:
@@ -427,6 +429,24 @@ function promptYesNo(question, defaultYes = true) {
   }
 }
 
+function promptYesNoStrict(question) {
+  while (true) {
+    process.stdout.write(`${question} [y/n] `);
+    const answer = readSingleLineFromStdin().trim().toLowerCase();
+
+    if (answer === 'y' || answer === 'yes') {
+      process.stdout.write('\n');
+      return true;
+    }
+    if (answer === 'n' || answer === 'no') {
+      process.stdout.write('\n');
+      return false;
+    }
+
+    process.stdout.write('Please answer with y or n.\n');
+  }
+}
+
 function resolveGlobalInstallApproval(options) {
   if (options.yesGlobalInstall && options.noGlobalInstall) {
     throw new Error('Cannot use both --yes-global-install and --no-global-install');
@@ -443,12 +463,61 @@ function resolveGlobalInstallApproval(options) {
   if (!isInteractiveTerminal()) {
     return { approved: false, source: 'non-interactive-default' };
   }
+  return { approved: true, source: 'prompt' };
+}
 
-  const approved = promptYesNo(
-    'Install global OMX + OpenSpec tools now? (npm i -g oh-my-codex @fission-ai/openspec)',
-    true,
-  );
-  return { approved, source: 'prompt' };
+function detectGlobalToolchainPackages() {
+  const result = run(NPM_BIN, ['list', '-g', '--depth=0', '--json']);
+  if (result.status !== 0) {
+    const stderr = (result.stderr || '').trim();
+    return {
+      ok: false,
+      error: stderr || 'Unable to detect globally installed npm packages',
+    };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout || '{}');
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Failed to parse npm list output: ${error.message}`,
+    };
+  }
+
+  const dependencyMap = parsed && parsed.dependencies && typeof parsed.dependencies === 'object'
+    ? parsed.dependencies
+    : {};
+  const installedSet = new Set(Object.keys(dependencyMap));
+
+  const installed = [];
+  const missing = [];
+  for (const pkg of GLOBAL_TOOLCHAIN_PACKAGES) {
+    if (installedSet.has(pkg)) {
+      installed.push(pkg);
+    } else {
+      missing.push(pkg);
+    }
+  }
+
+  return { ok: true, installed, missing };
+}
+
+function askGlobalInstallForMissing(options, missingPackages) {
+  const approval = resolveGlobalInstallApproval(options);
+  if (!approval.approved) {
+    return approval;
+  }
+
+  if (approval.source === 'prompt') {
+    const approved = promptYesNoStrict(
+      `Install missing global tools now? (npm i -g ${missingPackages.join(' ')})`,
+    );
+    return { approved, source: 'prompt' };
+  }
+
+  return approval;
 }
 
 function installGlobalToolchain(options) {
@@ -456,15 +525,28 @@ function installGlobalToolchain(options) {
     return { status: 'dry-run-skip' };
   }
 
-  const approval = resolveGlobalInstallApproval(options);
+  const detection = detectGlobalToolchainPackages();
+  if (!detection.ok) {
+    console.log(`[${TOOL_NAME}] ⚠️ Could not detect global packages: ${detection.error}`);
+  } else {
+    if (detection.installed.length > 0) {
+      console.log(`[${TOOL_NAME}] Already installed globally: ${detection.installed.join(', ')}`);
+    }
+    if (detection.missing.length === 0) {
+      return { status: 'already-installed' };
+    }
+  }
+
+  const missingPackages = detection.ok ? detection.missing : [...GLOBAL_TOOLCHAIN_PACKAGES];
+  const approval = askGlobalInstallForMissing(options, missingPackages);
   if (!approval.approved) {
     return { status: 'skipped', reason: approval.source };
   }
 
   console.log(
-    `[${TOOL_NAME}] Installing global toolchain: npm i -g ${GLOBAL_TOOLCHAIN_PACKAGES.join(' ')}`,
+    `[${TOOL_NAME}] Installing global toolchain: npm i -g ${missingPackages.join(' ')}`,
   );
-  const result = run('npm', ['i', '-g', ...GLOBAL_TOOLCHAIN_PACKAGES], { stdio: 'inherit' });
+  const result = run(NPM_BIN, ['i', '-g', ...missingPackages], { stdio: 'inherit' });
   if (result.status !== 0) {
     const stderr = (result.stderr || '').trim();
     return {
@@ -473,7 +555,7 @@ function installGlobalToolchain(options) {
     };
   }
 
-  return { status: 'installed' };
+  return { status: 'installed', packages: missingPackages };
 }
 
 function gitRefExists(repoRoot, refName) {
@@ -800,12 +882,16 @@ function setup(rawArgs) {
 
   const globalInstallStatus = installGlobalToolchain(options);
   if (globalInstallStatus.status === 'installed') {
-    console.log(`[${TOOL_NAME}] ✅ Global tools installed (oh-my-codex + OpenSpec).`);
+    console.log(
+      `[${TOOL_NAME}] ✅ Global tools installed (${(globalInstallStatus.packages || []).join(', ')}).`,
+    );
+  } else if (globalInstallStatus.status === 'already-installed') {
+    console.log(`[${TOOL_NAME}] ✅ OMX/OpenSpec global tools already installed. Skipping.`);
   } else if (globalInstallStatus.status === 'failed') {
     console.log(
       `[${TOOL_NAME}] ⚠️ Global install failed: ${globalInstallStatus.reason}\n` +
       `[${TOOL_NAME}] Continue with local safety setup. You can retry later with:\n` +
-      `  npm i -g ${GLOBAL_TOOLCHAIN_PACKAGES.join(' ')}`,
+      `  ${NPM_BIN} i -g ${GLOBAL_TOOLCHAIN_PACKAGES.join(' ')}`,
     );
   } else if (globalInstallStatus.status === 'skipped' && globalInstallStatus.reason === 'non-interactive-default') {
     console.log(
@@ -883,7 +969,7 @@ function release(rawArgs) {
   ensureCleanWorkingTree(repoRoot);
 
   console.log(`[${TOOL_NAME}] Releasing ${packageJson.name}@${packageJson.version} from ${repoRoot}`);
-  const publishResult = run('npm', ['publish'], { cwd: repoRoot, stdio: 'inherit' });
+  const publishResult = run(NPM_BIN, ['publish'], { cwd: repoRoot, stdio: 'inherit' });
   if (publishResult.status !== 0) {
     throw new Error('npm publish failed');
   }
