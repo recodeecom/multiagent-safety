@@ -69,6 +69,7 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
 ```sh
 musafety setup [--target <path>] [--dry-run] [--yes-global-install|--no-global-install]
 musafety copy-prompt
+musafety release   # maintainer-only publish (guarded)
 ```
 
 No command defaults to `musafety setup`.
@@ -83,6 +84,16 @@ musafety install [--target <path>] [--force] [--skip-agents] [--skip-package-jso
 musafety fix [--target <path>] [--dry-run] [--keep-stale-locks]
 musafety scan [--target <path>] [--json]
 ```
+
+## Maintainer release command
+
+`musafety release` is intentionally strict and only runs `npm publish` when all checks pass:
+
+1. current repo root is exactly `/tmp/multiagent-safety`
+2. current branch is `main`
+3. git working tree is clean
+
+It does **not** bump versions or edit changelog/release notes.
 
 ## What is protected
 
@@ -114,6 +125,15 @@ npm pack --dry-run
 ```
 
 ## Release notes
+
+### v0.4.1
+
+- Added `musafety release` (maintainer-only).
+- Release command now hard-blocks unless:
+  - repo is `/tmp/multiagent-safety`
+  - branch is `main`
+  - working tree is clean
+- Release action is strictly `npm publish` (no version/changelog mutation).
 
 ### v0.4.0
 

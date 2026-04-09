@@ -10,6 +10,9 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const TOOL_NAME = 'musafety';
 const LEGACY_NAME = 'multiagent-safety';
 const GLOBAL_TOOLCHAIN_PACKAGES = ['oh-my-codex', '@fission-ai/openspec'];
+const MAINTAINER_RELEASE_REPO = path.resolve(
+  process.env.MUSAFETY_RELEASE_REPO || '/tmp/multiagent-safety',
+);
 
 const TEMPLATE_ROOT = path.resolve(__dirname, '..', 'templates');
 
@@ -68,6 +71,7 @@ function usage() {
 Simple usage (recommended):
   ${TOOL_NAME} setup [--target <path>] [--dry-run] [--yes-global-install|--no-global-install]
   ${TOOL_NAME} copy-prompt
+  ${TOOL_NAME} release
 
 Advanced:
   ${TOOL_NAME} install [--target <path>] [--force] [--skip-agents] [--skip-package-json] [--dry-run]
@@ -839,6 +843,55 @@ function setup(rawArgs) {
   setExitCodeFromScan(scanResult);
 }
 
+function ensureMainBranch(repoRoot) {
+  const branchResult = gitRun(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], { allowFailure: true });
+  if (branchResult.status !== 0) {
+    throw new Error(`Unable to detect current branch in ${repoRoot}`);
+  }
+
+  const branch = branchResult.stdout.trim();
+  if (branch !== 'main') {
+    throw new Error(`Release blocked: current branch is '${branch}' (required: 'main')`);
+  }
+}
+
+function ensureCleanWorkingTree(repoRoot) {
+  const statusResult = gitRun(repoRoot, ['status', '--porcelain'], { allowFailure: true });
+  if (statusResult.status !== 0) {
+    throw new Error(`Unable to read git status in ${repoRoot}`);
+  }
+
+  const dirty = statusResult.stdout.trim();
+  if (dirty.length > 0) {
+    throw new Error('Release blocked: working tree is not clean');
+  }
+}
+
+function release(rawArgs) {
+  if (rawArgs.length > 0) {
+    throw new Error(`Unknown option: ${rawArgs[0]}`);
+  }
+
+  const repoRoot = resolveRepoRoot(process.cwd());
+  if (path.resolve(repoRoot) !== MAINTAINER_RELEASE_REPO) {
+    throw new Error(
+      `Release blocked: command only allowed in ${MAINTAINER_RELEASE_REPO} (current: ${repoRoot})`,
+    );
+  }
+
+  ensureMainBranch(repoRoot);
+  ensureCleanWorkingTree(repoRoot);
+
+  console.log(`[${TOOL_NAME}] Releasing ${packageJson.name}@${packageJson.version} from ${repoRoot}`);
+  const publishResult = run('npm', ['publish'], { cwd: repoRoot, stdio: 'inherit' });
+  if (publishResult.status !== 0) {
+    throw new Error('npm publish failed');
+  }
+
+  console.log(`[${TOOL_NAME}] ✅ Publish complete.`);
+  process.exitCode = 0;
+}
+
 function printAgentsSnippet() {
   const snippetPath = path.join(TEMPLATE_ROOT, 'AGENTS.multiagent-safety.md');
   process.stdout.write(fs.readFileSync(snippetPath, 'utf8'));
@@ -876,6 +929,11 @@ function main() {
 
   if (command === 'copy-prompt') {
     copyPrompt();
+    return;
+  }
+
+  if (command === 'release') {
+    release(rest);
     return;
   }
 

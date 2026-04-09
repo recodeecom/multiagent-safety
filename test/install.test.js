@@ -11,6 +11,15 @@ function runNode(args, cwd) {
   return cp.spawnSync('node', [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
+    env: process.env,
+  });
+}
+
+function runNodeWithEnv(args, cwd, extraEnv) {
+  return cp.spawnSync('node', [cliPath, ...args], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, ...extraEnv },
   });
 }
 
@@ -40,6 +49,23 @@ function initRepo() {
   );
 
   return repoDir;
+}
+
+function initRepoOnBranch(branchName) {
+  const repoDir = initRepo();
+  const result = runCmd('git', ['checkout', '-b', branchName], repoDir);
+  if (result.status !== 0 && !result.stderr.includes('already exists')) {
+    assert.equal(result.status, 0, result.stderr);
+  }
+  runCmd('git', ['checkout', branchName], repoDir);
+  return repoDir;
+}
+
+function seedCommit(repoDir) {
+  let result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'seed'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
 }
 
 test('setup provisions workflow files and repo config', () => {
@@ -194,4 +220,58 @@ test('setup dry-run accepts explicit global install approval flags', () => {
   result = runNode(['setup', '--target', repoDir, '--dry-run', '--no-global-install'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Dry run setup done/);
+});
+
+test('release fails outside the maintainer repo path', () => {
+  const repoDir = initRepoOnBranch('main');
+  const result = runNode(['release'], repoDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /only allowed in/);
+});
+
+test('release fails when branch is not main', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  const result = runNodeWithEnv(['release'], repoDir, {
+    MUSAFETY_RELEASE_REPO: repoDir,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /required: 'main'/);
+});
+
+test('release fails when git status is dirty', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  fs.writeFileSync(path.join(repoDir, 'dirty.txt'), 'dirty\n');
+  const result = runNodeWithEnv(['release'], repoDir, {
+    MUSAFETY_RELEASE_REPO: repoDir,
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /working tree is not clean/);
+});
+
+test('release runs npm publish when guardrails pass', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-bin-'));
+  const markerPath = path.join(repoDir, '.npm-publish-called');
+  const fakeNpmPath = path.join(fakeBin, 'npm');
+  fs.writeFileSync(
+    fakeNpmPath,
+    `#!/usr/bin/env bash\n` +
+      `echo "$@" > "${markerPath}"\n` +
+      `exit 0\n`,
+    'utf8',
+  );
+  fs.chmodSync(fakeNpmPath, 0o755);
+
+  const result = runNodeWithEnv(['release'], repoDir, {
+    MUSAFETY_RELEASE_REPO: repoDir,
+    PATH: `${fakeBin}:${process.env.PATH}`,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const args = fs.readFileSync(markerPath, 'utf8').trim();
+  assert.equal(args, 'publish');
 });
