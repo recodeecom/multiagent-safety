@@ -39,15 +39,22 @@ const CRITICAL_GUARDRAIL_PATHS = new Set([
 const LOCK_FILE_RELATIVE = '.omx/state/agent-file-locks.json';
 const AGENTS_MARKER_START = '<!-- multiagent-safety:START -->';
 
-const AI_SETUP_PROMPT = `Setup multi-agent safety in this repository using musafety.
+const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in this repository for Codex or Claude.
 
-Steps:
-1) Run: musafety setup
-2) If setup reports warnings/errors, run: musafety fix && musafety scan
-3) Confirm output is clean and print next commands for agent usage:
-   - bash scripts/agent-branch-start.sh "task" "agent-name"
-   - python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
-   - bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+1) Install (if missing):
+   npm i -g musafety
+
+2) Bootstrap safety in this repo:
+   musafety setup
+
+3) If setup reports warnings/errors, repair + re-check:
+   musafety fix
+   musafety scan
+
+4) Confirm next safe agent workflow commands:
+   bash scripts/agent-branch-start.sh "task" "agent-name"
+   python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
+   bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
 `;
 
 function usage() {

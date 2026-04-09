@@ -24,13 +24,32 @@ That one command runs:
 2. repair common safety problems,
 3. scan and report final status.
 
-## Copy prompt for your AI
+## Copy prompt for your AI (Codex / Claude)
 
 ```sh
 musafety copy-prompt
 ```
 
-You can paste the output directly into Codex/Claude/Gemini to enforce a consistent setup flow.
+This prints a ready-to-paste prompt. Example output:
+
+```text
+Use this exact checklist to setup multi-agent safety in this repository for Codex or Claude.
+
+1) Install (if missing):
+   npm i -g musafety
+
+2) Bootstrap safety in this repo:
+   musafety setup
+
+3) If setup reports warnings/errors, repair + re-check:
+   musafety fix
+   musafety scan
+
+4) Confirm next safe agent workflow commands:
+   bash scripts/agent-branch-start.sh "task" "agent-name"
+   python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
+   bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+```
 
 ## Basic commands
 

@@ -177,6 +177,8 @@ test('copy-prompt outputs AI setup instructions', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-prompt'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /npm i -g musafety/);
   assert.match(result.stdout, /musafety setup/);
+  assert.match(result.stdout, /Codex or Claude/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
 });
