@@ -1,6 +1,6 @@
 {
   "name": "multiagent-safety",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Global CLI that installs multi-agent branch + file-lock safety workflow into git repos.",
   "license": "MIT",
   "preferGlobal": true,

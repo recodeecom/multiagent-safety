@@ -3,6 +3,8 @@
 
 Usage examples:
   python3 scripts/agent-file-locks.py claim --branch agent/a path/to/file1 path/to/file2
+  python3 scripts/agent-file-locks.py claim --branch agent/a --allow-delete path/to/obsolete-file
+  python3 scripts/agent-file-locks.py allow-delete --branch agent/a path/to/obsolete-file
   python3 scripts/agent-file-locks.py validate --branch agent/a --staged
   python3 scripts/agent-file-locks.py release --branch agent/a
 """
@@ -21,12 +23,21 @@ from typing import Any
 
 
 LOCK_FILE_RELATIVE = Path('.omx/state/agent-file-locks.json')
+CRITICAL_GUARDRAIL_PATHS = {
+    'AGENTS.md',
+    '.githooks/pre-commit',
+    'scripts/agent-branch-start.sh',
+    'scripts/agent-branch-finish.sh',
+    'scripts/agent-file-locks.py',
+}
+ALLOW_GUARDRAIL_DELETE_ENV = 'AGENT_ALLOW_GUARDRAIL_DELETE'
 
 
 @dataclass
 class LockEntry:
     branch: str
     claimed_at: str
+    allow_delete: bool = False
 
 
 class LockError(Exception):
@@ -81,7 +92,22 @@ def load_state(repo_root: Path) -> dict[str, Any]:
     locks = data.get('locks', {})
     if not isinstance(locks, dict):
         return {'locks': {}}
-    return {'locks': locks}
+
+    # Backward-compat normalization for older lock schema.
+    normalized_locks: dict[str, dict[str, Any]] = {}
+    for file_path, entry in locks.items():
+        if not isinstance(entry, dict):
+            continue
+        branch = str(entry.get('branch', ''))
+        claimed_at = str(entry.get('claimed_at', ''))
+        allow_delete = bool(entry.get('allow_delete', False))
+        normalized_locks[str(file_path)] = {
+            'branch': branch,
+            'claimed_at': claimed_at,
+            'allow_delete': allow_delete,
+        }
+
+    return {'locks': normalized_locks}
 
 
 def write_state(repo_root: Path, state: dict[str, Any]) -> None:
@@ -96,11 +122,36 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def staged_files(repo_root: Path) -> list[str]:
-    out = run_git(['diff', '--cached', '--name-only', '--diff-filter=ACMRDTUXB'], cwd=repo_root)
+def env_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def staged_changes(repo_root: Path) -> list[tuple[str, str]]:
+    out = run_git(['diff', '--cached', '--name-status', '--diff-filter=ACMRDTUXB'], cwd=repo_root)
     if not out:
         return []
-    return [line.strip() for line in out.splitlines() if line.strip()]
+
+    results: list[tuple[str, str]] = []
+    for raw_line in out.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split('\t')
+        status_token = parts[0]
+        status = status_token[0]
+        if status in {'R', 'C'}:
+            if len(parts) < 3:
+                continue
+            path = parts[-1]
+        else:
+            if len(parts) < 2:
+                continue
+            path = parts[1]
+        normalized = normalize_repo_path(repo_root, path)
+        results.append((status, normalized))
+    return results
 
 
 def cmd_claim(args: argparse.Namespace, repo_root: Path) -> int:
@@ -122,10 +173,51 @@ def cmd_claim(args: argparse.Namespace, repo_root: Path) -> int:
         return 1
 
     for file_path in files:
-        locks[file_path] = LockEntry(branch=args.branch, claimed_at=now_iso()).__dict__
+        existing = locks.get(file_path, {})
+        existing_allow_delete = bool(existing.get('allow_delete', False))
+        locks[file_path] = LockEntry(
+            branch=args.branch,
+            claimed_at=now_iso(),
+            allow_delete=args.allow_delete or existing_allow_delete,
+        ).__dict__
 
     write_state(repo_root, state)
-    print(f"[agent-file-locks] Claimed {len(files)} file(s) for {args.branch}.")
+    delete_note = ' (delete-approved)' if args.allow_delete else ''
+    print(f"[agent-file-locks] Claimed {len(files)} file(s) for {args.branch}{delete_note}.")
+    return 0
+
+
+def cmd_allow_delete(args: argparse.Namespace, repo_root: Path) -> int:
+    state = load_state(repo_root)
+    locks: dict[str, dict[str, Any]] = state['locks']
+    files = [normalize_repo_path(repo_root, p) for p in args.files]
+
+    missing: list[str] = []
+    foreign: list[tuple[str, str]] = []
+    for file_path in files:
+        entry = locks.get(file_path)
+        if not entry:
+            missing.append(file_path)
+            continue
+        owner = str(entry.get('branch', ''))
+        if owner != args.branch:
+            foreign.append((file_path, owner))
+            continue
+        entry['allow_delete'] = True
+
+    if missing or foreign:
+        if missing:
+            print('[agent-file-locks] Cannot enable delete: files are not claimed yet:', file=sys.stderr)
+            for file_path in missing:
+                print(f'  - {file_path}', file=sys.stderr)
+        if foreign:
+            print('[agent-file-locks] Cannot enable delete: files are owned by another branch:', file=sys.stderr)
+            for file_path, owner in foreign:
+                print(f'  - {file_path} (owner: {owner})', file=sys.stderr)
+        return 1
+
+    write_state(repo_root, state)
+    print(f"[agent-file-locks] Enabled delete approval for {len(files)} file(s) on {args.branch}.")
     return 0
 
 
@@ -152,21 +244,23 @@ def cmd_status(args: argparse.Namespace, repo_root: Path) -> int:
     state = load_state(repo_root)
     locks: dict[str, dict[str, Any]] = state['locks']
 
-    rows: list[tuple[str, str, str]] = []
+    rows: list[tuple[str, str, str, bool]] = []
     for file_path, entry in sorted(locks.items()):
         branch = str(entry.get('branch', ''))
         if args.branch and branch != args.branch:
             continue
         claimed_at = str(entry.get('claimed_at', ''))
-        rows.append((file_path, branch, claimed_at))
+        allow_delete = bool(entry.get('allow_delete', False))
+        rows.append((file_path, branch, claimed_at, allow_delete))
 
     if not rows:
         print('[agent-file-locks] No active locks.')
         return 0
 
     print('[agent-file-locks] Active locks:')
-    for file_path, branch, claimed_at in rows:
-        print(f'  - {file_path} | {branch} | {claimed_at}')
+    for file_path, branch, claimed_at, allow_delete in rows:
+        delete_flag = ' delete-ok' if allow_delete else ''
+        print(f'  - {file_path} | {branch} | {claimed_at}{delete_flag}')
     return 0
 
 
@@ -174,28 +268,49 @@ def cmd_validate(args: argparse.Namespace, repo_root: Path) -> int:
     state = load_state(repo_root)
     locks: dict[str, dict[str, Any]] = state['locks']
 
-    files = staged_files(repo_root) if args.staged else [normalize_repo_path(repo_root, p) for p in args.files]
+    if args.staged:
+        file_changes = staged_changes(repo_root)
+    else:
+        file_changes = [('M', normalize_repo_path(repo_root, p)) for p in args.files]
 
-    files = [f for f in files if f and f != LOCK_FILE_RELATIVE.as_posix()]
-    if not files:
+    file_changes = [
+        (status, file_path)
+        for status, file_path in file_changes
+        if file_path and file_path != LOCK_FILE_RELATIVE.as_posix()
+    ]
+    if not file_changes:
         return 0
 
     missing: list[str] = []
     foreign: list[tuple[str, str]] = []
+    delete_not_allowed: list[str] = []
+    guardrail_delete_blocked: list[str] = []
 
-    for file_path in files:
+    allow_guardrail_delete = env_truthy(os.environ.get(ALLOW_GUARDRAIL_DELETE_ENV))
+
+    for status, file_path in file_changes:
         entry = locks.get(file_path)
         if not entry:
             missing.append(file_path)
             continue
+
         owner = str(entry.get('branch', ''))
         if owner != args.branch:
             foreign.append((file_path, owner))
+            continue
 
-    if not missing and not foreign:
+        if status == 'D':
+            if file_path in CRITICAL_GUARDRAIL_PATHS and not allow_guardrail_delete:
+                guardrail_delete_blocked.append(file_path)
+
+            allow_delete = bool(entry.get('allow_delete', False))
+            if not allow_delete:
+                delete_not_allowed.append(file_path)
+
+    if not missing and not foreign and not delete_not_allowed and not guardrail_delete_blocked:
         return 0
 
-    print('[agent-file-locks] Commit blocked: staged files must be claimed by this branch first.', file=sys.stderr)
+    print('[agent-file-locks] Commit blocked: staged files must be safely claimed by this branch first.', file=sys.stderr)
     if missing:
         print('  Unclaimed files:', file=sys.stderr)
         for file_path in missing:
@@ -204,6 +319,27 @@ def cmd_validate(args: argparse.Namespace, repo_root: Path) -> int:
         print('  Files claimed by another branch:', file=sys.stderr)
         for file_path, owner in foreign:
             print(f'    - {file_path} (owner: {owner})', file=sys.stderr)
+    if delete_not_allowed:
+        print('  Delete not approved for claimed files:', file=sys.stderr)
+        for file_path in delete_not_allowed:
+            print(f'    - {file_path}', file=sys.stderr)
+        print('    Approve explicit deletions with one of:', file=sys.stderr)
+        print(
+            f'      python3 scripts/agent-file-locks.py claim --branch "{args.branch}" --allow-delete <file...>',
+            file=sys.stderr,
+        )
+        print(
+            f'      python3 scripts/agent-file-locks.py allow-delete --branch "{args.branch}" <file...>',
+            file=sys.stderr,
+        )
+    if guardrail_delete_blocked:
+        print('  Critical guardrail file deletion blocked:', file=sys.stderr)
+        for file_path in guardrail_delete_blocked:
+            print(f'    - {file_path}', file=sys.stderr)
+        print(
+            f'    To intentionally allow this rare operation, set {ALLOW_GUARDRAIL_DELETE_ENV}=1 for the commit command.',
+            file=sys.stderr,
+        )
 
     print('\nClaim files with:', file=sys.stderr)
     print(f'  python3 scripts/agent-file-locks.py claim --branch "{args.branch}" <file...>', file=sys.stderr)
@@ -216,7 +352,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     claim = sub.add_parser('claim', help='Claim file locks for a branch')
     claim.add_argument('--branch', required=True, help='Owner branch name (e.g., agent/foo/...)')
+    claim.add_argument(
+        '--allow-delete',
+        action='store_true',
+        help='Mark these files as explicitly approved for deletion by this branch',
+    )
     claim.add_argument('files', nargs='+', help='Files to claim (repo-relative or absolute)')
+
+    allow_delete = sub.add_parser('allow-delete', help='Enable delete approval on already claimed files')
+    allow_delete.add_argument('--branch', required=True, help='Owner branch name')
+    allow_delete.add_argument('files', nargs='+', help='Files to mark as delete-approved')
 
     release = sub.add_parser('release', help='Release file locks for a branch')
     release.add_argument('--branch', required=True, help='Owner branch name')
@@ -241,6 +386,8 @@ def main() -> int:
         repo_root = resolve_repo_root()
         if args.command == 'claim':
             return cmd_claim(args, repo_root)
+        if args.command == 'allow-delete':
+            return cmd_allow_delete(args, repo_root)
         if args.command == 'release':
             return cmd_release(args, repo_root)
         if args.command == 'status':

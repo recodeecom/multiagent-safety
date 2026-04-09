@@ -25,6 +25,15 @@ const EXECUTABLE_RELATIVE_PATHS = new Set([
   '.githooks/pre-commit',
 ]);
 
+const CRITICAL_GUARDRAIL_PATHS = new Set([
+  'AGENTS.md',
+  '.githooks/pre-commit',
+  'scripts/agent-branch-start.sh',
+  'scripts/agent-branch-finish.sh',
+  'scripts/agent-file-locks.py',
+]);
+
+const LOCK_FILE_RELATIVE = '.omx/state/agent-file-locks.json';
 const AGENTS_MARKER_START = '<!-- multiagent-safety:START -->';
 
 function usage() {
@@ -32,11 +41,13 @@ function usage() {
 
 Usage:
   multiagent-safety install [--target <path>] [--force] [--skip-agents] [--skip-package-json] [--dry-run]
+  multiagent-safety scan [--target <path>] [--json]
   multiagent-safety print-agents-snippet
   multiagent-safety --help
 
 Examples:
   multiagent-safety install
+  multiagent-safety scan
   multiagent-safety install --target ~/projects/my-repo
   npm i -g multiagent-safety && multiagent-safety install`);
 }
@@ -47,6 +58,14 @@ function run(cmd, args, options = {}) {
     stdio: options.stdio || 'pipe',
     cwd: options.cwd,
   });
+}
+
+function gitRun(repoRoot, args, { allowFailure = false } = {}) {
+  const result = run('git', ['-C', repoRoot, ...args]);
+  if (!allowFailure && result.status !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${(result.stderr || '').trim()}`);
+  }
+  return result;
 }
 
 function resolveRepoRoot(targetPath) {
@@ -112,7 +131,7 @@ function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
 }
 
 function ensureLockRegistry(repoRoot, dryRun) {
-  const relativePath = '.omx/state/agent-file-locks.json';
+  const relativePath = LOCK_FILE_RELATIVE;
   const absolutePath = path.join(repoRoot, relativePath);
   if (fs.existsSync(absolutePath)) {
     return { status: 'unchanged', file: relativePath };
@@ -145,6 +164,7 @@ function ensurePackageScripts(repoRoot, dryRun) {
     'agent:branch:finish': 'bash ./scripts/agent-branch-finish.sh',
     'agent:hooks:install': 'bash ./scripts/install-agent-git-hooks.sh',
     'agent:locks:claim': 'python3 ./scripts/agent-file-locks.py claim',
+    'agent:locks:allow-delete': 'python3 ./scripts/agent-file-locks.py allow-delete',
     'agent:locks:release': 'python3 ./scripts/agent-file-locks.py release',
     'agent:locks:status': 'python3 ./scripts/agent-file-locks.py status',
   };
@@ -247,6 +267,186 @@ function parseInstallArgs(rawArgs) {
   return options;
 }
 
+function parseScanArgs(rawArgs) {
+  const options = {
+    target: process.cwd(),
+    json: false,
+  };
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
+    if (arg === '--target') {
+      options.target = rawArgs[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg === '--json') {
+      options.json = true;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg}`);
+  }
+
+  if (!options.target) {
+    throw new Error('--target requires a path value');
+  }
+
+  return options;
+}
+
+function lockStateOrError(repoRoot) {
+  const lockPath = path.join(repoRoot, LOCK_FILE_RELATIVE);
+  if (!fs.existsSync(lockPath)) {
+    return { ok: false, error: `${LOCK_FILE_RELATIVE} is missing` };
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.locks !== 'object' || parsed.locks === null) {
+      return { ok: false, error: `${LOCK_FILE_RELATIVE} has invalid schema (expected { locks: {} })` };
+    }
+    return { ok: true, locks: parsed.locks };
+  } catch (error) {
+    return { ok: false, error: `${LOCK_FILE_RELATIVE} is invalid JSON: ${error.message}` };
+  }
+}
+
+function gitRefExists(repoRoot, refName) {
+  return gitRun(repoRoot, ['show-ref', '--verify', '--quiet', refName], { allowFailure: true }).status === 0;
+}
+
+function runScan(rawArgs) {
+  const options = parseScanArgs(rawArgs);
+  const repoRoot = resolveRepoRoot(options.target);
+  const findings = [];
+
+  const requiredPaths = [
+    ...TEMPLATE_FILES.map((entry) => toDestinationPath(entry)),
+    LOCK_FILE_RELATIVE,
+  ];
+
+  for (const relativePath of requiredPaths) {
+    const absolutePath = path.join(repoRoot, relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      findings.push({
+        level: 'error',
+        code: 'missing-managed-file',
+        path: relativePath,
+        message: `Missing managed workflow file: ${relativePath}`,
+      });
+    }
+  }
+
+  const hooksPathResult = gitRun(repoRoot, ['config', '--get', 'core.hooksPath'], { allowFailure: true });
+  const hooksPath = hooksPathResult.status === 0 ? hooksPathResult.stdout.trim() : '';
+  if (hooksPath !== '.githooks') {
+    findings.push({
+      level: 'warn',
+      code: 'hooks-path-mismatch',
+      message: `git core.hooksPath is '${hooksPath || '(unset)'}' (expected '.githooks')`,
+    });
+  }
+
+  const lockState = lockStateOrError(repoRoot);
+  if (!lockState.ok) {
+    findings.push({
+      level: 'error',
+      code: 'lock-state-invalid',
+      message: lockState.error,
+    });
+  } else {
+    for (const [filePath, rawEntry] of Object.entries(lockState.locks)) {
+      const entry = rawEntry && typeof rawEntry === 'object' ? rawEntry : {};
+      const ownerBranch = String(entry.branch || '');
+      const allowDelete = Boolean(entry.allow_delete);
+
+      if (!ownerBranch) {
+        findings.push({
+          level: 'warn',
+          code: 'lock-missing-owner',
+          path: filePath,
+          message: `Lock entry has no owner branch: ${filePath}`,
+        });
+      }
+
+      const absolutePath = path.join(repoRoot, filePath);
+      if (!fs.existsSync(absolutePath)) {
+        findings.push({
+          level: 'warn',
+          code: 'lock-target-missing',
+          path: filePath,
+          message: `Locked path is missing from disk: ${filePath}`,
+        });
+      }
+
+      if (ownerBranch) {
+        const localRef = `refs/heads/${ownerBranch}`;
+        const remoteRef = `refs/remotes/origin/${ownerBranch}`;
+        if (!gitRefExists(repoRoot, localRef) && !gitRefExists(repoRoot, remoteRef)) {
+          findings.push({
+            level: 'warn',
+            code: 'stale-branch-lock',
+            path: filePath,
+            message: `Lock owner branch not found locally/remotely: ${ownerBranch} (${filePath})`,
+          });
+        }
+      }
+
+      if (allowDelete && CRITICAL_GUARDRAIL_PATHS.has(filePath)) {
+        findings.push({
+          level: 'error',
+          code: 'guardrail-delete-approved',
+          path: filePath,
+          message: `Critical guardrail file is delete-approved: ${filePath}`,
+        });
+      }
+    }
+  }
+
+  const errors = findings.filter((item) => item.level === 'error');
+  const warnings = findings.filter((item) => item.level === 'warn');
+
+  const currentBranchResult = gitRun(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], { allowFailure: true });
+  const currentBranch = currentBranchResult.status === 0 ? currentBranchResult.stdout.trim() : '(unknown)';
+
+  if (options.json) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          repoRoot,
+          branch: currentBranch,
+          errors: errors.length,
+          warnings: warnings.length,
+          findings,
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  } else {
+    console.log(`[multiagent-safety] Scan target: ${repoRoot}`);
+    console.log(`[multiagent-safety] Branch: ${currentBranch}`);
+    if (findings.length === 0) {
+      console.log('[multiagent-safety] ✅ No safety issues detected.');
+    } else {
+      for (const item of findings) {
+        const target = item.path ? ` (${item.path})` : '';
+        console.log(`[${item.level.toUpperCase()}] ${item.code}${target}: ${item.message}`);
+      }
+      console.log(`[multiagent-safety] Summary: ${errors.length} error(s), ${warnings.length} warning(s).`);
+    }
+  }
+
+  if (errors.length > 0) {
+    process.exitCode = 2;
+    return;
+  }
+  if (warnings.length > 0) {
+    process.exitCode = 1;
+    return;
+  }
+  process.exitCode = 0;
+}
+
 function install(rawArgs) {
   const options = parseInstallArgs(rawArgs);
   const repoRoot = resolveRepoRoot(options.target);
@@ -280,7 +480,7 @@ function install(rawArgs) {
     console.log('[multiagent-safety] Dry run complete. No files were modified.');
   } else {
     console.log('[multiagent-safety] Installed multi-agent safety workflow.');
-    console.log('[multiagent-safety] Next step: run `python3 scripts/agent-file-locks.py status` in the repo.');
+    console.log('[multiagent-safety] Next step: run `multiagent-safety scan` in the repo.');
   }
 }
 
@@ -308,6 +508,10 @@ function main() {
   }
   if (command === 'install') {
     install(rest);
+    return;
+  }
+  if (command === 'scan') {
+    runScan(rest);
     return;
   }
   if (command === 'print-agents-snippet') {
