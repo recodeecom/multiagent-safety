@@ -97,6 +97,7 @@ No command defaults to `musafety setup`.
 - Interactive setup: prompts for Y/N approval before global OMX/OpenSpec install.
 - Interactive prompt is strict (`[y/n]`) and waits for explicit answer.
 - Non-interactive setup: skips global installs by default; use `--yes-global-install` to force.
+- Common typos are auto-corrected (for example `musafety relaese` -> `musafety release`).
 
 ## Advanced commands
 
@@ -146,6 +147,12 @@ npm pack --dry-run
 ```
 
 ## Release notes
+
+### v0.4.3
+
+- Added typo helper for common command misspellings.
+- `relaese` / `realaese` now auto-map to `release`.
+- Unknown commands now provide nearest-command suggestions when possible.
 
 ### v0.4.2
 

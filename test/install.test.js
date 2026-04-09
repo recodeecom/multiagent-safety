@@ -339,3 +339,40 @@ test('release runs npm publish when guardrails pass', () => {
   const args = fs.readFileSync(markerPath, 'utf8').trim();
   assert.equal(args, 'publish');
 });
+
+test('typo helper maps relaese/realaese to release', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  const marker = path.join(os.tmpdir(), `musafety-typo-publish-${Date.now()}-${Math.random()}.txt`);
+  const fakeNpm = createFakeNpmScript(`
+if [[ "$1" == "publish" ]]; then
+  echo "$@" > "${marker}"
+  exit 0
+fi
+echo "unexpected npm args: $*" >&2
+exit 1
+`);
+
+  const typoA = runNodeWithEnv(['relaese'], repoDir, {
+    MUSAFETY_RELEASE_REPO: repoDir,
+    MUSAFETY_NPM_BIN: fakeNpm,
+  });
+  assert.equal(typoA.status, 0, typoA.stderr || typoA.stdout);
+  assert.match(typoA.stdout, /Interpreting 'relaese' as 'release'/);
+  assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'publish');
+
+  const typoB = runNodeWithEnv(['realaese'], repoDir, {
+    MUSAFETY_RELEASE_REPO: repoDir,
+    MUSAFETY_NPM_BIN: fakeNpm,
+  });
+  assert.equal(typoB.status, 0, typoB.stderr || typoB.stdout);
+  assert.match(typoB.stdout, /Interpreting 'realaese' as 'release'/);
+  assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'publish');
+});
+
+test('unknown command suggests nearest valid command', () => {
+  const repoDir = initRepo();
+  const result = runNode(['relese'], repoDir);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Did you mean 'release'\?/);
+});
