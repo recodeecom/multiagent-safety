@@ -94,6 +94,9 @@ By default this writes:
 
 ![musafety branch start protocol screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-branch-start.svg)
 
+`agent-branch-start` defaults to isolated worktrees. In-place starts are blocked unless you pass both
+`--in-place --allow-in-place` explicitly.
+
 ### 2) Lock claim + deletion guard protocol
 
 ![musafety lock and delete guard screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-lock-guard.svg)

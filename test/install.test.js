@@ -310,6 +310,71 @@ test('setup --no-gitignore skips creating managed gitignore block', () => {
   assert.equal(fs.existsSync(path.join(repoDir, '.gitignore')), false);
 });
 
+test('agent-branch-start keeps main worktree branch unchanged by default', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['rev-parse', '--abbrev-ref', 'HEAD'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  const beforeBranch = result.stdout.trim();
+  assert.equal(beforeBranch, 'dev');
+
+  result = runCmd(
+    'bash',
+    ['scripts/agent-branch-start.sh', 'verify-default-worktree', 'doctor'],
+    repoDir,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Created branch: agent\/doctor\//);
+  assert.match(result.stdout, /Worktree: /);
+
+  const branchMatch = result.stdout.match(/Created branch: ([^\n]+)/);
+  assert.notEqual(branchMatch, null);
+  const createdBranch = branchMatch[1].trim();
+
+  result = runCmd('git', ['rev-parse', '--abbrev-ref', 'HEAD'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), beforeBranch, 'current branch should stay unchanged in main worktree');
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${createdBranch}`], repoDir);
+  assert.equal(result.status, 0, 'created agent branch should exist');
+});
+
+test('agent-branch-start blocks in-place mode unless explicitly allowed', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'post-setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd(
+    'bash',
+    ['scripts/agent-branch-start.sh', 'verify-in-place-guard', 'doctor', '--in-place'],
+    repoDir,
+  );
+  assert.equal(result.status, 1, 'in-place should be blocked by default');
+  assert.match(result.stderr, /--in-place is blocked by default/);
+  assert.match(result.stderr, /--in-place --allow-in-place/);
+
+  result = runCmd(
+    'bash',
+    ['scripts/agent-branch-start.sh', 'verify-in-place-override', 'doctor', '--in-place', '--allow-in-place'],
+    repoDir,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Created in-place branch: agent\/doctor\//);
+});
+
 test('protect command manages configured protected branches', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
