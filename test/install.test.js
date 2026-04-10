@@ -6,6 +6,9 @@ const path = require('node:path');
 const cp = require('node:child_process');
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'multiagent-safety.js');
+const cliVersion = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8'),
+).version;
 
 function runNode(args, cwd) {
   return cp.spawnSync('node', [cliPath, ...args], {
@@ -37,6 +40,14 @@ function createFakeNpmScript(scriptBody) {
   fs.writeFileSync(fakeNpmPath, `#!/usr/bin/env bash\nset -e\n${scriptBody}\n`, 'utf8');
   fs.chmodSync(fakeNpmPath, 0o755);
   return fakeNpmPath;
+}
+
+function createFakeScorecardScript(scriptBody) {
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-scorecard-'));
+  const fakePath = path.join(fakeBin, 'scorecard');
+  fs.writeFileSync(fakePath, `#!/usr/bin/env bash\nset -e\n${scriptBody}\n`, 'utf8');
+  fs.chmodSync(fakePath, 0o755);
+  return fakePath;
 }
 
 function initRepo() {
@@ -130,6 +141,10 @@ function aheadBehindCounts(repoDir, branchRef, baseRef) {
   };
 }
 
+function escapeRegexLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 test('setup provisions workflow files and repo config', () => {
   const repoDir = initRepo();
 
@@ -144,6 +159,8 @@ test('setup provisions workflow files and repo config', () => {
     'scripts/install-agent-git-hooks.sh',
     'scripts/openspec/init-plan-workspace.sh',
     '.githooks/pre-commit',
+    '.codex/skills/musafety/SKILL.md',
+    '.claude/commands/musafety.md',
     '.omx/state/agent-file-locks.json',
     '.gitignore',
     'AGENTS.md',
@@ -170,6 +187,8 @@ test('setup provisions workflow files and repo config', () => {
   assert.match(gitignoreContent, /scripts\/agent-branch-start\.sh/);
   assert.match(gitignoreContent, /scripts\/agent-file-locks\.py/);
   assert.match(gitignoreContent, /\.githooks\/pre-commit/);
+  assert.match(gitignoreContent, /\.codex\/skills\/musafety\/SKILL\.md/);
+  assert.match(gitignoreContent, /\.claude\/commands\/musafety\.md/);
   assert.match(gitignoreContent, /\.omx\/state\/agent-file-locks\.json/);
   assert.match(gitignoreContent, /# multiagent-safety:END/);
 
@@ -193,9 +212,14 @@ test('default invocation runs non-mutating status output', () => {
   const serviceIdx = result.stdout.indexOf('[musafety] Repo safety service:');
   const repoIdx = result.stdout.indexOf('[musafety] Repo:');
   const branchIdx = result.stdout.indexOf('[musafety] Branch:');
+  const toolsIdx = result.stdout.indexOf('musafety-tools logs:');
   assert.equal(serviceIdx >= 0, true);
   assert.equal(repoIdx > serviceIdx, true);
   assert.equal(branchIdx > repoIdx, true);
+  assert.equal(toolsIdx > branchIdx, true);
+  assert.match(result.stdout, /musafety-tools logs:/);
+  assert.match(result.stdout, /USAGE\n\s+\$ musafety <command> \[options\]/);
+  assert.match(result.stdout, /COMMANDS\n\s+status\s+Show musafety CLI \+ service health without modifying files/);
   assert.equal(fs.existsSync(path.join(repoDir, '.githooks', 'pre-commit')), false);
 });
 
@@ -207,6 +231,40 @@ test('default invocation outside git repo reports inactive repo service', () => 
   assert.match(result.stdout, /\[musafety\] CLI:/);
   assert.match(result.stdout, /\[musafety\] Global services:/);
   assert.match(result.stdout, /Repo safety service: .*inactive/);
+});
+
+test('default invocation checks for update and can auto-approve latest install', () => {
+  const repoDir = initRepo();
+  const markerPath = path.join(repoDir, '.self-update-called');
+  const fakeNpm = createFakeNpmScript(`
+if [[ "$1" == "view" ]]; then
+  echo '"9.9.9"'
+  exit 0
+fi
+if [[ "$1" == "list" ]]; then
+  echo '{"dependencies":{"oh-my-codex":{},"@fission-ai/openspec":{}}}'
+  exit 0
+fi
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "musafety@latest" ]]; then
+  echo "updated" > "${markerPath}"
+  exit 0
+fi
+echo "unexpected npm args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv([], repoDir, {
+    MUSAFETY_NPM_BIN: fakeNpm,
+    MUSAFETY_FORCE_UPDATE_CHECK: '1',
+    MUSAFETY_AUTO_UPDATE_APPROVAL: 'yes',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /UPDATE AVAILABLE/);
+  assert.match(result.stdout, new RegExp(`Current:\\s+${escapeRegexLiteral(cliVersion)}`));
+  assert.match(result.stdout, /Latest\s+:\s+9\.9\.9/);
+  assert.match(result.stdout, /Updated to latest published version/);
+  assert.equal(fs.existsSync(markerPath), true, 'expected self-update command to run');
 });
 
 test('status --json returns cli, services, and repo summary', () => {
@@ -624,6 +682,80 @@ test('fix repairs stale lock issues so scan becomes clean', () => {
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
 
+test('doctor repairs setup drift and confirms repo is musafe', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  // Simulate broken setup + stale lock.
+  fs.rmSync(path.join(repoDir, 'scripts', 'agent-branch-start.sh'));
+  result = runCmd('git', ['config', 'core.hooksPath', '.git/hooks'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  const lockPath = path.join(repoDir, '.omx', 'state', 'agent-file-locks.json');
+  fs.writeFileSync(
+    lockPath,
+    JSON.stringify(
+      {
+        locks: {
+          'missing/file.ts': {
+            branch: 'agent/non-existent',
+            claimed_at: '2026-01-01T00:00:00Z',
+            allow_delete: false,
+          },
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+
+  result = runNode(['doctor', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Doctor\/fix/);
+  assert.match(result.stdout, /Repo is correctly musafe/);
+
+  const scanAfter = runNode(['scan', '--target', repoDir], repoDir);
+  assert.equal(scanAfter.status, 0, scanAfter.stderr || scanAfter.stdout);
+});
+
+test('report scorecard creates baseline + remediation reports', () => {
+  const repoDir = initRepo();
+  const fakeScorecard = createFakeScorecardScript(`
+if [[ "$1" == "--repo" && "$3" == "--format" && "$4" == "json" ]]; then
+  cat <<'JSON'
+{"repo":{"name":"github.com/recodeecom/multiagent-safety"},"score":5.8,"date":"2026-04-10T08:48:47Z","scorecard":{"version":"v5.0.0"},"checks":[{"name":"Dangerous-Workflow","score":10},{"name":"Code-Review","score":0},{"name":"Branch-Protection","score":3}]}
+JSON
+  exit 0
+fi
+echo "unexpected scorecard args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(
+    ['report', 'scorecard', '--target', repoDir, '--repo', 'github.com/recodeecom/multiagent-safety', '--date', '2026-04-10'],
+    repoDir,
+    { MUSAFETY_SCORECARD_BIN: fakeScorecard },
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Generated reports:/);
+
+  const baselinePath = path.join(repoDir, 'docs', 'reports', 'openssf-scorecard-baseline-2026-04-10.md');
+  const remediationPath = path.join(repoDir, 'docs', 'reports', 'openssf-scorecard-remediation-plan-2026-04-10.md');
+  assert.equal(fs.existsSync(baselinePath), true);
+  assert.equal(fs.existsSync(remediationPath), true);
+
+  const baseline = fs.readFileSync(baselinePath, 'utf8');
+  assert.match(baseline, /(\*\*)?Overall score:(\*\*)?\s+\*\*5\.8 \/ 10\*\*/);
+  assert.match(baseline, /\| Code-Review \| 0 \| High \|/);
+
+  const remediation = fs.readFileSync(remediationPath, 'utf8');
+  assert.match(remediation, /\| Branch-Protection \| 3 \| High \|/);
+  assert.match(remediation, /Verification loop/);
+});
+
 test('copy-prompt outputs AI setup instructions', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-prompt'], repoDir);
@@ -633,6 +765,18 @@ test('copy-prompt outputs AI setup instructions', () => {
   assert.match(result.stdout, /musafety setup/);
   assert.match(result.stdout, /Codex or Claude/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
+});
+
+test('copy-commands outputs command-only checklist', () => {
+  const repoDir = initRepo();
+  const result = runNode(['copy-commands'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /^npm i -g musafety/m);
+  assert.match(result.stdout, /musafety setup/);
+  assert.match(result.stdout, /musafety doctor/);
+  assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
+  assert.match(result.stdout, /musafety sync --check/);
+  assert.doesNotMatch(result.stdout, /Use this exact checklist/);
 });
 
 test('setup dry-run accepts explicit global install approval flags', () => {

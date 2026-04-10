@@ -1,6 +1,6 @@
 {
   "name": "musafety",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Simple setup command for hardened multi-agent collaboration safety in git repos.",
   "license": "MIT",
   "preferGlobal": true,
@@ -41,5 +41,8 @@
   "funding": "https://github.com/sponsors/recodeecom",
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "fast-check": "^3.23.2"
   }
 }

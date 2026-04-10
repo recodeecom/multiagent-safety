@@ -14,6 +14,7 @@ const MAINTAINER_RELEASE_REPO = path.resolve(
   process.env.MUSAFETY_RELEASE_REPO || '/tmp/multiagent-safety',
 );
 const NPM_BIN = process.env.MUSAFETY_NPM_BIN || 'npm';
+const SCORECARD_BIN = process.env.MUSAFETY_SCORECARD_BIN || 'scorecard';
 const GIT_PROTECTED_BRANCHES_KEY = 'multiagent.protectedBranches';
 const GIT_BASE_BRANCH_KEY = 'multiagent.baseBranch';
 const GIT_SYNC_STRATEGY_KEY = 'multiagent.sync.strategy';
@@ -31,6 +32,8 @@ const TEMPLATE_FILES = [
   'scripts/install-agent-git-hooks.sh',
   'scripts/openspec/init-plan-workspace.sh',
   'githooks/pre-commit',
+  'codex/skills/musafety/SKILL.md',
+  'claude/commands/musafety.md',
 ];
 
 const EXECUTABLE_RELATIVE_PATHS = new Set([
@@ -63,6 +66,8 @@ const MANAGED_GITIGNORE_PATHS = [
   'scripts/install-agent-git-hooks.sh',
   'scripts/openspec/init-plan-workspace.sh',
   '.githooks/pre-commit',
+  '.codex/skills/musafety/SKILL.md',
+  '.claude/commands/musafety.md',
   LOCK_FILE_RELATIVE,
 ];
 const COMMAND_TYPO_ALIASES = new Map([
@@ -71,12 +76,17 @@ const COMMAND_TYPO_ALIASES = new Map([
   ['relase', 'release'],
   ['setpu', 'setup'],
   ['intsall', 'install'],
+  ['docter', 'doctor'],
+  ['doctro', 'doctor'],
   ['scna', 'scan'],
 ]);
 const SUGGESTIBLE_COMMANDS = [
   'status',
   'setup',
+  'doctor',
+  'report',
   'copy-prompt',
+  'copy-commands',
   'protect',
   'sync',
   'release',
@@ -86,6 +96,23 @@ const SUGGESTIBLE_COMMANDS = [
   'print-agents-snippet',
   'help',
   'version',
+];
+const CLI_COMMAND_DESCRIPTIONS = [
+  ['status', 'Show musafety CLI + service health without modifying files'],
+  ['setup', 'Install + repair guardrails in a git repo (supports --no-gitignore)'],
+  ['doctor', 'Repair safety setup drift, then verify repo safety'],
+  ['report', 'Generate security/safety reports (for example: OpenSSF scorecard)'],
+  ['copy-prompt', 'Print the AI-ready setup checklist'],
+  ['copy-commands', 'Print setup checklist as executable commands only'],
+  ['protect', 'Manage protected branches (list/add/remove/set/reset)'],
+  ['sync', 'Check or sync agent branches with origin/<base>'],
+  ['install', 'Install templates/locks/hooks without running full setup (supports --no-gitignore)'],
+  ['fix', 'Repair broken or missing guardrail files/config (supports --no-gitignore)'],
+  ['scan', 'Report safety issues and exit non-zero on findings'],
+  ['print-agents-snippet', 'Print the AGENTS.md snippet template'],
+  ['release', 'Publish musafety from maintainer release repo'],
+  ['help', 'Show this help output'],
+  ['version', 'Print musafety version'],
 ];
 
 const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in this repository for Codex or Claude.
@@ -102,8 +129,7 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in
      - n = skip global installs
 
 3) If setup reports warnings/errors, repair + re-check:
-   musafety fix
-   musafety scan
+   musafety doctor
 
 4) Confirm next safe agent workflow commands:
    bash scripts/agent-branch-start.sh "task" "agent-name"
@@ -120,6 +146,36 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in
    musafety sync --check
    musafety sync
 `;
+
+const AI_SETUP_COMMANDS = `npm i -g musafety
+musafety setup
+musafety doctor
+bash scripts/agent-branch-start.sh "task" "agent-name"
+python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
+bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
+musafety protect add release staging
+musafety sync --check
+musafety sync
+`;
+
+const SCORECARD_RISK_BY_CHECK = {
+  'Dangerous-Workflow': 'Critical',
+  'Code-Review': 'High',
+  Maintained: 'High',
+  'Binary-Artifacts': 'High',
+  'Dependency-Update-Tool': 'High',
+  'Token-Permissions': 'High',
+  Vulnerabilities: 'High',
+  'Branch-Protection': 'High',
+  Fuzzing: 'Medium',
+  'Pinned-Dependencies': 'Medium',
+  SAST: 'Medium',
+  'Security-Policy': 'Medium',
+  'CII-Best-Practices': 'Low',
+  Contributors: 'Low',
+  License: 'Low',
+};
 
 function runtimeVersion() {
   return `${packageJson.name}/${packageJson.version} ${process.platform}-${process.arch} node-${process.version}`;
@@ -146,6 +202,52 @@ function statusDot(status) {
   return colorize('●', '33'); // yellow for degraded/unknown
 }
 
+function commandCatalogLines(indent = '  ') {
+  const maxCommandLength = CLI_COMMAND_DESCRIPTIONS.reduce(
+    (max, [command]) => Math.max(max, command.length),
+    0,
+  );
+  return CLI_COMMAND_DESCRIPTIONS.map(
+    ([command, description]) => `${indent}${command.padEnd(maxCommandLength + 2)}${description}`,
+  );
+}
+
+function printToolLogsSummary() {
+  const usageLine = `    $ ${TOOL_NAME} <command> [options]`;
+  const commandDetails = commandCatalogLines('    ');
+
+  if (!supportsAnsiColors()) {
+    console.log('musafety-tools logs:');
+    console.log('  USAGE');
+    console.log(usageLine);
+    console.log('  COMMANDS');
+    for (const line of commandDetails) {
+      console.log(line);
+    }
+    return;
+  }
+
+  const title = colorize('musafety-tools logs', '1;36');
+  const usageHeader = colorize('USAGE', '1');
+  const commandsHeader = colorize('COMMANDS', '1');
+  const pipe = colorize('│', '90');
+  const tee = colorize('├', '90');
+  const corner = colorize('└', '90');
+
+  console.log(`${title}:`);
+  console.log(`  ${tee}─ ${usageHeader}`);
+  console.log(`  ${pipe}${usageLine}`);
+  console.log(`  ${tee}─ ${commandsHeader}`);
+  for (const line of commandDetails) {
+    if (!line) {
+      console.log(`  ${pipe}`);
+      continue;
+    }
+    console.log(`  ${pipe}${line.slice(2)}`);
+  }
+  console.log(`  ${corner}─ ${colorize(`Try '${TOOL_NAME} doctor' for one-step repair + verification.`, '2')}`);
+}
+
 function usage(options = {}) {
   const { outsideGitRepo = false } = options;
 
@@ -155,21 +257,10 @@ VERSION
   ${runtimeVersion()}
 
 USAGE
-  $ ${TOOL_NAME} [COMMAND]
+  $ ${TOOL_NAME} <command> [options]
 
 COMMANDS
-  status             Show musafety CLI + service health without modifying files
-  setup              Install + repair guardrails in a git repo (supports --no-gitignore)
-  copy-prompt        Print the AI-ready setup checklist
-  protect            Manage protected branches (list/add/remove/set/reset)
-  sync               Check or sync agent branches with origin/<base>
-  install            Install templates/locks/hooks without running full setup (supports --no-gitignore)
-  fix                Repair broken or missing guardrail files/config (supports --no-gitignore)
-  scan               Report safety issues and exit non-zero on findings
-  print-agents-snippet  Print the AGENTS.md snippet template
-  release            Publish musafety from maintainer release repo
-  help               Show this help output
-  version            Print musafety version
+${commandCatalogLines().join('\n')}
 
 NOTES
   - Running ${TOOL_NAME} with no command defaults to: ${TOOL_NAME} status
@@ -189,6 +280,7 @@ function run(cmd, args, options = {}) {
     encoding: 'utf8',
     stdio: options.stdio || 'pipe',
     cwd: options.cwd,
+    timeout: options.timeout,
   });
 }
 
@@ -223,6 +315,12 @@ function toDestinationPath(relativeTemplatePath) {
     return relativeTemplatePath;
   }
   if (relativeTemplatePath.startsWith('githooks/')) {
+    return `.${relativeTemplatePath}`;
+  }
+  if (relativeTemplatePath.startsWith('codex/')) {
+    return `.${relativeTemplatePath}`;
+  }
+  if (relativeTemplatePath.startsWith('claude/')) {
     return `.${relativeTemplatePath}`;
   }
   throw new Error(`Unsupported template path: ${relativeTemplatePath}`);
@@ -379,6 +477,7 @@ function ensurePackageScripts(repoRoot, dryRun) {
     'agent:safety:setup': `${TOOL_NAME} setup`,
     'agent:safety:scan': `${TOOL_NAME} scan`,
     'agent:safety:fix': `${TOOL_NAME} fix`,
+    'agent:safety:doctor': `${TOOL_NAME} doctor`,
   };
 
   pkg.scripts = pkg.scripts || {};
@@ -552,6 +651,204 @@ function parseTargetFlag(rawArgs, defaultTarget = process.cwd()) {
   }
 
   return { target, args: remaining };
+}
+
+function parseReportArgs(rawArgs) {
+  const options = {
+    target: process.cwd(),
+    subcommand: '',
+    repo: '',
+    scorecardJson: '',
+    outputDir: '',
+    date: '',
+    dryRun: false,
+    json: false,
+  };
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
+    if (arg === '--target') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--target requires a path value');
+      options.target = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--repo') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--repo requires a value like github.com/owner/repo');
+      options.repo = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--scorecard-json') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--scorecard-json requires a path value');
+      options.scorecardJson = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--output-dir') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--output-dir requires a path value');
+      options.outputDir = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--date') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--date requires a YYYY-MM-DD value');
+      options.date = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+      continue;
+    }
+    if (arg === '--json') {
+      options.json = true;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+    if (!options.subcommand) {
+      options.subcommand = arg;
+      continue;
+    }
+    throw new Error(`Unexpected argument: ${arg}`);
+  }
+
+  return options;
+}
+
+function todayDateStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function inferGithubRepoFromOrigin(repoRoot) {
+  const rawOrigin = readGitConfig(repoRoot, 'remote.origin.url');
+  if (!rawOrigin) return '';
+
+  const httpsMatch = rawOrigin.match(/github\.com[:/](.+?)(?:\.git)?$/i);
+  if (!httpsMatch) return '';
+  const slug = (httpsMatch[1] || '').replace(/^\/+/, '').trim();
+  if (!slug || !slug.includes('/')) return '';
+  return `github.com/${slug}`;
+}
+
+function resolveScorecardRepo(repoRoot, explicitRepo) {
+  if (explicitRepo) {
+    return explicitRepo.trim();
+  }
+  const inferred = inferGithubRepoFromOrigin(repoRoot);
+  if (inferred) return inferred;
+  throw new Error(
+    'Unable to infer GitHub repo from origin remote. Pass --repo github.com/<owner>/<repo>.',
+  );
+}
+
+function runScorecardJson(repo) {
+  const result = run(SCORECARD_BIN, ['--repo', repo, '--format', 'json'], { allowFailure: true });
+  if (result.status !== 0) {
+    const details = (result.stderr || result.stdout || '').trim();
+    throw new Error(
+      `Failed to run scorecard CLI ('${SCORECARD_BIN} --repo ${repo} --format json').${details ? `\n${details}` : ''}`,
+    );
+  }
+
+  try {
+    return JSON.parse(result.stdout || '{}');
+  } catch (error) {
+    throw new Error(`Unable to parse scorecard JSON output: ${error.message}`);
+  }
+}
+
+function readScorecardJsonFile(filePath) {
+  const absolute = path.resolve(filePath);
+  if (!fs.existsSync(absolute)) {
+    throw new Error(`scorecard JSON file not found: ${absolute}`);
+  }
+  try {
+    return JSON.parse(fs.readFileSync(absolute, 'utf8'));
+  } catch (error) {
+    throw new Error(`Unable to parse scorecard JSON file: ${error.message}`);
+  }
+}
+
+function normalizeScorecardChecks(payload) {
+  const rawChecks = Array.isArray(payload?.checks) ? payload.checks : [];
+  return rawChecks.map((check) => {
+    const name = String(check?.name || 'Unknown');
+    const rawScore = Number(check?.score);
+    const score = Number.isFinite(rawScore) ? rawScore : 0;
+    return {
+      name,
+      score,
+      risk: SCORECARD_RISK_BY_CHECK[name] || 'Unknown',
+    };
+  });
+}
+
+function renderScorecardBaselineMarkdown({ repo, score, checks, capturedAt, scorecardVersion, reportDate }) {
+  const rows = checks
+    .map((item) => `| ${item.name} | ${item.score} | ${item.risk} |`)
+    .join('\n');
+
+  return [
+    '# OpenSSF Scorecard Baseline Report',
+    '',
+    `- **Repository:** \`${repo}\``,
+    '- **Source:** generated by `musafety report scorecard`',
+    `- **Captured at:** ${capturedAt}`,
+    `- **Scorecard version:** \`${scorecardVersion}\``,
+    `- **Overall score:** **${score} / 10**`,
+    '',
+    '## Check breakdown',
+    '',
+    '| Check | Score | Risk |',
+    '|---|---:|---|',
+    rows || '| (none) | 0 | Unknown |',
+    '',
+    `## Report date`,
+    '',
+    `- ${reportDate}`,
+    '',
+  ].join('\n');
+}
+
+function renderScorecardRemediationPlanMarkdown({ baselineRelativePath, checks }) {
+  const failing = checks.filter((item) => item.score < 10);
+  const failingRows = failing
+    .sort((a, b) => a.score - b.score || a.name.localeCompare(b.name))
+    .map((item) => `| ${item.name} | ${item.score} | ${item.risk} |`)
+    .join('\n');
+
+  return [
+    '# OpenSSF Scorecard Remediation Plan',
+    '',
+    `Based on baseline report: \`${baselineRelativePath}\`.`,
+    '',
+    '## Failing checks',
+    '',
+    '| Check | Score | Risk |',
+    '|---|---:|---|',
+    (failingRows || '| None | 10 | N/A |'),
+    '',
+    '## Priority order',
+    '',
+    '1. Fix **High** risk checks first (especially score 0 items).',
+    '2. Then close **Medium** risk checks with score < 10.',
+    '3. Finally address **Low** risk ecosystem/process checks.',
+    '',
+    '## Verification loop',
+    '',
+    '1. Run scorecard again.',
+    '2. Re-generate baseline + remediation files.',
+    '3. Compare score deltas and track improved checks.',
+    '',
+  ].join('\n');
 }
 
 function parseBranchList(rawValue) {
@@ -848,6 +1145,135 @@ function promptYesNo(question, defaultYes = true) {
     }
     process.stdout.write('Please answer with y or n.\n');
   }
+}
+
+function envFlagEnabled(name) {
+  const raw = process.env[name];
+  if (raw == null) return false;
+  return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
+}
+
+function parseAutoApproval(name) {
+  const raw = process.env[name];
+  if (raw == null) return null;
+  const normalized = String(raw).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function parseVersionString(version) {
+  const match = String(version || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  if (!match) return null;
+  return [
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2], 10),
+    Number.parseInt(match[3], 10),
+  ];
+}
+
+function isNewerVersion(latest, current) {
+  const latestParts = parseVersionString(latest);
+  const currentParts = parseVersionString(current);
+
+  if (!latestParts || !currentParts) {
+    return String(latest || '').trim() !== String(current || '').trim();
+  }
+
+  for (let index = 0; index < latestParts.length; index += 1) {
+    if (latestParts[index] > currentParts[index]) return true;
+    if (latestParts[index] < currentParts[index]) return false;
+  }
+  return false;
+}
+
+function parseNpmVersionOutput(stdout) {
+  const trimmed = String(stdout || '').trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return String(parsed[parsed.length - 1] || '').trim();
+    }
+    return String(parsed || '').trim();
+  } catch {
+    const firstLine = trimmed.split('\n').map((line) => line.trim()).find(Boolean);
+    return firstLine || '';
+  }
+}
+
+function checkForMusafetyUpdate() {
+  if (envFlagEnabled('MUSAFETY_SKIP_UPDATE_CHECK')) {
+    return { checked: false, reason: 'disabled' };
+  }
+
+  const forceCheck = envFlagEnabled('MUSAFETY_FORCE_UPDATE_CHECK');
+  if (!forceCheck && !isInteractiveTerminal()) {
+    return { checked: false, reason: 'non-interactive' };
+  }
+
+  const result = run(NPM_BIN, ['view', packageJson.name, 'version', '--json'], { timeout: 5000 });
+  if (result.status !== 0) {
+    return { checked: false, reason: 'lookup-failed' };
+  }
+
+  const latest = parseNpmVersionOutput(result.stdout);
+  if (!latest) {
+    return { checked: false, reason: 'invalid-latest-version' };
+  }
+
+  return {
+    checked: true,
+    current: packageJson.version,
+    latest,
+    updateAvailable: isNewerVersion(latest, packageJson.version),
+  };
+}
+
+function printUpdateAvailableBanner(current, latest) {
+  const title = colorize('UPDATE AVAILABLE', '1;33');
+  console.log(`[${TOOL_NAME}] ${title}`);
+  console.log(`[${TOOL_NAME}]   Current: ${current}`);
+  console.log(`[${TOOL_NAME}]   Latest : ${latest}`);
+  console.log(`[${TOOL_NAME}]   Command: ${NPM_BIN} i -g ${packageJson.name}@latest`);
+}
+
+function maybeSelfUpdateBeforeStatus() {
+  const check = checkForMusafetyUpdate();
+  if (!check.checked || !check.updateAvailable) {
+    return;
+  }
+
+  printUpdateAvailableBanner(check.current, check.latest);
+
+  const autoApproval = parseAutoApproval('MUSAFETY_AUTO_UPDATE_APPROVAL');
+  const interactive = isInteractiveTerminal();
+
+  if (!interactive && autoApproval == null) {
+    console.log(`[${TOOL_NAME}] Non-interactive shell; skipping auto-update prompt.`);
+    return;
+  }
+
+  const shouldUpdate = autoApproval != null
+    ? autoApproval
+    : promptYesNo(
+      `Update now? (${NPM_BIN} i -g ${packageJson.name}@latest)`,
+      true,
+    );
+
+  if (!shouldUpdate) {
+    console.log(`[${TOOL_NAME}] Skipped update.`);
+    return;
+  }
+
+  const installResult = run(NPM_BIN, ['i', '-g', `${packageJson.name}@latest`], { stdio: 'inherit' });
+  if (installResult.status !== 0) {
+    console.log(`[${TOOL_NAME}] ⚠️ Update failed. You can retry manually.`);
+    return;
+  }
+
+  console.log(`[${TOOL_NAME}] ✅ Updated to latest published version.`);
 }
 
 function promptYesNoStrict(question) {
@@ -1329,6 +1755,7 @@ function status(rawArgs) {
   }
   console.log(`[${TOOL_NAME}] Repo: ${scanResult.repoRoot}`);
   console.log(`[${TOOL_NAME}] Branch: ${scanResult.branch}`);
+  printToolLogsSummary();
 
   process.exitCode = 0;
 }
@@ -1382,6 +1809,150 @@ function scan(rawArgs) {
   const result = runScanInternal(options);
   printScanResult(result, options.json);
   setExitCodeFromScan(result);
+}
+
+function doctor(rawArgs) {
+  const options = parseCommonArgs(rawArgs, {
+    target: process.cwd(),
+    dropStaleLocks: true,
+    skipAgents: false,
+    skipPackageJson: false,
+    skipGitignore: false,
+    dryRun: false,
+    json: false,
+  });
+
+  const fixPayload = runFixInternal(options);
+  const scanResult = runScanInternal({ target: options.target, json: false });
+  const musafe = scanResult.errors === 0 && scanResult.warnings === 0;
+
+  if (options.json) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          repoRoot: scanResult.repoRoot,
+          branch: scanResult.branch,
+          musafe,
+          fix: {
+            operations: fixPayload.operations,
+            hookResult: fixPayload.hookResult,
+            dryRun: Boolean(options.dryRun),
+          },
+          scan: {
+            errors: scanResult.errors,
+            warnings: scanResult.warnings,
+            findings: scanResult.findings,
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    setExitCodeFromScan(scanResult);
+    return;
+  }
+
+  printOperations('Doctor/fix', fixPayload, options.dryRun);
+  printScanResult(scanResult, false);
+  if (musafe) {
+    console.log(`[${TOOL_NAME}] ✅ Repo is correctly musafe.`);
+  } else {
+    console.log(
+      `[${TOOL_NAME}] ⚠️ Repo is not fully musafe yet (${scanResult.errors} error(s), ${scanResult.warnings} warning(s)).`,
+    );
+  }
+  setExitCodeFromScan(scanResult);
+}
+
+function report(rawArgs) {
+  const options = parseReportArgs(rawArgs);
+  const subcommand = options.subcommand || 'help';
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    console.log(
+      `${TOOL_NAME} report commands:\n` +
+      `  ${TOOL_NAME} report scorecard [--target <path>] [--repo github.com/<owner>/<repo>] [--scorecard-json <file>] [--output-dir <path>] [--date YYYY-MM-DD] [--dry-run] [--json]\n` +
+      `\n` +
+      `Examples:\n` +
+      `  ${TOOL_NAME} report scorecard --repo github.com/recodeecom/multiagent-safety\n` +
+      `  ${TOOL_NAME} report scorecard --scorecard-json ./scorecard.json --date 2026-04-10`,
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  if (subcommand !== 'scorecard') {
+    throw new Error(`Unknown report subcommand: ${subcommand}`);
+  }
+
+  const repoRoot = resolveRepoRoot(options.target);
+  const repo = resolveScorecardRepo(repoRoot, options.repo);
+  const payload = options.scorecardJson
+    ? readScorecardJsonFile(options.scorecardJson)
+    : runScorecardJson(repo);
+
+  const reportDate = options.date || todayDateStamp();
+  const outputDir = path.resolve(options.outputDir || path.join(repoRoot, 'docs', 'reports'));
+  const baselinePath = path.join(outputDir, `openssf-scorecard-baseline-${reportDate}.md`);
+  const remediationPath = path.join(outputDir, `openssf-scorecard-remediation-plan-${reportDate}.md`);
+
+  const checks = normalizeScorecardChecks(payload);
+  const rawScore = Number(payload?.score);
+  const score = Number.isFinite(rawScore) ? rawScore : 0;
+  const capturedAt = String(payload?.date || new Date().toISOString());
+  const scorecardVersion = String(payload?.scorecard?.version || payload?.version || 'unknown');
+
+  const baselineMarkdown = renderScorecardBaselineMarkdown({
+    repo,
+    score,
+    checks,
+    capturedAt,
+    scorecardVersion,
+    reportDate,
+  });
+
+  const remediationMarkdown = renderScorecardRemediationPlanMarkdown({
+    baselineRelativePath: path.relative(repoRoot, baselinePath) || path.basename(baselinePath),
+    checks,
+  });
+
+  if (!options.dryRun) {
+    fs.mkdirSync(outputDir, { recursive: true });
+    fs.writeFileSync(baselinePath, baselineMarkdown, 'utf8');
+    fs.writeFileSync(remediationPath, remediationMarkdown, 'utf8');
+  }
+
+  if (options.json) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          repoRoot,
+          repo,
+          score,
+          checks: checks.length,
+          outputDir,
+          baselinePath,
+          remediationPath,
+          dryRun: Boolean(options.dryRun),
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    process.exitCode = 0;
+    return;
+  }
+
+  console.log(`[${TOOL_NAME}] Report target: ${repoRoot}`);
+  console.log(`[${TOOL_NAME}] Scorecard repo: ${repo}`);
+  console.log(`[${TOOL_NAME}] Score: ${score}/10`);
+  if (options.dryRun) {
+    console.log(`[${TOOL_NAME}] Dry run report paths:`);
+  } else {
+    console.log(`[${TOOL_NAME}] Generated reports:`);
+  }
+  console.log(`  - ${baselinePath}`);
+  console.log(`  - ${remediationPath}`);
+  process.exitCode = 0;
 }
 
 function setup(rawArgs) {
@@ -1502,6 +2073,11 @@ function printAgentsSnippet() {
 
 function copyPrompt() {
   process.stdout.write(AI_SETUP_PROMPT);
+  process.exitCode = 0;
+}
+
+function copyCommands() {
+  process.stdout.write(AI_SETUP_COMMANDS);
   process.exitCode = 0;
 }
 
@@ -1795,6 +2371,7 @@ function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
+    maybeSelfUpdateBeforeStatus();
     status([]);
     return;
   }
@@ -1822,8 +2399,23 @@ function main() {
     return;
   }
 
+  if (command === 'doctor') {
+    doctor(rest);
+    return;
+  }
+
+  if (command === 'report') {
+    report(rest);
+    return;
+  }
+
   if (command === 'copy-prompt') {
     copyPrompt();
+    return;
+  }
+
+  if (command === 'copy-commands') {
+    copyCommands();
     return;
   }
 
