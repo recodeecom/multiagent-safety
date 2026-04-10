@@ -26,6 +26,7 @@ This AGENTS.md is the top-level operating contract for this repository.
 - Reuse existing patterns before introducing new abstractions.
 - No new dependencies without explicit request.
 - Keep diffs small, reviewable, and reversible.
+- When work from an agent-created branch is merged into `main`, always bump the npm package version and include the updated `package.json` and lockfile in that merge.
 - Run lint/typecheck/tests/static analysis after changes.
 - Final reports must include: changed files, simplifications made, and remaining risks.
 
