@@ -6,6 +6,9 @@ const path = require('node:path');
 const cp = require('node:child_process');
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'multiagent-safety.js');
+const cliVersion = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf8'),
+).version;
 
 function runNode(args, cwd) {
   return cp.spawnSync('node', [cliPath, ...args], {
@@ -216,6 +219,40 @@ test('default invocation outside git repo reports inactive repo service', () => 
   assert.match(result.stdout, /\[musafety\] CLI:/);
   assert.match(result.stdout, /\[musafety\] Global services:/);
   assert.match(result.stdout, /Repo safety service: .*inactive/);
+});
+
+test('default invocation checks for update and can auto-approve latest install', () => {
+  const repoDir = initRepo();
+  const markerPath = path.join(repoDir, '.self-update-called');
+  const fakeNpm = createFakeNpmScript(`
+if [[ "$1" == "view" ]]; then
+  echo '"9.9.9"'
+  exit 0
+fi
+if [[ "$1" == "list" ]]; then
+  echo '{"dependencies":{"oh-my-codex":{},"@fission-ai/openspec":{}}}'
+  exit 0
+fi
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "musafety@latest" ]]; then
+  echo "updated" > "${markerPath}"
+  exit 0
+fi
+echo "unexpected npm args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv([], repoDir, {
+    MUSAFETY_NPM_BIN: fakeNpm,
+    MUSAFETY_FORCE_UPDATE_CHECK: '1',
+    MUSAFETY_AUTO_UPDATE_APPROVAL: 'yes',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /UPDATE AVAILABLE/);
+  assert.match(result.stdout, new RegExp(`Current:\\s+${cliVersion.replace(/\./g, '\\.')}`));
+  assert.match(result.stdout, /Latest\s+:\s+9\.9\.9/);
+  assert.match(result.stdout, /Updated to latest published version/);
+  assert.equal(fs.existsSync(markerPath), true, 'expected self-update command to run');
 });
 
 test('status --json returns cli, services, and repo summary', () => {

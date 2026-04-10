@@ -5,7 +5,7 @@ Thanks for contributing to `musafety`.
 ## Development setup
 
 ```bash
-npm install
+npm ci
 npm test
 node --check bin/multiagent-safety.js
 npm pack --dry-run

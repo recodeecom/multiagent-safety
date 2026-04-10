@@ -229,6 +229,7 @@ ${commandCatalogLines().join('\n')}
 
 NOTES
   - Running ${TOOL_NAME} with no command defaults to: ${TOOL_NAME} status
+  - Default status checks npm for newer musafety and prompts [Y/n] to update (default yes)
   - ${TOOL_NAME} setup asks for Y/N approval before global installs
   - ${LEGACY_NAME} command name is still supported as an alias`);
 
@@ -2042,6 +2043,7 @@ function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
+    maybeSelfUpdateBeforeStatus();
     status([]);
     return;
   }

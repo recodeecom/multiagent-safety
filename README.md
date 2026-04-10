@@ -149,6 +149,8 @@ bash scripts/openspec/init-plan-workspace.sh <plan-slug>   # optional OpenSpec p
 
 No command defaults to `musafety status` (non-mutating health/status view).
 `musafety status` reports CLI/runtime info, global OMX/OpenSpec service status, and repo safety service state.
+When run in an interactive terminal, default `musafety` checks npm for a newer version first
+and asks `[Y/n]` whether to update immediately (default is `Y`).
 
 - Interactive setup: prompts for Y/N approval before global OMX/OpenSpec install.
 - Interactive prompt is strict (`[y/n]`) and waits for explicit answer.
