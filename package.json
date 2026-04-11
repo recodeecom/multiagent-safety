@@ -1,10 +1,12 @@
 {
-  "name": "musafety",
+  "name": "guardex",
   "version": "5.0.0",
-  "description": "Simple setup command for hardened multi-agent collaboration safety in git repos.",
+  "description": "GuardeX: the Guardian T-Rex for your repo, with hardened multi-agent git guardrails.",
   "license": "MIT",
   "preferGlobal": true,
   "bin": {
+    "guardex": "bin/multiagent-safety.js",
+    "gx": "bin/multiagent-safety.js",
     "musafety": "bin/multiagent-safety.js",
     "multiagent-safety": "bin/multiagent-safety.js"
   },
@@ -20,13 +22,13 @@
     "agent:locks:release": "python3 ./scripts/agent-file-locks.py release",
     "agent:locks:status": "python3 ./scripts/agent-file-locks.py status",
     "agent:plan:init": "bash ./scripts/openspec/init-plan-workspace.sh",
-    "agent:protect:list": "musafety protect list",
-    "agent:branch:sync": "musafety sync",
-    "agent:branch:sync:check": "musafety sync --check",
-    "agent:safety:setup": "musafety setup",
-    "agent:safety:scan": "musafety scan",
-    "agent:safety:fix": "musafety fix",
-    "agent:safety:doctor": "musafety doctor"
+    "agent:protect:list": "gx protect list",
+    "agent:branch:sync": "gx sync",
+    "agent:branch:sync:check": "gx sync --check",
+    "agent:safety:setup": "gx setup",
+    "agent:safety:scan": "gx scan",
+    "agent:safety:fix": "gx fix",
+    "agent:safety:doctor": "gx doctor"
   },
   "engines": {
     "node": ">=18"
@@ -40,6 +42,7 @@
     "CONTRIBUTING.md"
   ],
   "keywords": [
+    "guardex",
     "multi-agent",
     "git-hooks",
     "branch-guard",

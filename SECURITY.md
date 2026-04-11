@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Only the latest published `musafety` version is supported for security fixes.
+Only the latest published `guardex` version is supported for security fixes.
 
 ## Reporting a Vulnerability
 

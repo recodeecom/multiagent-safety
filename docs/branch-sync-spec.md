@@ -1,4 +1,4 @@
-# musafety branch sync feature spec (pre-implementation)
+# GuardeX branch sync feature spec (pre-implementation)
 
 Status: draft
 Scope: CLI UX + behavior spec + test matrix for keeping `agent/*` branches synced with `origin/dev` safely.
@@ -21,7 +21,7 @@ Scope: CLI UX + behavior spec + test matrix for keeping `agent/*` branches synce
 ## 1) Sync current branch
 
 ```bash
-musafety sync [--target <path>] [--base <branch>] [--strategy rebase|merge] [--ff-only] [--dry-run]
+gx sync [--target <path>] [--base <branch>] [--strategy rebase|merge] [--ff-only] [--dry-run]
 ```
 
 Defaults:
@@ -41,7 +41,7 @@ Behavior:
 ## 2) Check-only mode
 
 ```bash
-musafety sync --check [--target <path>] [--base <branch>] [--json]
+gx sync --check [--target <path>] [--base <branch>] [--json]
 ```
 
 Outputs:
@@ -54,7 +54,7 @@ Outputs:
 ## 3) Multi-branch report (optional maintainer workflow)
 
 ```bash
-musafety sync --all-agent-branches [--target <path>] [--base <branch>] [--json]
+gx sync --all-agent-branches [--target <path>] [--base <branch>] [--json]
 ```
 
 Notes:
@@ -69,7 +69,7 @@ Example failure message:
 
 ```text
 [agent-sync-guard] Branch is behind origin/dev by 3 commit(s).
-Run: musafety sync --base dev
+Run: gx sync --base dev
 Then retry: bash scripts/agent-branch-finish.sh
 ```
 
@@ -129,12 +129,12 @@ or abort:
 Human mode example:
 
 ```text
-[musafety] Sync target: /repo
-[musafety] Branch: agent/executor/feature-x
-[musafety] Base: origin/dev
-[musafety] Behind before sync: 4
-[musafety] Strategy: rebase
-[musafety] Result: success (behind now: 0)
+[gx] Sync target: /repo
+[gx] Branch: agent/executor/feature-x
+[gx] Base: origin/dev
+[gx] Behind before sync: 4
+[gx] Strategy: rebase
+[gx] Result: success (behind now: 0)
 ```
 
 JSON mode shape:
@@ -167,7 +167,7 @@ JSON mode shape:
 1. **Happy path rebase**
    - create `dev` + `agent/*`
    - advance `dev`
-   - run `musafety sync`
+   - run `gx sync`
    - assert agent branch no longer behind.
 
 2. **Happy path merge strategy**
@@ -216,8 +216,8 @@ JSON mode shape:
 ## Rollout plan (recommended)
 
 Phase 1:
-- `musafety sync --check`
-- `musafety sync` for current branch
+- `gx sync --check`
+- `gx sync` for current branch
 - docs + test coverage
 
 Phase 2:

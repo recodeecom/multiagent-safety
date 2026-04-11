@@ -1,10 +1,10 @@
-# musafety (MULTI AGENTS SAFETY PROTCOL)
+# GuardeX — Guardian T-Rex for your repo
 
-[![npm version](https://img.shields.io/npm/v/musafety?color=cb3837&logo=npm)](https://www.npmjs.com/package/musafety)
+[![npm version](https://img.shields.io/npm/v/guardex?color=cb3837&logo=npm)](https://www.npmjs.com/package/guardex)
 [![CI](https://github.com/recodeecom/multiagent-safety/actions/workflows/ci.yml/badge.svg)](https://github.com/recodeecom/multiagent-safety/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/recodeecom/multiagent-safety/badge)](https://securityscorecards.dev/viewer/?uri=github.com/recodeecom/multiagent-safety)
 
-Simple, hardened multi-agent safety setup for any git repo.
+GuardeX is a short-command, hardened multi-agent safety setup for any git repo.
 
 > [!WARNING]
 > Not affiliated with OpenAI or Codex. Not an official tool.
@@ -15,11 +15,11 @@ If you run multiple agents at the same time, it is easy to get collisions:
 two agents editing the same files, unsafe deletes, broken branch flow, or
 confusing ownership.
 
-`musafety` adds strict guardrails so parallel agent work stays safe and predictable.
+`GuardeX` adds strict guardrails so parallel agent work stays safe and predictable.
 
 ![Multi-agent dashboard example](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/dashboard-multi-agent.png)
 
-The dashboard above is the exact kind of parallel workflow this tool is built for.
+The dashboard above is the exact kind of parallel workflow GuardeX is built for.
 
 It also includes an OpenSpec planning scaffold script so plan-mode workspaces
 can be bootstrapped consistently across repos.
@@ -27,10 +27,17 @@ can be bootstrapped consistently across repos.
 ## Install
 
 ```sh
-npm i -g musafety
+npm i -g guardex
 ```
 
-Package page: https://www.npmjs.com/package/musafety
+Package page: https://www.npmjs.com/package/guardex
+
+
+## Command aliases
+
+- Preferred short command: `gx`
+- Full command: `guardex`
+- Legacy aliases still supported: `musafety`, `multiagent-safety`
 
 ## Security + maintenance posture
 
@@ -48,7 +55,7 @@ Related tools:
 
 ```sh
 # inside your repo
-musafety setup
+gx setup
 ```
 
 That one command runs:
@@ -57,30 +64,30 @@ That one command runs:
 2. asks strict Y/N approval only if something is missing,
 3. installs guardrail scripts/hooks,
 4. repairs common safety problems,
-5. installs local Codex + Claude musafety helper skill files if missing,
+5. installs local Codex + Claude gx helper skill files if missing,
 6. scans and reports final status.
 
 ## Setup screenshot
 
-![musafety setup success screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/setup-success.svg)
+![gx setup success screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/setup-success.svg)
 
 ## Status logs screenshot
 
-![musafety service status screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/musafety-service-status.svg)
+![gx service status screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/guardex-service-status.svg)
 
 ## AI helper skills installed by setup/doctor
 
-`musafety setup` and `musafety doctor` also ensure these local helper files exist:
+`gx setup` and `gx doctor` also ensure these local helper files exist:
 
-- Codex skill: `.codex/skills/musafety/SKILL.md`
-- Claude command: `.claude/commands/musafety.md` (use as `/musafety`)
+- Codex skill: `.codex/skills/guardex/SKILL.md`
+- Claude command: `.claude/commands/guardex.md` (use as `/guardex`)
 
 ## Scorecard report generation
 
 Create/update markdown reports from OpenSSF Scorecard JSON:
 
 ```sh
-musafety report scorecard --repo github.com/recodeecom/multiagent-safety
+gx report scorecard --repo github.com/recodeecom/multiagent-safety
 ```
 
 By default this writes:
@@ -92,17 +99,17 @@ By default this writes:
 
 ### 1) Start isolated agent branch/worktree
 
-![musafety branch start protocol screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-branch-start.svg)
+![gx branch start protocol screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-branch-start.svg)
 
 ### 2) Lock claim + deletion guard protocol
 
-![musafety lock and delete guard screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-lock-guard.svg)
+![gx lock and delete guard screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-lock-guard.svg)
 
 ### 3) Multi-agent branch visibility (IDE/source control style)
 
-![musafety source control multi-agent screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-source-control.svg)
+![gx source control multi-agent screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-source-control.svg)
 
-#### Real VS Code Source Control example (after `musafety setup`)
+#### Real VS Code Source Control example (after `gx setup`)
 
 This is the exact layout you should expect in VS Code Source Control after setup
 and a few `agent-branch-start` runs:
@@ -165,37 +172,37 @@ codex-auth remove-login-hook
 ## Copy prompt for your AI (Codex / Claude)
 
 ```sh
-musafety copy-prompt
+gx copy-prompt
 ```
 
 This prints a ready-to-paste prompt.
 
 ### Prompt preview (SVG)
 
-![musafety copy prompt screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/copy-prompt-output.svg)
+![gx copy prompt screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/copy-prompt-output.svg)
 
 ### Commands-only copy mode
 
 If you only want executable commands (without explanatory text):
 
 ```sh
-musafety copy-commands
+gx copy-commands
 ```
 
 Example output:
 
 ```sh
-npm i -g musafety
-musafety setup
-musafety doctor
+npm i -g guardex
+gx setup
+gx doctor
 bash scripts/codex-agent.sh "task" "agent-name"
 bash scripts/agent-branch-start.sh "task" "agent-name"
 python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
 bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
 bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
-musafety protect add release staging
-musafety sync --check
-musafety sync
+gx protect add release staging
+gx sync --check
+gx sync
 ```
 
 Full checklist output:
@@ -204,10 +211,10 @@ Full checklist output:
 Use this exact checklist to setup multi-agent safety in this repository for Codex or Claude.
 
 1) Install (if missing):
-   npm i -g musafety
+   npm i -g guardex
 
 2) Bootstrap safety in this repo:
-   musafety setup
+   gx setup
 
    - Setup detects global OMX/OpenSpec first.
    - If one is missing and setup asks for approval, reply explicitly:
@@ -215,7 +222,7 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
      - n = skip global installs
 
 3) If setup reports warnings/errors, repair + re-check:
-   musafety doctor
+   gx doctor
 
 4) Confirm next safe agent workflow commands:
    bash scripts/codex-agent.sh "task" "agent-name"
@@ -227,36 +234,36 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
    bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
 
 6) Optional: protect extra branches:
-   musafety protect add release staging
+   gx protect add release staging
 
 7) Optional: sync your current agent branch with latest base branch:
-   musafety sync --check
-   musafety sync
+   gx sync --check
+   gx sync
 ```
 
 ## Basic commands
 
 ```sh
-musafety status [--target <path>] [--json]
-musafety setup [--target <path>] [--dry-run] [--yes-global-install|--no-global-install] [--no-gitignore]
-musafety doctor [--target <path>] [--dry-run] [--json] [--keep-stale-locks] [--no-gitignore]
-musafety copy-prompt
-musafety copy-commands
-musafety protect list [--target <path>]
-musafety protect add <branch...> [--target <path>]
-musafety protect remove <branch...> [--target <path>]
-musafety protect set <branch...> [--target <path>]
-musafety protect reset [--target <path>]
-musafety sync --check [--target <path>] [--base <branch>] [--json]
-musafety sync [--target <path>] [--base <branch>] [--strategy rebase|merge] [--ff-only]
-musafety report scorecard [--target <path>] [--repo github.com/<owner>/<repo>] [--scorecard-json <file>] [--output-dir <path>] [--date YYYY-MM-DD]
+gx status [--target <path>] [--json]
+gx setup [--target <path>] [--dry-run] [--yes-global-install|--no-global-install] [--no-gitignore]
+gx doctor [--target <path>] [--dry-run] [--json] [--keep-stale-locks] [--no-gitignore]
+gx copy-prompt
+gx copy-commands
+gx protect list [--target <path>]
+gx protect add <branch...> [--target <path>]
+gx protect remove <branch...> [--target <path>]
+gx protect set <branch...> [--target <path>]
+gx protect reset [--target <path>]
+gx sync --check [--target <path>] [--base <branch>] [--json]
+gx sync [--target <path>] [--base <branch>] [--strategy rebase|merge] [--ff-only]
+gx report scorecard [--target <path>] [--repo github.com/<owner>/<repo>] [--scorecard-json <file>] [--output-dir <path>] [--date YYYY-MM-DD]
 bash scripts/agent-worktree-prune.sh --base dev   # manual stale worktree cleanup
 bash scripts/openspec/init-plan-workspace.sh <plan-slug>   # optional OpenSpec plan scaffold
 ```
 
-No command defaults to `musafety status` (non-mutating health/status view).
-`musafety status` reports CLI/runtime info, global OMX/OpenSpec service status, and repo safety service state.
-When run in an interactive terminal, default `musafety` checks npm for a newer version first
+No command defaults to `gx status` (non-mutating health/status view).
+`gx status` reports CLI/runtime info, global OMX/OpenSpec service status, and repo safety service state.
+When run in an interactive terminal, default `GuardeX` checks npm for a newer version first
 and asks `[y/N]` whether to update immediately (default is `N`).
 
 - Interactive setup: prompts for Y/N approval before global OMX/OpenSpec install.
@@ -266,10 +273,10 @@ and asks `[y/N]` whether to update immediately (default is `N`).
 ## Advanced commands
 
 ```sh
-musafety install [--target <path>] [--force] [--skip-agents] [--skip-package-json] [--no-gitignore] [--dry-run]
-musafety fix [--target <path>] [--dry-run] [--keep-stale-locks] [--no-gitignore]
-musafety scan [--target <path>] [--json]
-musafety report help
+gx install [--target <path>] [--force] [--skip-agents] [--skip-package-json] [--no-gitignore] [--dry-run]
+gx fix [--target <path>] [--dry-run] [--keep-stale-locks] [--no-gitignore]
+gx scan [--target <path>] [--json]
+gx report help
 ```
 
 ## Keep agent branches synced with your base branch
@@ -277,13 +284,13 @@ musafety report help
 Use sync checks before finishing agent branches:
 
 ```sh
-musafety sync --check
-musafety sync
+gx sync --check
+gx sync
 ```
 
 Defaults:
 
-- `musafety sync` base branch: `dev` (or `multiagent.baseBranch`)
+- `gx sync` base branch: `dev` (or `multiagent.baseBranch`)
 - strategy: `rebase` (or `multiagent.sync.strategy`)
 
 `agent-branch-start.sh` and `agent-branch-finish.sh` resolve base branch in this order:
@@ -296,11 +303,11 @@ Defaults:
 Useful variants:
 
 ```sh
-musafety sync --strategy merge
-musafety sync --all-agent-branches --check
+gx sync --strategy merge
+gx sync --all-agent-branches --check
 ```
 
-By default, `agent-branch-finish.sh` also blocks finishing when your branch is behind `origin/<base>` and points to `musafety sync`.
+By default, `agent-branch-finish.sh` also blocks finishing when your branch is behind `origin/<base>` and points to `gx sync`.
 
 Optional pre-commit behind-threshold gate (off by default):
 
@@ -322,11 +329,11 @@ Default protected branches are:
 You can manage additional protected branches via CLI:
 
 ```sh
-musafety protect list
-musafety protect add release staging
-musafety protect remove dev
-musafety protect set main release hotfix
-musafety protect reset
+gx protect list
+gx protect add release staging
+gx protect remove dev
+gx protect set main release hotfix
+gx protect reset
 ```
 
 Configuration is stored in local git config key:
@@ -337,7 +344,7 @@ multiagent.protectedBranches
 
 ## What is protected
 
-- direct commits to protected branches (defaults: `dev`, `main`, `master`; configurable via `musafety protect ...`)
+- direct commits to protected branches (defaults: `dev`, `main`, `master`; configurable via `gx protect ...`)
 - protected-branch commits are blocked regardless of commit client (including VS Code Source Control)
 - Codex-session commits on non-`agent/*` branches are blocked by default (`multiagent.codexRequireAgentBranch=true`)
 - overlapping file ownership between agents
@@ -345,7 +352,7 @@ multiagent.protectedBranches
 - risky stale/missing lock state
 - accidental loss of critical guardrail files
 - in-place branch bootstrap requires explicit opt-in (`--in-place --allow-in-place`)
-- setup also writes a managed `.gitignore` block so generated musafety scripts/hooks stay out of normal git status noise by default
+- setup also writes a managed `.gitignore` block so generated gx scripts/hooks stay out of normal git status noise by default
   - includes `oh-my-codex/` by default to keep local OMX source clones out of repo status
   - pass `--no-gitignore` if you want to keep tracking these files in git
 
@@ -360,8 +367,8 @@ scripts/agent-file-locks.py
 scripts/install-agent-git-hooks.sh
 scripts/openspec/init-plan-workspace.sh
 .githooks/pre-commit
-.codex/skills/musafety/SKILL.md
-.claude/commands/musafety.md
+.codex/skills/guardex/SKILL.md
+.claude/commands/guardex.md
 .omx/state/agent-file-locks.json
 ```
 
@@ -387,7 +394,7 @@ npm pack --dry-run
 ### v0.4.5
 
 - Added optional pre-commit behind-threshold sync gate (`multiagent.sync.requireBeforeCommit`, `multiagent.sync.maxBehindCommits`).
-- Added `musafety sync` workflow (`--check`, sync strategies, report mode).
+- Added `gx sync` workflow (`--check`, sync strategies, report mode).
 - `agent-branch-finish.sh` now blocks finishing when source branch is behind `origin/<base>` (config-aware).
 
 ### v0.4.4

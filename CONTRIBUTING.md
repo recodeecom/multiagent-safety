@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to `musafety`.
+Thanks for contributing to `GuardeX`.
 
 ## Development setup
 

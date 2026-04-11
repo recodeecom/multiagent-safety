@@ -121,7 +121,7 @@ MSG
       cat >&2 <<MSG
 [agent-sync-guard] Commit blocked: '${branch}' is behind origin/${base_branch} by ${behind_count} commit(s) (max allowed: ${max_behind}).
 Run:
-  musafety sync --base ${base_branch}
+  gx sync --base ${base_branch}
 Or relax threshold:
   git config multiagent.sync.maxBehindCommits <n>
 MSG

@@ -197,8 +197,8 @@ test('setup provisions workflow files and repo config', () => {
     'scripts/install-agent-git-hooks.sh',
     'scripts/openspec/init-plan-workspace.sh',
     '.githooks/pre-commit',
-    '.codex/skills/musafety/SKILL.md',
-    '.claude/commands/musafety.md',
+    '.codex/skills/guardex/SKILL.md',
+    '.claude/commands/guardex.md',
     '.omx/state/agent-file-locks.json',
     '.gitignore',
     'AGENTS.md',
@@ -212,10 +212,10 @@ test('setup provisions workflow files and repo config', () => {
   assert.equal(packageJson.scripts['agent:codex'], 'bash ./scripts/codex-agent.sh');
   assert.equal(packageJson.scripts['agent:branch:start'], 'bash ./scripts/agent-branch-start.sh');
   assert.equal(packageJson.scripts['agent:plan:init'], 'bash ./scripts/openspec/init-plan-workspace.sh');
-  assert.equal(packageJson.scripts['agent:protect:list'], 'musafety protect list');
-  assert.equal(packageJson.scripts['agent:branch:sync'], 'musafety sync');
-  assert.equal(packageJson.scripts['agent:branch:sync:check'], 'musafety sync --check');
-  assert.equal(packageJson.scripts['agent:safety:setup'], 'musafety setup');
+  assert.equal(packageJson.scripts['agent:protect:list'], 'gx protect list');
+  assert.equal(packageJson.scripts['agent:branch:sync'], 'gx sync');
+  assert.equal(packageJson.scripts['agent:branch:sync:check'], 'gx sync --check');
+  assert.equal(packageJson.scripts['agent:safety:setup'], 'gx setup');
   assert.equal(packageJson.scripts['agent:cleanup'], 'bash ./scripts/agent-worktree-prune.sh --base dev');
 
   const agentsContent = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
@@ -228,8 +228,8 @@ test('setup provisions workflow files and repo config', () => {
   assert.match(gitignoreContent, /scripts\/agent-file-locks\.py/);
   assert.match(gitignoreContent, /\.githooks\/pre-commit/);
   assert.match(gitignoreContent, /oh-my-codex\//);
-  assert.match(gitignoreContent, /\.codex\/skills\/musafety\/SKILL\.md/);
-  assert.match(gitignoreContent, /\.claude\/commands\/musafety\.md/);
+  assert.match(gitignoreContent, /\.codex\/skills\/guardex\/SKILL\.md/);
+  assert.match(gitignoreContent, /\.claude\/commands\/guardex\.md/);
   assert.match(gitignoreContent, /\.omx\/state\/agent-file-locks\.json/);
   assert.match(gitignoreContent, /# multiagent-safety:END/);
 
@@ -327,7 +327,7 @@ test('setup agent-branch-start defaults base to current branch and stores per-br
 
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -358,7 +358,7 @@ test('agent-branch-start moves protected-branch local changes into the new agent
 
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -397,7 +397,7 @@ test('agent-branch-finish infers base from source branch metadata and updates ma
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -436,21 +436,21 @@ test('default invocation runs non-mutating status output', () => {
 
   const result = runNode([], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /\[musafety\] CLI:/);
-  assert.match(result.stdout, /\[musafety\] Global services:/);
-  assert.match(result.stdout, /\[musafety\] Repo safety service:/);
+  assert.match(result.stdout, /\[guardex\] CLI:/);
+  assert.match(result.stdout, /\[guardex\] Global services:/);
+  assert.match(result.stdout, /\[guardex\] Repo safety service:/);
   assert.match(result.stdout, /●/);
-  const serviceIdx = result.stdout.indexOf('[musafety] Repo safety service:');
-  const repoIdx = result.stdout.indexOf('[musafety] Repo:');
-  const branchIdx = result.stdout.indexOf('[musafety] Branch:');
-  const toolsIdx = result.stdout.indexOf('musafety-tools logs:');
+  const serviceIdx = result.stdout.indexOf('[guardex] Repo safety service:');
+  const repoIdx = result.stdout.indexOf('[guardex] Repo:');
+  const branchIdx = result.stdout.indexOf('[guardex] Branch:');
+  const toolsIdx = result.stdout.indexOf('guardex-tools logs:');
   assert.equal(serviceIdx >= 0, true);
   assert.equal(repoIdx > serviceIdx, true);
   assert.equal(branchIdx > repoIdx, true);
   assert.equal(toolsIdx > branchIdx, true);
-  assert.match(result.stdout, /musafety-tools logs:/);
-  assert.match(result.stdout, /USAGE\n\s+\$ musafety <command> \[options\]/);
-  assert.match(result.stdout, /COMMANDS\n\s+status\s+Show musafety CLI \+ service health without modifying files/);
+  assert.match(result.stdout, /guardex-tools logs:/);
+  assert.match(result.stdout, /USAGE\n\s+\$ gx <command> \[options\]/);
+  assert.match(result.stdout, /COMMANDS\n\s+status\s+Show GuardeX CLI \+ service health without modifying files/);
   assert.equal(fs.existsSync(path.join(repoDir, '.githooks', 'pre-commit')), false);
 });
 
@@ -459,8 +459,8 @@ test('default invocation outside git repo reports inactive repo service', () => 
 
   const result = runNode([], outsideDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /\[musafety\] CLI:/);
-  assert.match(result.stdout, /\[musafety\] Global services:/);
+  assert.match(result.stdout, /\[guardex\] CLI:/);
+  assert.match(result.stdout, /\[guardex\] Global services:/);
   assert.match(result.stdout, /Repo safety service: .*inactive/);
 });
 
@@ -476,7 +476,7 @@ if [[ "$1" == "list" ]]; then
   echo '{"dependencies":{"oh-my-codex":{},"@fission-ai/openspec":{}}}'
   exit 0
 fi
-if [[ "$1" == "i" && "$2" == "-g" && "$3" == "musafety@latest" ]]; then
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "guardex@latest" ]]; then
   echo "updated" > "${markerPath}"
   exit 0
 fi
@@ -513,7 +513,7 @@ test('status --json returns cli, services, and repo summary', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const parsed = JSON.parse(result.stdout);
-  assert.equal(parsed.cli.name, 'musafety');
+  assert.equal(parsed.cli.name, 'guardex');
   assert.equal(typeof parsed.cli.version, 'string');
   assert.equal(Array.isArray(parsed.services), true);
   assert.equal(parsed.repo.inGitRepo, true);
@@ -723,7 +723,7 @@ test('sync command rebases current agent branch onto latest origin/dev', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr);
@@ -769,7 +769,7 @@ test('pre-commit sync gate blocks agent commits when branch is too far behind ba
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr);
@@ -805,7 +805,7 @@ test('pre-commit sync gate blocks agent commits when branch is too far behind ba
   const commitAttempt = runCmd('git', ['commit', '-m', 'should block due to behind gate'], repoDir);
   assert.equal(commitAttempt.status, 1, commitAttempt.stderr || commitAttempt.stdout);
   assert.match(commitAttempt.stderr, /agent-sync-guard/);
-  assert.match(commitAttempt.stderr, /musafety sync --base dev/);
+  assert.match(commitAttempt.stderr, /gx sync --base dev/);
 });
 
 test('pre-commit sync gate honors maxBehindCommits threshold', () => {
@@ -817,7 +817,7 @@ test('pre-commit sync gate honors maxBehindCommits threshold', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr);
@@ -863,7 +863,7 @@ test('agent-branch-finish auto-syncs source branch when behind origin/dev', () =
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr);
@@ -910,7 +910,7 @@ test('agent-branch-finish pr mode continues cleanup when gh merge only fails loc
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['add', '.'], repoDir);
   assert.equal(result.status, 0, result.stderr);
-  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
   });
   assert.equal(result.status, 0, result.stderr);
@@ -1168,9 +1168,9 @@ test('copy-prompt outputs AI setup instructions', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-prompt'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /npm i -g musafety/);
+  assert.match(result.stdout, /npm i -g guardex/);
   assert.match(result.stdout, /npm i -g oh-my-codex @fission-ai\/openspec/);
-  assert.match(result.stdout, /musafety setup/);
+  assert.match(result.stdout, /gx setup/);
   assert.match(result.stdout, /Codex or Claude/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
 });
@@ -1179,11 +1179,11 @@ test('copy-commands outputs command-only checklist', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-commands'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /^npm i -g musafety/m);
-  assert.match(result.stdout, /musafety setup/);
-  assert.match(result.stdout, /musafety doctor/);
+  assert.match(result.stdout, /^npm i -g guardex/m);
+  assert.match(result.stdout, /gx setup/);
+  assert.match(result.stdout, /gx doctor/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
-  assert.match(result.stdout, /musafety sync --check/);
+  assert.match(result.stdout, /gx sync --check/);
   assert.doesNotMatch(result.stdout, /Use this exact checklist/);
 });
 

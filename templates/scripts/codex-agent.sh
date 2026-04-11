@@ -66,7 +66,7 @@ if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
 fi
 
 if [[ ! -x "scripts/agent-branch-start.sh" ]]; then
-  echo "[codex-agent] Missing scripts/agent-branch-start.sh. Run: musafety setup" >&2
+  echo "[codex-agent] Missing scripts/agent-branch-start.sh. Run: gx setup" >&2
   exit 1
 fi
 

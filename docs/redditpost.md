@@ -1,16 +1,16 @@
-# Reddit post drafts for musafety
+# Reddit post drafts for GuardeX
 
 GitHub: https://github.com/recodeecom/multiagent-safety
 
 ## Draft 1 (general)
 
 **Title:**  
-I made an npm tool to keep multi-agent coding safe in Git repos (musafety)
+I made an npm tool to keep multi-agent coding safe in Git repos (GuardeX)
 
 **Body:**  
 Hey everyone 👋
 
-I built **musafety**, a small npm CLI to make multi-agent coding workflows safer and less chaotic in any Git repo.
+I built **GuardeX**, a small npm CLI to make multi-agent coding workflows safer and less chaotic in any Git repo.
 
 If you run multiple agents (or teammates) in parallel, this helps prevent:
 
@@ -22,40 +22,40 @@ If you run multiple agents (or teammates) in parallel, this helps prevent:
 Quick start:
 
 ```bash
-npm i -g musafety
-musafety setup
+npm i -g gx
+gx setup
 ```
 
 Useful commands:
 
 ```bash
-musafety protect list
-musafety protect add release staging
+gx protect list
+gx protect add release staging
 ```
 
 Links:
 
 - GitHub: https://github.com/recodeecom/multiagent-safety
-- npm: https://www.npmjs.com/package/musafety
+- npm: https://www.npmjs.com/package/guardex
 
 If you try it, I’d love feedback on team workflows and edge cases.
 
 ## Draft 2 (short)
 
 **Title:**  
-musafety: open-source npm CLI for safer multi-agent Git workflows
+GuardeX: open-source npm CLI for safer multi-agent Git workflows
 
 **Body:**  
-I open-sourced **musafety** to add guardrails for parallel coding agents in Git repos.
+I open-sourced **GuardeX** to add guardrails for parallel coding agents in Git repos.
 
 It blocks risky protected-branch commits, enforces per-file ownership locks for agent branches, and includes workflow scripts for branch start/finish.
 
 Install:
 
 ```bash
-npm i -g musafety
-musafety setup
+npm i -g gx
+gx setup
 ```
 
 GitHub: https://github.com/recodeecom/multiagent-safety  
-npm: https://www.npmjs.com/package/musafety
+npm: https://www.npmjs.com/package/guardex

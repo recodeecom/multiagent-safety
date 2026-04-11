@@ -4,24 +4,24 @@
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="36">
     <text x="36" y="72">
-      <tspan fill="#22C55E">deadpool@recodee:~</tspan><tspan fill="#F472B6">/YOUREPO</tspan><tspan fill="#22C55E">$ musafety</tspan>
+      <tspan fill="#22C55E">deadpool@recodee:~</tspan><tspan fill="#F472B6">/YOUREPO</tspan><tspan fill="#22C55E">$ gx</tspan>
     </text>
   </g>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="34" fill="#F9FAFB">
-    <text x="36" y="126">[musafety] CLI: musafety/0.4.7 linux-x64 node-v22.22.0</text>
-    <text x="36" y="170">[musafety] Global services:</text>
+    <text x="36" y="126">[guardex] CLI: guardex/0.4.7 linux-x64 node-v22.22.0</text>
+    <text x="36" y="170">[guardex] Global services:</text>
     <text x="72" y="214">- ● oh-my-codex: active</text>
     <text x="72" y="258">- ● @fission-ai/openspec: active</text>
-    <text x="36" y="302">[musafety] Repo safety service: ● active.</text>
-    <text x="36" y="346">[musafety] Repo: /home/deadpool/YOUREPO</text>
-    <text x="36" y="390">[musafety] Branch: ksskkfb02</text>
-    <text x="36" y="434" fill="#06B6D4">musafety-tools logs:</text>
+    <text x="36" y="302">[guardex] Repo safety service: ● active.</text>
+    <text x="36" y="346">[guardex] Repo: /home/deadpool/YOUREPO</text>
+    <text x="36" y="390">[guardex] Branch: ksskkfb02</text>
+    <text x="36" y="434" fill="#06B6D4">guardex-tools logs:</text>
 
     <text x="72" y="478">├─ USAGE</text>
-    <text x="72" y="522">│    $ musafety &lt;command&gt; [options]</text>
+    <text x="72" y="522">│    $ gx &lt;command&gt; [options]</text>
     <text x="72" y="566">├─ COMMANDS</text>
-    <text x="72" y="610">│  status                Show musafety CLI + service health without modifying files</text>
+    <text x="72" y="610">│  status                Show guardex CLI + service health without modifying files</text>
     <text x="72" y="654">│  setup                 Install + repair guardrails in a git repo (supports --no-gitignore)</text>
     <text x="72" y="698">│  doctor                Repair safety setup drift, then verify repo safety</text>
     <text x="72" y="742">│  copy-prompt           Print the AI-ready setup checklist</text>
@@ -31,9 +31,9 @@
     <text x="72" y="918">│  fix                   Repair broken or missing guardrail files/config (supports --no-gitignore)</text>
     <text x="72" y="962">│  scan                  Report safety issues and exit non-zero on findings</text>
     <text x="72" y="1006">│  print-agents-snippet  Print the AGENTS.md snippet template</text>
-    <text x="72" y="1050">│  release               Publish musafety from maintainer release repo</text>
+    <text x="72" y="1050">│  release               Publish guardex from maintainer release repo</text>
     <text x="72" y="1094">│  help                  Show this help output</text>
-    <text x="72" y="1138">│  version               Print musafety version</text>
-    <text x="72" y="1182">└─ Try 'musafety doctor' for one-step repair + verification.</text>
+    <text x="72" y="1138">│  version               Print guardex version</text>
+    <text x="72" y="1182">└─ Try 'guardex doctor' for one-step repair + verification.</text>
   </g>
 </svg>

@@ -114,5 +114,5 @@ Role workspace for \`${role}\`.
 "
 done
 
-echo "[musafety] OpenSpec plan workspace ready: ${PLAN_DIR}"
-echo "[musafety] Roles: ${ROLES[*]}"
+echo "[guardex] OpenSpec plan workspace ready: ${PLAN_DIR}"
+echo "[guardex] Roles: ${ROLES[*]}"

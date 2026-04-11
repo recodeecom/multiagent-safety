@@ -7,8 +7,9 @@ const cp = require('node:child_process');
 const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
-const TOOL_NAME = 'musafety';
-const LEGACY_NAME = 'multiagent-safety';
+const TOOL_NAME = 'guardex';
+const SHORT_TOOL_NAME = 'gx';
+const LEGACY_NAMES = ['musafety', 'multiagent-safety'];
 const GLOBAL_TOOLCHAIN_PACKAGES = ['oh-my-codex', '@fission-ai/openspec'];
 const MAINTAINER_RELEASE_REPO = path.resolve(
   process.env.MUSAFETY_RELEASE_REPO || '/tmp/multiagent-safety',
@@ -33,8 +34,8 @@ const TEMPLATE_FILES = [
   'scripts/install-agent-git-hooks.sh',
   'scripts/openspec/init-plan-workspace.sh',
   'githooks/pre-commit',
-  'codex/skills/musafety/SKILL.md',
-  'claude/commands/musafety.md',
+  'codex/skills/guardex/SKILL.md',
+  'claude/commands/guardex.md',
 ];
 
 const EXECUTABLE_RELATIVE_PATHS = new Set([
@@ -70,8 +71,8 @@ const MANAGED_GITIGNORE_PATHS = [
   'scripts/openspec/init-plan-workspace.sh',
   '.githooks/pre-commit',
   'oh-my-codex/',
-  '.codex/skills/musafety/SKILL.md',
-  '.claude/commands/musafety.md',
+  '.codex/skills/guardex/SKILL.md',
+  '.claude/commands/guardex.md',
   LOCK_FILE_RELATIVE,
 ];
 const COMMAND_TYPO_ALIASES = new Map([
@@ -102,7 +103,7 @@ const SUGGESTIBLE_COMMANDS = [
   'version',
 ];
 const CLI_COMMAND_DESCRIPTIONS = [
-  ['status', 'Show musafety CLI + service health without modifying files'],
+  ['status', 'Show GuardeX CLI + service health without modifying files'],
   ['setup', 'Install + repair guardrails in a git repo (supports --no-gitignore)'],
   ['doctor', 'Repair safety setup drift, then verify repo safety'],
   ['report', 'Generate security/safety reports (for example: OpenSSF scorecard)'],
@@ -114,18 +115,18 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['fix', 'Repair broken or missing guardrail files/config (supports --no-gitignore)'],
   ['scan', 'Report safety issues and exit non-zero on findings'],
   ['print-agents-snippet', 'Print the AGENTS.md snippet template'],
-  ['release', 'Publish musafety from maintainer release repo'],
+  ['release', 'Publish GuardeX from maintainer release repo'],
   ['help', 'Show this help output'],
-  ['version', 'Print musafety version'],
+  ['version', 'Print GuardeX version'],
 ];
 
-const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in this repository for Codex or Claude.
+const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-Rex for your repo) in this repository for Codex or Claude.
 
 1) Install (if missing):
-   npm i -g musafety
+   npm i -g guardex
 
 2) Bootstrap safety in this repo:
-   musafety setup
+   gx setup
 
    - Setup detects global OMX/OpenSpec first.
    - If one is missing and setup asks for approval, reply explicitly:
@@ -133,7 +134,7 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in
      - n = skip global installs
 
 3) If setup reports warnings/errors, repair + re-check:
-   musafety doctor
+   gx doctor
 
 4) Confirm next safe agent workflow commands:
    bash scripts/codex-agent.sh "task" "agent-name"
@@ -145,24 +146,24 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in
    bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
 
 6) Optional: protect extra branches:
-   musafety protect add release staging
+   gx protect add release staging
 
 7) Optional: sync your current agent branch with latest base branch:
-   musafety sync --check
-   musafety sync
+   gx sync --check
+   gx sync
 `;
 
-const AI_SETUP_COMMANDS = `npm i -g musafety
-musafety setup
-musafety doctor
+const AI_SETUP_COMMANDS = `npm i -g guardex
+gx setup
+gx doctor
 bash scripts/codex-agent.sh "task" "agent-name"
 bash scripts/agent-branch-start.sh "task" "agent-name"
 python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
 bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
 bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
-musafety protect add release staging
-musafety sync --check
-musafety sync
+gx protect add release staging
+gx sync --check
+gx sync
 `;
 
 const SCORECARD_RISK_BY_CHECK = {
@@ -219,11 +220,11 @@ function commandCatalogLines(indent = '  ') {
 }
 
 function printToolLogsSummary() {
-  const usageLine = `    $ ${TOOL_NAME} <command> [options]`;
+  const usageLine = `    $ ${SHORT_TOOL_NAME} <command> [options]`;
   const commandDetails = commandCatalogLines('    ');
 
   if (!supportsAnsiColors()) {
-    console.log('musafety-tools logs:');
+    console.log(`${TOOL_NAME}-tools logs:`);
     console.log('  USAGE');
     console.log(usageLine);
     console.log('  COMMANDS');
@@ -233,7 +234,7 @@ function printToolLogsSummary() {
     return;
   }
 
-  const title = colorize('musafety-tools logs', '1;36');
+  const title = colorize(`${TOOL_NAME}-tools logs`, '1;36');
   const usageHeader = colorize('USAGE', '1');
   const commandsHeader = colorize('COMMANDS', '1');
   const pipe = colorize('│', '90');
@@ -263,15 +264,16 @@ VERSION
   ${runtimeVersion()}
 
 USAGE
-  $ ${TOOL_NAME} <command> [options]
+  $ ${SHORT_TOOL_NAME} <command> [options]
 
 COMMANDS
 ${commandCatalogLines().join('\n')}
 
 NOTES
-  - Running ${TOOL_NAME} with no command defaults to: ${TOOL_NAME} status
+  - Running ${TOOL_NAME} with no command defaults to: ${SHORT_TOOL_NAME} status
+  - Short alias: ${SHORT_TOOL_NAME}
   - ${TOOL_NAME} setup asks for Y/N approval before global installs
-  - ${LEGACY_NAME} command name is still supported as an alias`);
+  - Legacy command aliases are still supported: ${LEGACY_NAMES.join(', ')}`);
 
   if (outsideGitRepo) {
     console.log(`
@@ -478,13 +480,13 @@ function ensurePackageScripts(repoRoot, dryRun) {
     'agent:locks:release': 'python3 ./scripts/agent-file-locks.py release',
     'agent:locks:status': 'python3 ./scripts/agent-file-locks.py status',
     'agent:plan:init': 'bash ./scripts/openspec/init-plan-workspace.sh',
-    'agent:protect:list': `${TOOL_NAME} protect list`,
-    'agent:branch:sync': `${TOOL_NAME} sync`,
-    'agent:branch:sync:check': `${TOOL_NAME} sync --check`,
-    'agent:safety:setup': `${TOOL_NAME} setup`,
-    'agent:safety:scan': `${TOOL_NAME} scan`,
-    'agent:safety:fix': `${TOOL_NAME} fix`,
-    'agent:safety:doctor': `${TOOL_NAME} doctor`,
+    'agent:protect:list': `${SHORT_TOOL_NAME} protect list`,
+    'agent:branch:sync': `${SHORT_TOOL_NAME} sync`,
+    'agent:branch:sync:check': `${SHORT_TOOL_NAME} sync --check`,
+    'agent:safety:setup': `${SHORT_TOOL_NAME} setup`,
+    'agent:safety:scan': `${SHORT_TOOL_NAME} scan`,
+    'agent:safety:fix': `${SHORT_TOOL_NAME} fix`,
+    'agent:safety:doctor': `${SHORT_TOOL_NAME} doctor`,
   };
 
   pkg.scripts = pkg.scripts || {};
@@ -547,7 +549,7 @@ function ensureManagedGitignore(repoRoot, dryRun) {
     if (!dryRun) {
       fs.writeFileSync(gitignorePath, `${managedBlock}\n`, 'utf8');
     }
-    return { status: 'created', file: '.gitignore', note: 'added musafety-managed entries' };
+    return { status: 'created', file: '.gitignore', note: 'added guardex-managed entries' };
   }
 
   const existing = fs.readFileSync(gitignorePath, 'utf8');
@@ -559,14 +561,14 @@ function ensureManagedGitignore(repoRoot, dryRun) {
     if (!dryRun) {
       fs.writeFileSync(gitignorePath, next, 'utf8');
     }
-    return { status: 'updated', file: '.gitignore', note: 'refreshed musafety-managed entries' };
+    return { status: 'updated', file: '.gitignore', note: 'refreshed guardex-managed entries' };
   }
 
   const separator = existing.endsWith('\n') ? '\n' : '\n\n';
   if (!dryRun) {
     fs.writeFileSync(gitignorePath, `${existing}${separator}${managedBlock}\n`, 'utf8');
   }
-  return { status: 'updated', file: '.gitignore', note: 'appended musafety-managed entries' };
+  return { status: 'updated', file: '.gitignore', note: 'appended guardex-managed entries' };
 }
 
 function configureHooks(repoRoot, dryRun) {
@@ -807,7 +809,7 @@ function renderScorecardBaselineMarkdown({ repo, score, checks, capturedAt, scor
     '# OpenSSF Scorecard Baseline Report',
     '',
     `- **Repository:** \`${repo}\``,
-    '- **Source:** generated by `musafety report scorecard`',
+    '- **Source:** generated by `gx report scorecard`',
     `- **Captured at:** ${capturedAt}`,
     `- **Scorecard version:** \`${scorecardVersion}\``,
     `- **Overall score:** **${score} / 10**`,
@@ -2018,7 +2020,7 @@ function setup(rawArgs) {
 
   if (scanResult.errors === 0 && scanResult.warnings === 0) {
     console.log(`[${TOOL_NAME}] ✅ Setup complete.`);
-    console.log(`[${TOOL_NAME}] Copy AI setup prompt with: ${TOOL_NAME} copy-prompt`);
+    console.log(`[${TOOL_NAME}] Copy AI setup prompt with: ${SHORT_TOOL_NAME} copy-prompt`);
   }
 
   setExitCodeFromScan(scanResult);
