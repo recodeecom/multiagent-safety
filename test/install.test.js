@@ -348,6 +348,46 @@ test('setup agent-branch-start defaults base to current branch and stores per-br
   assert.equal(storedBase.stdout.trim(), 'main');
 });
 
+test('agent-branch-start moves protected-branch local changes into the new agent worktree', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const packageJsonPath = path.join(repoDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  packageJson.name = 'demo-edited';
+  fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(path.join(repoDir, 'scratch-note.txt'), 'untracked change\n', 'utf8');
+
+  result = runCmd('bash', ['scripts/agent-branch-start.sh', 'move-readme', 'bot'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const agentWorktree = extractCreatedWorktree(result.stdout);
+  assert.match(result.stdout, /Moved local changes from 'main' into 'agent\/bot\//);
+
+  const rootStatus = runCmd('git', ['status', '--short', '--untracked-files=no'], repoDir);
+  assert.equal(rootStatus.status, 0, rootStatus.stderr || rootStatus.stdout);
+  assert.equal(rootStatus.stdout.trim(), '', 'base branch checkout should be clean after auto-transfer');
+
+  assert.match(fs.readFileSync(path.join(agentWorktree, 'package.json'), 'utf8'), /"name": "demo-edited"/);
+  assert.equal(fs.existsSync(path.join(agentWorktree, 'scratch-note.txt')), true, 'untracked file should move');
+
+  const stashList = runCmd('git', ['stash', 'list'], repoDir);
+  assert.equal(stashList.status, 0, stashList.stderr || stashList.stdout);
+  assert.doesNotMatch(stashList.stdout, /musafety-auto-transfer-/);
+});
+
 test('agent-branch-finish infers base from source branch metadata and updates main worktree', () => {
   const repoDir = initRepoOnBranch('main');
   seedCommit(repoDir);

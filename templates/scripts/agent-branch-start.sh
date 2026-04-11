@@ -105,6 +105,53 @@ resolve_active_codex_snapshot_name() {
     | tr -d '\r' || true
 }
 
+has_local_changes() {
+  local root="$1"
+  if ! git -C "$root" diff --quiet; then
+    return 0
+  fi
+  if ! git -C "$root" diff --cached --quiet; then
+    return 0
+  fi
+  if [[ -n "$(git -C "$root" ls-files --others --exclude-standard)" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+has_tracked_changes() {
+  local root="$1"
+  if ! git -C "$root" diff --quiet; then
+    return 0
+  fi
+  if ! git -C "$root" diff --cached --quiet; then
+    return 0
+  fi
+  return 1
+}
+
+resolve_protected_branches() {
+  local root="$1"
+  local raw
+  raw="${MUSAFETY_PROTECTED_BRANCHES:-$(git -C "$root" config --get multiagent.protectedBranches || true)}"
+  if [[ -z "$raw" ]]; then
+    raw="dev main master"
+  fi
+  raw="${raw//,/ }"
+  printf '%s' "$raw"
+}
+
+is_protected_branch_name() {
+  local branch="$1"
+  local protected_raw="$2"
+  for protected_branch in $protected_raw; do
+    if [[ "$branch" == "$protected_branch" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[agent-branch-start] Not inside a git repository." >&2
   exit 1
@@ -195,11 +242,42 @@ if [[ -e "$worktree_path" ]]; then
   exit 1
 fi
 
+auto_transfer_stash_ref=""
+auto_transfer_message=""
+current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+protected_branches_raw="$(resolve_protected_branches "$repo_root")"
+if [[ "$current_branch" == "$BASE_BRANCH" ]] && is_protected_branch_name "$BASE_BRANCH" "$protected_branches_raw"; then
+  if has_tracked_changes "$repo_root"; then
+    auto_transfer_message="musafety-auto-transfer-${timestamp}-${agent_slug}-${task_slug}"
+    if git -C "$repo_root" stash push --include-untracked --message "$auto_transfer_message" >/dev/null 2>&1; then
+      auto_transfer_stash_ref="$(
+        git -C "$repo_root" stash list \
+          | awk -v msg="$auto_transfer_message" '$0 ~ msg { ref=$1; sub(/:$/, "", ref); print ref; exit }'
+      )"
+      if [[ -n "$auto_transfer_stash_ref" ]]; then
+        echo "[agent-branch-start] Detected local changes on protected base '${BASE_BRANCH}'. Moving them to '${branch_name}'..."
+      fi
+    fi
+  fi
+fi
+
 git -C "$repo_root" worktree add -b "$branch_name" "$worktree_path" "$start_ref"
 git -C "$repo_root" config "branch.${branch_name}.musafetyBase" "$BASE_BRANCH" >/dev/null 2>&1 || true
 
 if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
   git -C "$worktree_path" branch --set-upstream-to="origin/${BASE_BRANCH}" "$branch_name" >/dev/null 2>&1 || true
+fi
+
+if [[ -n "$auto_transfer_stash_ref" ]]; then
+  if git -C "$worktree_path" stash apply "$auto_transfer_stash_ref" >/dev/null 2>&1; then
+    git -C "$repo_root" stash drop "$auto_transfer_stash_ref" >/dev/null 2>&1 || true
+    echo "[agent-branch-start] Moved local changes from '${BASE_BRANCH}' into '${branch_name}'."
+  else
+    echo "[agent-branch-start] Failed to auto-apply moved changes in new worktree." >&2
+    echo "[agent-branch-start] Changes are preserved in ${auto_transfer_stash_ref} on ${BASE_BRANCH}." >&2
+    echo "[agent-branch-start] Apply manually with: git -C \"$worktree_path\" stash apply \"${auto_transfer_stash_ref}\"" >&2
+    exit 1
+  fi
 fi
 
 echo "[agent-branch-start] Created branch: ${branch_name}"
