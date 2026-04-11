@@ -238,6 +238,9 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
    - For every new user message/task, repeat the same cycle:
      start isolated agent branch/worktree -> claim file locks -> implement/verify ->
      finish via PR/merge cleanup with scripts/agent-branch-finish.sh.
+   - `scripts/codex-agent.sh` now auto-runs this finish flow after Codex exits:
+     auto-commit changed files -> push/create PR -> merge attempt -> branch/worktree cleanup ->
+     pull local base branch.
 
 5) Optional: create OpenSpec planning workspace:
    bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
@@ -285,7 +288,9 @@ and asks `[y/N]` whether to update immediately (default is `N`).
 - Interactive prompt is strict (`[y/n]`) and waits for explicit answer.
 - Non-interactive setup: skips global installs by default; use `--yes-global-install` to force.
 - In already-initialized repos, `setup` / `install` / `fix` / `doctor` block writes on protected `main` by default; start an agent branch first. Use `--allow-protected-base-write` only for emergency in-place maintenance.
-- `scripts/codex-agent.sh` now auto-runs worktree prune after a Codex session; clean sandbox branches are removed automatically, dirty ones are kept.
+- `scripts/codex-agent.sh` now auto-runs finish automation after a Codex session when `origin` exists:
+  auto-commit changed files, run PR/merge cleanup, and prune merged worktrees.
+  If conflicts remain, it keeps the sandbox and prompts for a conflict-resolution review pass.
 
 ## Advanced commands
 

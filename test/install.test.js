@@ -827,12 +827,92 @@ test('codex-agent keeps dirty sandbox worktrees after session exit', () => {
     },
   );
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
-  assert.match(launch.stdout, /\[agent-worktree-prune\] Skipping dirty worktree/);
+  assert.match(
+    launch.stdout,
+    /\[agent-worktree-prune\] Skipping dirty worktree|\[codex-agent\] Auto-committed sandbox changes on/,
+  );
   assert.match(launch.stdout, /\[codex-agent\] Sandbox worktree kept:/);
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
   assert.equal(fs.existsSync(launchedCwd), true, 'dirty sandbox should be preserved');
   assert.equal(fs.existsSync(path.join(launchedCwd, 'codex-dirty.txt')), true);
+});
+
+test('codex-agent auto-finishes dirty sandbox branches via PR flow when origin is configured', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const fakeCodexBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-codex-autofinish-'));
+  const fakeCodexPath = path.join(fakeCodexBin, 'codex');
+  fs.writeFileSync(
+    fakeCodexPath,
+    `#!/usr/bin/env bash\n` +
+      `pwd > "${'${MUSAFETY_TEST_CODEX_CWD}'}"\n` +
+      `echo "$@" > "${'${MUSAFETY_TEST_CODEX_ARGS}'}"\n` +
+      `echo "auto-finish-change" > codex-autofinish.txt\n`,
+    'utf8',
+  );
+  fs.chmodSync(fakeCodexPath, 0o755);
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/auto-finish"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const cwdMarker = path.join(repoDir, '.codex-agent-cwd-autofinish');
+  const argsMarker = path.join(repoDir, '.codex-agent-args-autofinish');
+  const launch = runCmd(
+    'bash',
+    ['scripts/codex-agent.sh', 'autofinish-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'],
+    repoDir,
+    {
+      PATH: `${fakeCodexBin}:${process.env.PATH}`,
+      MUSAFETY_TEST_CODEX_CWD: cwdMarker,
+      MUSAFETY_TEST_CODEX_ARGS: argsMarker,
+      MUSAFETY_GH_BIN: fakeGhPath,
+    },
+  );
+  assert.equal(launch.status, 0, launch.stderr || launch.stdout);
+  assert.match(launch.stdout, /\[codex-agent\] Auto-finish enabled: commit -> push\/PR -> merge -> cleanup\./);
+  assert.match(launch.stdout, /\[codex-agent\] Auto-finish completed for/);
+  assert.match(launch.stdout, /\[codex-agent\] Auto-cleaned sandbox worktree:/);
+
+  const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
+  assert.equal(fs.existsSync(launchedCwd), false, 'auto-finished sandbox should be removed');
+  const launchedBranch = extractCreatedBranch(launch.stdout);
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${launchedBranch}`], repoDir);
+  assert.notEqual(result.status, 0, 'auto-finished branch should be removed locally');
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', launchedBranch], repoDir);
+  assert.equal(result.stdout.trim(), '', 'auto-finished branch should be removed on origin');
+
+  const launchedArgs = fs.readFileSync(argsMarker, 'utf8').trim();
+  assert.match(launchedArgs, /--model gpt-5\.4-mini/);
 });
 
 test('sync command rebases current agent branch onto latest origin/dev', () => {

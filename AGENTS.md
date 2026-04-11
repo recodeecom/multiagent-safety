@@ -92,7 +92,9 @@ OMX runtime state typically lives under `.omx/`:
 - For git isolation, each agent must start on a dedicated branch via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
 - Do not implement changes directly on `main` or other base branches; all edits must happen on dedicated agent branches/worktrees.
 - If the current local branch already contains accidental edits, move them to an agent branch/worktree first, then continue implementation.
-- Agent completion must use `scripts/agent-branch-finish.sh` (merge into `dev`, push, delete agent branch).
+- Agent completion defaults to `scripts/codex-agent.sh`, which auto-finishes the branch (auto-commit changed files, push/create PR, attempt merge, clean branch/worktree, and pull the local base branch after merge).
+- If codex-agent auto-finish cannot complete, run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --via-pr` and keep the branch open until checks/review pass.
+- If merge/rebase conflicts block auto-finish, run a conflict-resolution review pass in that sandbox branch, then rerun `agent-branch-finish.sh --via-pr` until merged.
 
 1. Explicit ownership before edits
 

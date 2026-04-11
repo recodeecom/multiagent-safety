@@ -11,7 +11,9 @@
 - If ownership is unclear or overlaps, stop that edit, post a blocker comment, and let the leader/integrator reassign scope.
 - For git isolation, each agent must start on a dedicated branch via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
 - Treat the base branch (`main` or the user's current local base branch) as read-only while the agent branch is active.
-- Agent completion must use `scripts/agent-branch-finish.sh` (direct merge to base when allowed; auto PR fallback for protected bases, then cleanup after merge).
+- Agent completion defaults to `scripts/codex-agent.sh`, which now auto-finishes the branch (auto-commit changed files, push/create PR, attempt merge, clean branch/worktree, and pull the local base branch after merge).
+- If codex-agent auto-finish cannot complete, immediately run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --via-pr` and keep the branch open until checks/review pass.
+- If merge/rebase conflicts block auto-finish, run a conflict-resolution review pass in that sandbox branch, then rerun `agent-branch-finish.sh --via-pr` until merged.
 - Per-message loop is mandatory: for every new user message/task, start a fresh agent branch/worktree, claim ownership locks, implement and verify, finish via PR/merge cleanup, then repeat for the next message/task.
 
 1. Explicit ownership before edits
