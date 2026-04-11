@@ -172,9 +172,25 @@ if [[ "$should_require_sync" -eq 1 ]] && git -C "$repo_root" show-ref --verify -
   behind_count="${behind_count:-0}"
   if [[ "$behind_count" -gt 0 ]]; then
     echo "[agent-sync-guard] Branch '${SOURCE_BRANCH}' is behind origin/${BASE_BRANCH} by ${behind_count} commit(s)." >&2
-    echo "[agent-sync-guard] Run: musafety sync --base ${BASE_BRANCH}" >&2
-    echo "[agent-sync-guard] Then retry: bash scripts/agent-branch-finish.sh --branch \"${SOURCE_BRANCH}\"" >&2
-    exit 1
+    echo "[agent-sync-guard] Auto-syncing '${SOURCE_BRANCH}' onto origin/${BASE_BRANCH} before finish..." >&2
+    if ! git -C "$source_worktree" rebase "origin/${BASE_BRANCH}"; then
+      git_dir="$(git -C "$source_worktree" rev-parse --git-dir)"
+      rebase_active=0
+      if [[ -e "${git_dir}/rebase-merge" || -e "${git_dir}/rebase-apply" ]]; then
+        rebase_active=1
+      fi
+
+      echo "[agent-sync-guard] Auto-sync failed while rebasing '${SOURCE_BRANCH}' onto origin/${BASE_BRANCH}." >&2
+      if [[ "$rebase_active" -eq 1 ]]; then
+        echo "[agent-sync-guard] Resolve conflicts, then run: git -C \"$source_worktree\" rebase --continue" >&2
+        echo "[agent-sync-guard] Or abort: git -C \"$source_worktree\" rebase --abort" >&2
+      fi
+      exit 1
+    fi
+
+    behind_after="$(git -C "$repo_root" rev-list --left-right --count "${SOURCE_BRANCH}...origin/${BASE_BRANCH}" 2>/dev/null | awk '{print $2}')"
+    behind_after="${behind_after:-0}"
+    echo "[agent-sync-guard] Auto-sync complete (behind now: ${behind_after})." >&2
   fi
 fi
 
@@ -334,6 +350,9 @@ fi
 if [[ "$source_worktree" == "$repo_root" ]]; then
   if is_clean_worktree "$source_worktree"; then
     git -C "$source_worktree" checkout "$BASE_BRANCH" >/dev/null 2>&1 || true
+    if [[ "$PUSH_ENABLED" -eq 1 ]] && git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
+      git -C "$source_worktree" pull --ff-only origin "$BASE_BRANCH" >/dev/null 2>&1 || true
+    fi
   fi
 elif [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${repo_root}/.omx/agent-worktrees"/* ]]; then
   git -C "$source_worktree" checkout --detach >/dev/null 2>&1 || true

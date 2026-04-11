@@ -814,7 +814,7 @@ test('pre-commit sync gate honors maxBehindCommits threshold', () => {
   assert.equal(commitAttempt.status, 0, commitAttempt.stderr || commitAttempt.stdout);
 });
 
-test('agent-branch-finish blocks when source branch is behind origin/dev', () => {
+test('agent-branch-finish auto-syncs source branch when behind origin/dev', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
   attachOriginRemote(repoDir);
@@ -848,9 +848,17 @@ test('agent-branch-finish blocks when source branch is behind origin/dev', () =>
     ['scripts/agent-branch-finish.sh', '--branch', 'agent/test-finish-sync-guard'],
     repoDir,
   );
-  assert.equal(finish.status, 1, finish.stderr || finish.stdout);
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
   assert.match(finish.stderr, /agent-sync-guard/);
-  assert.match(finish.stderr, /musafety sync --base dev/);
+  assert.match(finish.stderr, /Auto-syncing 'agent\/test-finish-sync-guard' onto origin\/dev before finish/);
+  assert.match(finish.stderr, /Auto-sync complete \(behind now: 0\)/);
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-finish-sync-guard' into 'dev' via direct flow and removed branch\./,
+  );
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', 'refs/heads/agent/test-finish-sync-guard'], repoDir);
+  assert.notEqual(result.status, 0, 'agent branch should be deleted locally after finish');
 });
 
 test('agent-branch-finish pr mode continues cleanup when gh merge only fails local branch deletion', () => {
