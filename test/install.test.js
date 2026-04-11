@@ -359,6 +359,32 @@ test('setup pre-commit detects codex commit attempts on protected main and requi
   assert.match(result.stderr, /bash scripts\/codex-agent\.sh/);
 });
 
+test('setup pre-commit allows codex managed guardrail commits on protected main only for AGENTS.md/.gitignore', () => {
+  const repoDir = initRepoOnBranch('main');
+
+  let result = runNode(['setup', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.appendFileSync(path.join(repoDir, 'AGENTS.md'), '\n<!-- codex-managed test -->\n', 'utf8');
+  result = runCmd('git', ['add', 'AGENTS.md'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'codex protected AGENTS commit'], repoDir, { CODEX_THREAD_ID: 'test-thread' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.appendFileSync(path.join(repoDir, '.gitignore'), '\n# codex-managed test\n', 'utf8');
+  result = runCmd('git', ['add', '.gitignore'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'codex protected gitignore commit'], repoDir, { CODEX_THREAD_ID: 'test-thread' });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.writeFileSync(path.join(repoDir, 'notes-main.txt'), 'hello from main\n', 'utf8');
+  result = runCmd('git', ['add', 'notes-main.txt'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'codex protected non-managed commit'], repoDir, { CODEX_THREAD_ID: 'test-thread' });
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /\[guardex-preedit-guard\] Codex edit\/commit detected on a protected branch\./);
+});
+
 test('setup agent-branch-start requires --allow-in-place when using --in-place', () => {
   const repoDir = initRepo();
 
@@ -1335,6 +1361,7 @@ test('doctor repairs setup drift and confirms repo is musafe', () => {
 
   // Simulate broken setup + stale lock.
   fs.rmSync(path.join(repoDir, 'scripts', 'agent-branch-start.sh'));
+  fs.writeFileSync(path.join(repoDir, '.githooks', 'pre-commit'), '#!/usr/bin/env bash\necho broken hook >&2\nexit 1\n', 'utf8');
   result = runCmd('git', ['config', 'core.hooksPath', '.git/hooks'], repoDir);
   assert.equal(result.status, 0, result.stderr);
 
@@ -1360,6 +1387,9 @@ test('doctor repairs setup drift and confirms repo is musafe', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Doctor\/fix/);
   assert.match(result.stdout, /Repo is correctly musafe/);
+
+  const repairedHook = fs.readFileSync(path.join(repoDir, '.githooks', 'pre-commit'), 'utf8');
+  assert.match(repairedHook, /AGENTS\.md\|\.gitignore/);
 
   const scanAfter = runNode(['scan', '--target', repoDir], repoDir);
   assert.equal(scanAfter.status, 0, scanAfter.stderr || scanAfter.stdout);

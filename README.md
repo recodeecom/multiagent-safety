@@ -289,6 +289,7 @@ and asks `[y/N]` whether to update immediately (default is `N`).
 - Non-interactive setup: skips global installs by default; use `--yes-global-install` to force.
 - In already-initialized repos, `setup` / `install` / `fix` block writes on protected `main` by default; start an agent branch first. Use `--allow-protected-base-write` only for emergency in-place maintenance.
 - `gx doctor` on protected `main` auto-starts an isolated `agent/gx/...-gx-doctor` worktree branch and applies repairs there.
+- `gx setup` and `gx doctor` always refresh `.githooks/pre-commit` from templates, so Codex sub-branch enforcement stays repaired.
 - `scripts/codex-agent.sh` now auto-runs finish automation after a Codex session when `origin` exists:
   auto-commit changed files, run PR/merge cleanup, and prune merged worktrees.
   If conflicts remain, it keeps the sandbox and prompts for a conflict-resolution review pass.
@@ -368,7 +369,7 @@ multiagent.protectedBranches
 ## What is protected
 
 - direct commits to protected branches (defaults: `dev`, `main`, `master`; configurable via `gx protect ...`)
-- protected-branch commits are blocked regardless of commit client (including VS Code Source Control)
+- protected-branch commits are blocked by default for all clients; Codex sessions only may commit protected branches when staged files are strictly `AGENTS.md` and/or `.gitignore`
 - Codex-session commits on non-`agent/*` branches are blocked by default (`multiagent.codexRequireAgentBranch=true`)
 - Codex commits attempted on protected branches trigger `guardex-preedit-guard` and require starting work via `scripts/codex-agent.sh`
 - overlapping file ownership between agents

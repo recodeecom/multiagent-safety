@@ -50,9 +50,31 @@ case "$codex_require_agent_branch" in
   *) should_require_codex_agent_branch=1 ;;
 esac
 
+is_codex_managed_only_commit_on_protected=0
+if [[ "$is_codex_session" == "1" && "$is_protected_branch" == "1" ]]; then
+  deleted_paths="$(git diff --cached --name-only --diff-filter=D)"
+  staged_paths="$(git diff --cached --name-only --diff-filter=ACMRTUXB)"
+  if [[ -z "$deleted_paths" && -n "$staged_paths" ]]; then
+    managed_only=1
+    while IFS= read -r staged_path; do
+      case "$staged_path" in
+        AGENTS.md|.gitignore) ;;
+        *) managed_only=0; break ;;
+      esac
+    done <<< "$staged_paths"
+    if [[ "$managed_only" == "1" ]]; then
+      is_codex_managed_only_commit_on_protected=1
+    fi
+  fi
+fi
+
 if [[ "$should_require_codex_agent_branch" == "1" && "${MUSAFETY_ALLOW_CODEX_ON_NON_AGENT:-0}" != "1" ]]; then
   if [[ "$is_codex_session" == "1" && "$branch" != agent/* ]]; then
     if [[ "$is_protected_branch" == "1" ]]; then
+      if [[ "$is_codex_managed_only_commit_on_protected" == "1" ]]; then
+        exit 0
+      fi
+
       cat >&2 <<'MSG'
 [guardex-preedit-guard] Codex edit/commit detected on a protected branch.
 GuardeX requires Codex work to run from an isolated agent/* branch.

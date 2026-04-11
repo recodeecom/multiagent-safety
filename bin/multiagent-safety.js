@@ -363,6 +363,10 @@ function ensureExecutable(destinationPath, relativePath, dryRun) {
   }
 }
 
+function isCriticalGuardrailPath(relativePath) {
+  return CRITICAL_GUARDRAIL_PATHS.has(relativePath);
+}
+
 function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
   const sourcePath = path.join(TEMPLATE_ROOT, relativeTemplatePath);
   const destinationRelativePath = toDestinationPath(relativeTemplatePath);
@@ -377,7 +381,7 @@ function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
       ensureExecutable(destinationPath, destinationRelativePath, dryRun);
       return { status: 'unchanged', file: destinationRelativePath };
     }
-    if (!force) {
+    if (!force && !isCriticalGuardrailPath(destinationRelativePath)) {
       throw new Error(
         `Refusing to overwrite existing file without --force: ${destinationRelativePath}`,
       );
@@ -388,6 +392,10 @@ function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
   if (!dryRun) {
     fs.writeFileSync(destinationPath, sourceContent, 'utf8');
     ensureExecutable(destinationPath, destinationRelativePath, dryRun);
+  }
+
+  if (destinationExists && !force && isCriticalGuardrailPath(destinationRelativePath)) {
+    return { status: dryRun ? 'would-repair-critical' : 'repaired-critical', file: destinationRelativePath };
   }
 
   return { status: destinationExists ? 'overwritten' : 'created', file: destinationRelativePath };
@@ -404,6 +412,14 @@ function ensureTemplateFilePresent(repoRoot, relativeTemplatePath, dryRun) {
     if (existingContent === sourceContent) {
       ensureExecutable(destinationPath, destinationRelativePath, dryRun);
       return { status: 'unchanged', file: destinationRelativePath };
+    }
+
+    if (isCriticalGuardrailPath(destinationRelativePath)) {
+      if (!dryRun) {
+        fs.writeFileSync(destinationPath, sourceContent, 'utf8');
+        ensureExecutable(destinationPath, destinationRelativePath, dryRun);
+      }
+      return { status: dryRun ? 'would-repair-critical' : 'repaired-critical', file: destinationRelativePath };
     }
 
     // In fix mode, avoid silently replacing local customizations.
