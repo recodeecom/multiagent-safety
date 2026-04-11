@@ -147,7 +147,7 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup multi-agent safety in
 6) Optional: protect extra branches:
    musafety protect add release staging
 
-7) Optional: sync your current agent branch with latest dev:
+7) Optional: sync your current agent branch with latest base branch:
    musafety sync --check
    musafety sync
 `;

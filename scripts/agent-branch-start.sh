@@ -3,9 +3,14 @@ set -euo pipefail
 
 TASK_NAME="${1:-task}"
 AGENT_NAME="${2:-agent}"
-BASE_BRANCH="${3:-dev}"
+BASE_BRANCH="${3:-}"
+BASE_BRANCH_EXPLICIT=0
 WORKTREE_MODE=1
 WORKTREE_ROOT_REL=".omx/agent-worktrees"
+
+if [[ -n "${3:-}" ]]; then
+  BASE_BRANCH_EXPLICIT=1
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,7 +23,8 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --base)
-      BASE_BRANCH="${2:-dev}"
+      BASE_BRANCH="${2:-}"
+      BASE_BRANCH_EXPLICIT=1
       shift 2
       ;;
     --in-place)
@@ -80,6 +86,25 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 
+if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -z "$BASE_BRANCH" ]]; then
+  echo "[agent-branch-start] --base requires a non-empty branch name." >&2
+  exit 1
+fi
+
+if [[ "$BASE_BRANCH_EXPLICIT" -eq 0 ]]; then
+  configured_base="$(git -C "$repo_root" config --get multiagent.baseBranch || true)"
+  if [[ -n "$configured_base" ]]; then
+    BASE_BRANCH="$configured_base"
+  else
+    current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
+      BASE_BRANCH="$current_branch"
+    else
+      BASE_BRANCH="dev"
+    fi
+  fi
+fi
+
 if git show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
   git fetch origin "${BASE_BRANCH}" --quiet
   start_ref="origin/${BASE_BRANCH}"
@@ -123,6 +148,7 @@ if [[ "$WORKTREE_MODE" -eq 0 ]]; then
   fi
 
   git checkout -b "$branch_name"
+  git -C "$repo_root" config "branch.${branch_name}.musafetyBase" "$BASE_BRANCH" >/dev/null 2>&1 || true
   echo "[agent-branch-start] Created in-place branch: ${branch_name}"
   echo "$branch_name"
   exit 0
@@ -138,6 +164,7 @@ if [[ -e "$worktree_path" ]]; then
 fi
 
 git -C "$repo_root" worktree add -b "$branch_name" "$worktree_path" "$start_ref"
+git -C "$repo_root" config "branch.${branch_name}.musafetyBase" "$BASE_BRANCH" >/dev/null 2>&1 || true
 
 if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
   git -C "$worktree_path" branch --set-upstream-to="origin/${BASE_BRANCH}" "$branch_name" >/dev/null 2>&1 || true

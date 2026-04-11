@@ -3,8 +3,13 @@ set -euo pipefail
 
 TASK_NAME="${MUSAFETY_TASK_NAME:-task}"
 AGENT_NAME="${MUSAFETY_AGENT_NAME:-agent}"
-BASE_BRANCH="${MUSAFETY_BASE_BRANCH:-dev}"
+BASE_BRANCH="${MUSAFETY_BASE_BRANCH:-}"
+BASE_BRANCH_EXPLICIT=0
 CODEX_BIN="${MUSAFETY_CODEX_BIN:-codex}"
+
+if [[ -n "$BASE_BRANCH" ]]; then
+  BASE_BRANCH_EXPLICIT=1
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,6 +23,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --base)
       BASE_BRANCH="${2:-$BASE_BRANCH}"
+      BASE_BRANCH_EXPLICIT=1
       shift 2
       ;;
     --codex-bin)
@@ -40,12 +46,18 @@ while [[ $# -gt 0 ]]; do
       fi
       if [[ $# -gt 0 && "${1:-}" != -* ]]; then
         BASE_BRANCH="$1"
+        BASE_BRANCH_EXPLICIT=1
         shift
       fi
       break
       ;;
   esac
 done
+
+if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -z "$BASE_BRANCH" ]]; then
+  echo "[codex-agent] --base requires a non-empty branch name." >&2
+  exit 1
+fi
 
 if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
   echo "[codex-agent] Missing Codex CLI command: $CODEX_BIN" >&2
@@ -58,7 +70,12 @@ if [[ ! -x "scripts/agent-branch-start.sh" ]]; then
   exit 1
 fi
 
-start_output="$(bash scripts/agent-branch-start.sh "$TASK_NAME" "$AGENT_NAME" "$BASE_BRANCH")"
+start_args=("$TASK_NAME" "$AGENT_NAME")
+if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 ]]; then
+  start_args+=("$BASE_BRANCH")
+fi
+
+start_output="$(bash scripts/agent-branch-start.sh "${start_args[@]}")"
 printf '%s\n' "$start_output"
 
 worktree_path="$(printf '%s\n' "$start_output" | sed -n 's/^\[agent-branch-start\] Worktree: //p' | tail -n1)"

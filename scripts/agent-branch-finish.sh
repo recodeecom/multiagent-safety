@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_BRANCH="dev"
+BASE_BRANCH=""
 BASE_BRANCH_EXPLICIT=0
 SOURCE_BRANCH=""
 PUSH_ENABLED=1
@@ -64,6 +64,15 @@ fi
 repo_root="$(git rev-parse --show-toplevel)"
 current_worktree="$(pwd -P)"
 
+if [[ -z "$SOURCE_BRANCH" ]]; then
+  SOURCE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+fi
+
+if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -z "$BASE_BRANCH" ]]; then
+  echo "[agent-branch-finish] --base requires a non-empty branch name." >&2
+  exit 1
+fi
+
 if [[ "$BASE_BRANCH_EXPLICIT" -eq 0 ]]; then
   configured_base="$(git -C "$repo_root" config --get multiagent.baseBranch || true)"
   if [[ -n "$configured_base" ]]; then
@@ -71,8 +80,30 @@ if [[ "$BASE_BRANCH_EXPLICIT" -eq 0 ]]; then
   fi
 fi
 
-if [[ -z "$SOURCE_BRANCH" ]]; then
-  SOURCE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [[ -z "$BASE_BRANCH" ]]; then
+  branch_stored_base="$(git -C "$repo_root" config --get "branch.${SOURCE_BRANCH}.musafetyBase" || true)"
+  if [[ -n "$branch_stored_base" ]]; then
+    BASE_BRANCH="$branch_stored_base"
+  fi
+fi
+
+if [[ -z "$BASE_BRANCH" ]]; then
+  source_upstream="$(git -C "$repo_root" for-each-ref --format='%(upstream:short)' "refs/heads/${SOURCE_BRANCH}" | head -n 1)"
+  source_upstream="${source_upstream:-}"
+  if [[ "$source_upstream" == */* ]]; then
+    BASE_BRANCH="${source_upstream#*/}"
+  fi
+fi
+
+if [[ -z "$BASE_BRANCH" ]]; then
+  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -n "$current_branch" && "$current_branch" != "HEAD" && "$current_branch" != "$SOURCE_BRANCH" ]]; then
+    BASE_BRANCH="$current_branch"
+  fi
+fi
+
+if [[ -z "$BASE_BRANCH" ]]; then
+  BASE_BRANCH="dev"
 fi
 
 if [[ "$SOURCE_BRANCH" == "$BASE_BRANCH" ]]; then

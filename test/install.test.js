@@ -110,6 +110,10 @@ function seedCommit(repoDir) {
 }
 
 function attachOriginRemote(repoDir) {
+  return attachOriginRemoteForBranch(repoDir, 'dev');
+}
+
+function attachOriginRemoteForBranch(repoDir, branchName) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-origin-'));
   const originPath = path.join(tempDir, 'origin.git');
 
@@ -119,7 +123,7 @@ function attachOriginRemote(repoDir) {
   result = runCmd('git', ['remote', 'add', 'origin', originPath], repoDir);
   assert.equal(result.status, 0, result.stderr);
 
-  result = runCmd('git', ['push', '-u', 'origin', 'dev'], repoDir);
+  result = runCmd('git', ['push', '-u', 'origin', branchName], repoDir);
   assert.equal(result.status, 0, result.stderr);
 
   return originPath;
@@ -164,6 +168,18 @@ function aheadBehindCounts(repoDir, branchRef, baseRef) {
 
 function escapeRegexLiteral(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function extractCreatedBranch(output) {
+  const match = String(output || '').match(/\[agent-branch-start\] Created branch: (.+)/);
+  assert.ok(match, `missing created branch in output: ${output}`);
+  return match[1].trim();
+}
+
+function extractCreatedWorktree(output) {
+  const match = String(output || '').match(/\[agent-branch-start\] Worktree: (.+)/);
+  assert.ok(match, `missing worktree path in output: ${output}`);
+  return match[1].trim();
 }
 
 test('setup provisions workflow files and repo config', () => {
@@ -299,6 +315,80 @@ test('setup agent-branch-start supports explicit snapshot override without codex
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Created branch: agent\/bot\/\d{8}-\d{6}-prod-snapshot-one-ship-fix/);
+});
+
+test('setup agent-branch-start defaults base to current branch and stores per-branch base metadata', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('bash', ['scripts/agent-branch-start.sh', 'auto-base', 'bot'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const agentBranch = extractCreatedBranch(result.stdout);
+  const agentWorktree = extractCreatedWorktree(result.stdout);
+
+  const upstream = runCmd('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], agentWorktree);
+  assert.equal(upstream.status, 0, upstream.stderr || upstream.stdout);
+  assert.equal(upstream.stdout.trim(), 'origin/main');
+
+  const storedBase = runCmd('git', ['config', '--get', `branch.${agentBranch}.musafetyBase`], repoDir);
+  assert.equal(storedBase.status, 0, storedBase.stderr || storedBase.stdout);
+  assert.equal(storedBase.stdout.trim(), 'main');
+});
+
+test('agent-branch-finish infers base from source branch metadata and updates main worktree', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply musafety setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('bash', ['scripts/agent-branch-start.sh', 'finish-from-dev', 'bot'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const agentBranch = extractCreatedBranch(result.stdout);
+  const agentWorktree = extractCreatedWorktree(result.stdout);
+
+  commitFile(agentWorktree, 'agent-finish-main.txt', 'merged via inferred main base\n', 'agent change for main');
+
+  result = runCmd('git', ['checkout', '-b', 'helper-finish'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const auxWorktree = path.join(path.dirname(repoDir), 'aux-main-worktree');
+  result = runCmd('git', ['worktree', 'add', auxWorktree, 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const finish = runCmd('bash', ['scripts/agent-branch-finish.sh', '--branch', agentBranch], repoDir);
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(finish.stdout, new RegExp(`Merged '${escapeRegexLiteral(agentBranch)}' into 'main'`));
+
+  assert.equal(
+    fs.existsSync(path.join(auxWorktree, 'agent-finish-main.txt')),
+    true,
+    'main worktree should be fast-forwarded after finish',
+  );
+
+  const localBranchExists = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${agentBranch}`], repoDir);
+  assert.equal(localBranchExists.status, 1, localBranchExists.stderr || localBranchExists.stdout);
 });
 
 test('default invocation runs non-mutating status output', () => {

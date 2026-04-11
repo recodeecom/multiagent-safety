@@ -169,7 +169,7 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
 6) Optional: protect extra branches:
    musafety protect add release staging
 
-7) Optional: sync your current agent branch with latest dev:
+7) Optional: sync your current agent branch with latest base branch:
    musafety sync --check
    musafety sync
 ```
@@ -212,7 +212,7 @@ musafety scan [--target <path>] [--json]
 musafety report help
 ```
 
-## Keep agent branches synced with dev
+## Keep agent branches synced with your base branch
 
 Use sync checks before finishing agent branches:
 
@@ -223,8 +223,15 @@ musafety sync
 
 Defaults:
 
-- base branch: `dev` (or `multiagent.baseBranch`)
+- `musafety sync` base branch: `dev` (or `multiagent.baseBranch`)
 - strategy: `rebase` (or `multiagent.sync.strategy`)
+
+`agent-branch-start.sh` and `agent-branch-finish.sh` resolve base branch in this order:
+
+1. explicit `--base`
+2. `multiagent.baseBranch`
+3. branch-linked base metadata / source upstream / current checked-out branch (context-dependent)
+4. fallback `dev`
 
 Useful variants:
 
