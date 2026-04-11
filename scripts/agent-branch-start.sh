@@ -46,12 +46,31 @@ done
 
 sanitize_slug() {
   local raw="$1"
+  local fallback="${2:-task}"
   local slug
   slug="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
   if [[ -z "$slug" ]]; then
-    slug="task"
+    slug="$fallback"
   fi
   printf '%s' "$slug"
+}
+
+resolve_active_codex_snapshot_name() {
+  local override="${MUSAFETY_CODEX_AUTH_SNAPSHOT:-}"
+  if [[ -n "$override" ]]; then
+    printf '%s' "$override"
+    return 0
+  fi
+
+  local codex_auth_bin="${MUSAFETY_CODEX_AUTH_BIN:-codex-auth}"
+  if ! command -v "$codex_auth_bin" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  "$codex_auth_bin" list 2>/dev/null \
+    | sed -n 's/^[[:space:]]*\*[[:space:]]\+//p' \
+    | head -n 1 \
+    | tr -d '\r' || true
 }
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -72,10 +91,16 @@ else
   start_ref="${BASE_BRANCH}"
 fi
 
-task_slug="$(sanitize_slug "$TASK_NAME")"
-agent_slug="$(sanitize_slug "$AGENT_NAME")"
+task_slug="$(sanitize_slug "$TASK_NAME" "task")"
+agent_slug="$(sanitize_slug "$AGENT_NAME" "agent")"
+snapshot_name="$(resolve_active_codex_snapshot_name)"
+snapshot_slug="$(sanitize_slug "$snapshot_name" "")"
 timestamp="$(date +%Y%m%d-%H%M%S)"
-branch_name="agent/${agent_slug}/${timestamp}-${task_slug}"
+if [[ -n "$snapshot_slug" ]]; then
+  branch_name="agent/${agent_slug}/${timestamp}-${snapshot_slug}-${task_slug}"
+else
+  branch_name="agent/${agent_slug}/${timestamp}-${task_slug}"
+fi
 
 if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
   echo "[agent-branch-start] Branch already exists: ${branch_name}" >&2

@@ -55,6 +55,14 @@ function createFakeScorecardScript(scriptBody) {
   return fakePath;
 }
 
+function createFakeCodexAuthScript(scriptBody) {
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-codex-auth-'));
+  const fakePath = path.join(fakeBin, 'codex-auth');
+  fs.writeFileSync(fakePath, `#!/usr/bin/env bash\nset -e\n${scriptBody}\n`, 'utf8');
+  fs.chmodSync(fakePath, 0o755);
+  return { fakeBin, fakePath };
+}
+
 function initRepo() {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-'));
   const repoDir = path.join(tempDir, 'repo');
@@ -239,6 +247,50 @@ test('setup agent-branch-start requires --allow-in-place when using --in-place',
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /--in-place is blocked by default/);
   assert.match(result.stderr, /--in-place --allow-in-place/);
+});
+
+test('setup agent-branch-start includes active codex snapshot slug in branch name', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  seedCommit(repoDir);
+
+  const { fakeBin } = createFakeCodexAuthScript(`
+if [[ "$1" != "list" ]]; then
+  exit 1
+fi
+cat <<'OUT'
+  default
+* Zeus Edix Hu
+OUT
+`);
+
+  result = runCmd(
+    'bash',
+    ['scripts/agent-branch-start.sh', 'restore-snapshot', 'planner', 'dev'],
+    repoDir,
+    { env: { PATH: `${fakeBin}:${process.env.PATH || ''}` } },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Created branch: agent\/planner\/\d{8}-\d{6}-zeus-edix-hu-restore-snapshot/);
+});
+
+test('setup agent-branch-start supports explicit snapshot override without codex-auth', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  seedCommit(repoDir);
+
+  result = runCmd(
+    'bash',
+    ['scripts/agent-branch-start.sh', 'ship-fix', 'bot', 'dev'],
+    repoDir,
+    { env: { MUSAFETY_CODEX_AUTH_SNAPSHOT: 'Prod Snapshot One' } },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Created branch: agent\/bot\/\d{8}-\d{6}-prod-snapshot-one-ship-fix/);
 });
 
 test('default invocation runs non-mutating status output', () => {
