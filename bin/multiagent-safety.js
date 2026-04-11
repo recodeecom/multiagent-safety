@@ -123,7 +123,7 @@ const CLI_COMMAND_DESCRIPTIONS = [
 const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-Rex for your repo) in this repository for Codex or Claude.
 
 1) Install (if missing):
-   npm i -g guardex
+   npm i -g @recodeecom/guardex
 
 2) Bootstrap safety in this repo:
    gx setup
@@ -153,7 +153,7 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
    gx sync
 `;
 
-const AI_SETUP_COMMANDS = `npm i -g guardex
+const AI_SETUP_COMMANDS = `npm i -g @recodeecom/guardex
 gx setup
 gx doctor
 bash scripts/codex-agent.sh "task" "agent-name"

@@ -492,7 +492,7 @@ if [[ "$1" == "list" ]]; then
   echo '{"dependencies":{"oh-my-codex":{},"@fission-ai/openspec":{}}}'
   exit 0
 fi
-if [[ "$1" == "i" && "$2" == "-g" && "$3" == "guardex@latest" ]]; then
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@recodeecom/guardex@latest" ]]; then
   echo "updated" > "${markerPath}"
   exit 0
 fi
@@ -529,7 +529,7 @@ test('status --json returns cli, services, and repo summary', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const parsed = JSON.parse(result.stdout);
-  assert.equal(parsed.cli.name, 'guardex');
+  assert.equal(parsed.cli.name, '@recodeecom/guardex');
   assert.equal(typeof parsed.cli.version, 'string');
   assert.equal(Array.isArray(parsed.services), true);
   assert.equal(parsed.repo.inGitRepo, true);
@@ -1184,7 +1184,7 @@ test('copy-prompt outputs AI setup instructions', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-prompt'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /npm i -g guardex/);
+  assert.match(result.stdout, /npm i -g @recodeecom\/guardex/);
   assert.match(result.stdout, /npm i -g oh-my-codex @fission-ai\/openspec/);
   assert.match(result.stdout, /gx setup/);
   assert.match(result.stdout, /Codex or Claude/);
@@ -1195,7 +1195,7 @@ test('copy-commands outputs command-only checklist', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-commands'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /^npm i -g guardex/m);
+  assert.match(result.stdout, /^npm i -g @recodeecom\/guardex/m);
   assert.match(result.stdout, /gx setup/);
   assert.match(result.stdout, /gx doctor/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);

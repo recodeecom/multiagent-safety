@@ -1,6 +1,6 @@
 # GuardeX — Guardian T-Rex for your repo
 
-[![npm version](https://img.shields.io/npm/v/guardex?color=cb3837&logo=npm)](https://www.npmjs.com/package/guardex)
+[![npm version](https://img.shields.io/npm/v/%40recodeecom%2Fguardex?color=cb3837&logo=npm)](https://www.npmjs.com/package/@recodeecom/guardex)
 [![CI](https://github.com/recodeecom/multiagent-safety/actions/workflows/ci.yml/badge.svg)](https://github.com/recodeecom/multiagent-safety/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/recodeecom/multiagent-safety/badge)](https://securityscorecards.dev/viewer/?uri=github.com/recodeecom/multiagent-safety)
 
@@ -27,10 +27,10 @@ can be bootstrapped consistently across repos.
 ## Install
 
 ```sh
-npm i -g guardex
+npm i -g @recodeecom/guardex
 ```
 
-Package page: https://www.npmjs.com/package/guardex
+Package page: https://www.npmjs.com/package/@recodeecom/guardex
 
 
 ## Command aliases
@@ -194,7 +194,7 @@ gx copy-commands
 Example output:
 
 ```sh
-npm i -g guardex
+npm i -g @recodeecom/guardex
 gx setup
 gx doctor
 bash scripts/codex-agent.sh "task" "agent-name"
@@ -213,7 +213,7 @@ Full checklist output:
 Use this exact checklist to setup multi-agent safety in this repository for Codex or Claude.
 
 1) Install (if missing):
-   npm i -g guardex
+   npm i -g @recodeecom/guardex
 
 2) Bootstrap safety in this repo:
    gx setup
