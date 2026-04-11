@@ -56,6 +56,8 @@ Related tools:
 ```sh
 # inside your repo
 gx setup
+# alias:
+gx init
 ```
 
 That one command runs:
@@ -217,6 +219,7 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
 
 2) Bootstrap safety in this repo:
    gx setup
+   # alias: gx init
 
    - Setup detects global OMX/OpenSpec first.
    - If one is missing and setup asks for approval, reply explicitly:
@@ -231,6 +234,9 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
    bash scripts/agent-branch-start.sh "task" "agent-name"
    python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
    bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+   - For every new user message/task, repeat the same cycle:
+     start isolated agent branch/worktree -> claim file locks -> implement/verify ->
+     finish via PR/merge cleanup with scripts/agent-branch-finish.sh.
 
 5) Optional: create OpenSpec planning workspace:
    bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
@@ -251,6 +257,7 @@ Use this exact checklist to setup multi-agent safety in this repository for Code
 ```sh
 gx status [--target <path>] [--json]
 gx setup [--target <path>] [--dry-run] [--yes-global-install|--no-global-install] [--no-gitignore]
+gx init [--target <path>] [--dry-run] [--yes-global-install|--no-global-install] [--no-gitignore]
 gx doctor [--target <path>] [--dry-run] [--json] [--keep-stale-locks] [--no-gitignore]
 gx copy-prompt
 gx copy-commands
@@ -268,6 +275,7 @@ bash scripts/openspec/init-plan-workspace.sh <plan-slug>   # optional OpenSpec p
 
 No command defaults to `gx status` (non-mutating health/status view).
 `gx status` reports CLI/runtime info, global OMX/OpenSpec service status, and repo safety service state.
+`gx init` is an alias of `gx setup`.
 When run in an interactive terminal, default `GuardeX` checks npm for a newer version first
 and asks `[y/N]` whether to update immediately (default is `N`).
 

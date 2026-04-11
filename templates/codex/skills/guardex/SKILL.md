@@ -19,6 +19,8 @@ If guardrails are missing entirely, run:
 
 ```sh
 gx setup
+# alias
+gx init
 ```
 
 Then verify:
@@ -32,5 +34,6 @@ gx scan
 
 - Prefer `gx doctor` for one-step repair + verification.
 - Keep agent work isolated (`agent/*` branches + lock claims).
+- For every new user message/task, restart the full loop on a fresh agent branch/worktree.
 - For one-command Codex sandbox startup, use `bash scripts/codex-agent.sh "<task>" "<agent-name>"`.
 - Do not bypass protected branch safeguards unless explicitly required.

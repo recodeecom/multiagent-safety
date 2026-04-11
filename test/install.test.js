@@ -220,6 +220,7 @@ test('setup provisions workflow files and repo config', () => {
 
   const agentsContent = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
   assert.equal(agentsContent.includes('<!-- multiagent-safety:START -->'), true);
+  assert.match(agentsContent, /Per-message loop is mandatory/);
 
   const gitignoreContent = fs.readFileSync(path.join(repoDir, '.gitignore'), 'utf8');
   assert.match(gitignoreContent, /# multiagent-safety:START/);
@@ -239,6 +240,17 @@ test('setup provisions workflow files and repo config', () => {
 
   const secondRun = runNode(['setup', '--target', repoDir], repoDir);
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
+});
+
+test('init aliases setup and provisions workflow files', () => {
+  const repoDir = initRepo();
+
+  const result = runNode(['init', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  assert.equal(fs.existsSync(path.join(repoDir, 'scripts', 'agent-branch-start.sh')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, 'scripts', 'agent-branch-finish.sh')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, 'AGENTS.md')), true);
 });
 
 test('setup pre-commit blocks codex session commits on non-agent branches by default', () => {
@@ -1187,8 +1199,10 @@ test('copy-prompt outputs AI setup instructions', () => {
   assert.match(result.stdout, /npm i -g @imdeadpool\/guardex/);
   assert.match(result.stdout, /npm i -g oh-my-codex @fission-ai\/openspec/);
   assert.match(result.stdout, /gx setup/);
+  assert.match(result.stdout, /gx init/);
   assert.match(result.stdout, /Codex or Claude/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
+  assert.match(result.stdout, /For every new user message\/task, repeat the same cycle/);
 });
 
 test('copy-commands outputs command-only checklist', () => {

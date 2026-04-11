@@ -10,7 +10,9 @@
 - Before deleting/replacing code, each agent must read the latest session comments/handoffs first and confirm the target code is in their owned scope.
 - If ownership is unclear or overlaps, stop that edit, post a blocker comment, and let the leader/integrator reassign scope.
 - For git isolation, each agent must start on a dedicated branch via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
+- Treat the base branch (`main` or the user's current local base branch) as read-only while the agent branch is active.
 - Agent completion must use `scripts/agent-branch-finish.sh` (direct merge to base when allowed; auto PR fallback for protected bases, then cleanup after merge).
+- Per-message loop is mandatory: for every new user message/task, start a fresh agent branch/worktree, claim ownership locks, implement and verify, finish via PR/merge cleanup, then repeat for the next message/task.
 
 1. Explicit ownership before edits
 

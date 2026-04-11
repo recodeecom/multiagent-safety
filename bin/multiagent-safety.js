@@ -80,6 +80,7 @@ const COMMAND_TYPO_ALIASES = new Map([
   ['realaese', 'release'],
   ['relase', 'release'],
   ['setpu', 'setup'],
+  ['inti', 'init'],
   ['intsall', 'install'],
   ['docter', 'doctor'],
   ['doctro', 'doctor'],
@@ -88,6 +89,7 @@ const COMMAND_TYPO_ALIASES = new Map([
 const SUGGESTIBLE_COMMANDS = [
   'status',
   'setup',
+  'init',
   'doctor',
   'report',
   'copy-prompt',
@@ -105,6 +107,7 @@ const SUGGESTIBLE_COMMANDS = [
 const CLI_COMMAND_DESCRIPTIONS = [
   ['status', 'Show GuardeX CLI + service health without modifying files'],
   ['setup', 'Install + repair guardrails in a git repo (supports --no-gitignore)'],
+  ['init', 'Alias of setup (bootstrap + repair guardrails in a git repo)'],
   ['doctor', 'Repair safety setup drift, then verify repo safety'],
   ['report', 'Generate security/safety reports (for example: OpenSSF scorecard)'],
   ['copy-prompt', 'Print the AI-ready setup checklist'],
@@ -127,6 +130,7 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
 
 2) Bootstrap safety in this repo:
    gx setup
+   # alias: gx init
 
    - Setup detects global OMX/OpenSpec first.
    - If one is missing and setup asks for approval, reply explicitly:
@@ -141,6 +145,9 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
    bash scripts/agent-branch-start.sh "task" "agent-name"
    python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
    bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+   - For every new user message/task, repeat the same cycle:
+     start isolated agent branch/worktree -> claim file locks -> implement/verify ->
+     finish via PR/merge cleanup with scripts/agent-branch-finish.sh.
 
 5) Optional: create OpenSpec planning workspace:
    bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
@@ -151,6 +158,9 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
 7) Optional: sync your current agent branch with latest base branch:
    gx sync --check
    gx sync
+
+8) Optional (GitHub remote cleanup): enable:
+   Settings -> General -> Pull Requests -> Automatically delete head branches
 `;
 
 const AI_SETUP_COMMANDS = `npm i -g @imdeadpool/guardex
@@ -272,6 +282,7 @@ ${commandCatalogLines().join('\n')}
 NOTES
   - Running ${TOOL_NAME} with no command defaults to: ${SHORT_TOOL_NAME} status
   - Short alias: ${SHORT_TOOL_NAME}
+  - ${SHORT_TOOL_NAME} init is an alias of ${SHORT_TOOL_NAME} setup
   - ${TOOL_NAME} setup asks for Y/N approval before global installs
   - Legacy command aliases are still supported: ${LEGACY_NAMES.join(', ')}`);
 
@@ -2403,7 +2414,7 @@ function main() {
     return;
   }
 
-  if (command === 'setup') {
+  if (command === 'setup' || command === 'init') {
     setup(rest);
     return;
   }
