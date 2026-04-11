@@ -70,9 +70,9 @@ That one command runs:
 5. installs local Codex + Claude gx helper skill files if missing,
 6. scans and reports final status.
 
-## Setup screenshot
+## Setup behavior screenshot
 
-![gx setup success screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/setup-success.svg)
+![gx status/setup behavior screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/setup-success.svg)
 
 ## Status logs screenshot
 

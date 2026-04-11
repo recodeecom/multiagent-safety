@@ -1,43 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
-  <title id="title">musafety setup terminal output</title>
-  <desc id="desc">Illustrative terminal screenshot showing setup prompt, global toolchain install, and success status.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980" role="img" aria-labelledby="title desc">
+  <title id="title">guardex setup behavior outside git repository</title>
+  <desc id="desc">Terminal screenshot showing gx status, gx setup failure outside a git repo, and gx init unknown command output.</desc>
   <defs>
     <linearGradient id="bg" x1="0" x2="0" y1="0" y2="1">
       <stop offset="0%" stop-color="#0b1220"/>
       <stop offset="100%" stop-color="#080d18"/>
     </linearGradient>
   </defs>
-  <rect width="1400" height="900" fill="url(#bg)"/>
-  <rect x="24" y="20" width="1352" height="860" rx="14" fill="#0f172a" stroke="#25314a"/>
+  <rect width="1500" height="980" fill="url(#bg)"/>
+  <rect x="24" y="20" width="1452" height="940" rx="14" fill="#0f172a" stroke="#25314a"/>
   <circle cx="54" cy="48" r="8" fill="#ef4444"/>
   <circle cx="78" cy="48" r="8" fill="#f59e0b"/>
   <circle cx="102" cy="48" r="8" fill="#22c55e"/>
-  <text x="130" y="53" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">musafety setup</text>
+  <text x="130" y="53" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">guardex status + setup</text>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" fill="#e2e8f0">
-    <text x="44" y="95">deadpool@ksskkfb03:~/Documents/szaloniroda/marva$ musafety setup</text>
-    <text x="44" y="132" fill="#93c5fd">Install missing global tools now? (npm i -g oh-my-codex @fission-ai/openspec) [y/n] y</text>
-    <text x="44" y="169" fill="#67e8f9">[musafety] Installing global toolchain: npm i -g oh-my-codex @fission-ai/openspec</text>
-    <text x="44" y="206" fill="#86efac">[musafety] ✅ Global tools installed (oh-my-codex, @fission-ai/openspec).</text>
+    <text x="44" y="95">deadpool@recodee:~/Documents/testguardex$ gx</text>
+    <text x="44" y="132" fill="#93c5fd">[guardex] CLI: @imdeadpool/guardex/5.0.0 linux-x64 node-v22.22.0</text>
+    <text x="44" y="169" fill="#93c5fd">[guardex] Global services:</text>
+    <text x="70" y="206" fill="#93c5fd">- ● oh-my-codex: active</text>
+    <text x="70" y="243" fill="#93c5fd">- ● @fission-ai/openspec: active</text>
+    <text x="44" y="280" fill="#93c5fd">[guardex] Repo safety service: ● inactive (no git repository at target).</text>
 
-    <text x="44" y="263">[musafety] Setup/install: /home/deadpool/Documents/szaloniroda/marva</text>
-    <text x="70" y="300">- unchanged    scripts/agent-branch-start.sh</text>
-    <text x="70" y="333">- unchanged    scripts/agent-branch-finish.sh</text>
-    <text x="70" y="366">- unchanged    scripts/agent-file-locks.py</text>
-    <text x="70" y="399">- unchanged    scripts/install-agent-git-hooks.sh</text>
-    <text x="70" y="432">- unchanged    .githooks/pre-commit</text>
-    <text x="70" y="465">- unchanged    .omx/state/agent-file-locks.json</text>
-    <text x="70" y="498">- unchanged    package.json</text>
-    <text x="70" y="531">- unchanged    AGENTS.md</text>
-    <text x="70" y="564">- hooksPath    set core.hooksPath=.githooks</text>
+    <text x="44" y="337">deadpool@recodee:~/Documents/testguardex$ gx setup</text>
+    <text x="44" y="374" fill="#67e8f9">[guardex] Already installed globally: oh-my-codex, @fission-ai/openspec</text>
+    <text x="44" y="411" fill="#86efac">[guardex] ✅ OMX/OpenSpec global tools already installed. Skipping.</text>
+    <text x="44" y="448" fill="#fca5a5">[guardex] Target is not inside a git repository: /home/deadpool/Documents/testguardex</text>
+    <text x="44" y="485" fill="#fda4af">fatal: not a git repository (or any of the parent directories): .git</text>
 
-    <text x="44" y="621">[musafety] Setup/fix: /home/deadpool/Documents/szaloniroda/marva</text>
-    <text x="70" y="658">- unchanged    managed files + lock registry + AGENTS + hooksPath</text>
+    <text x="44" y="542">deadpool@recodee:~/Documents/testguardex$ gx</text>
+    <text x="44" y="579" fill="#93c5fd">[guardex] CLI: @imdeadpool/guardex/5.0.0 linux-x64 node-v22.22.0</text>
+    <text x="44" y="616" fill="#93c5fd">[guardex] Global services:</text>
+    <text x="70" y="653" fill="#93c5fd">- ● oh-my-codex: active</text>
+    <text x="70" y="690" fill="#93c5fd">- ● @fission-ai/openspec: active</text>
+    <text x="44" y="727" fill="#93c5fd">[guardex] Repo safety service: ● inactive (no git repository at target).</text>
 
-    <text x="44" y="715">[musafety] Scan target: /home/deadpool/Documents/szaloniroda/marva</text>
-    <text x="44" y="748">[musafety] Branch: main</text>
-    <text x="44" y="781" fill="#86efac">[musafety] ✅ No safety issues detected.</text>
-    <text x="44" y="814" fill="#86efac">[musafety] ✅ Setup complete.</text>
-    <text x="44" y="847" fill="#cbd5e1">[musafety] Copy AI setup prompt with: musafety copy-prompt</text>
+    <text x="44" y="784">deadpool@recodee:~/Documents/testguardex$ gx init</text>
+    <text x="44" y="821" fill="#fda4af">[guardex] Unknown command: init</text>
+    <text x="44" y="858">deadpool@recodee:~/Documents/testguardex$</text>
   </g>
 </svg>
