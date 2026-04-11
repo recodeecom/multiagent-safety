@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${ALLOW_PUSH_ON_PROTECTED_BRANCH:-0}" == "1" || "${ALLOW_COMMIT_ON_PROTECTED_BRANCH:-0}" == "1" ]]; then
+  exit 0
+fi
+
+is_vscode_git_context=0
+if [[ -n "${VSCODE_GIT_IPC_HANDLE:-}" || -n "${VSCODE_GIT_ASKPASS_NODE:-}" || -n "${VSCODE_IPC_HOOK_CLI:-}" ]]; then
+  is_vscode_git_context=1
+fi
+
+if [[ "$is_vscode_git_context" == "1" ]]; then
+  exit 0
+fi
+
+protected_branches_raw="${MUSAFETY_PROTECTED_BRANCHES:-$(git config --get multiagent.protectedBranches || true)}"
+if [[ -z "$protected_branches_raw" ]]; then
+  protected_branches_raw="dev main master"
+fi
+protected_branches_raw="${protected_branches_raw//,/ }"
+
+is_protected_branch() {
+  local branch="$1"
+  for protected_branch in $protected_branches_raw; do
+    if [[ "$branch" == "$protected_branch" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+blocked_refs=()
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ -z "${remote_ref:-}" || "$remote_ref" != refs/heads/* ]]; then
+    continue
+  fi
+
+  remote_branch="${remote_ref#refs/heads/}"
+  if is_protected_branch "$remote_branch"; then
+    blocked_refs+=("$remote_branch")
+  fi
+done
+
+if [[ "${#blocked_refs[@]}" -gt 0 ]]; then
+  {
+    echo "[agent-branch-guard] Push to protected branch blocked outside VS Code Git context."
+    echo "[agent-branch-guard] Protected target(s): ${blocked_refs[*]}"
+    echo "[agent-branch-guard] Use VS Code Source Control for protected-branch push, or push from an agent branch and merge via PR."
+    echo
+    echo "Temporary bypass (not recommended):"
+    echo "  ALLOW_PUSH_ON_PROTECTED_BRANCH=1 git push ..."
+  } >&2
+  exit 1
+fi
+
+exit 0

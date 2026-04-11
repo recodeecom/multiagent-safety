@@ -6,6 +6,8 @@ BASE_BRANCH_EXPLICIT=0
 SOURCE_BRANCH=""
 PUSH_ENABLED=1
 DELETE_REMOTE_BRANCH=1
+MERGE_MODE="auto"
+GH_BIN="${MUSAFETY_GH_BIN:-gh}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,13 +28,33 @@ while [[ $# -gt 0 ]]; do
       DELETE_REMOTE_BRANCH=0
       shift
       ;;
+    --mode)
+      MERGE_MODE="${2:-auto}"
+      shift 2
+      ;;
+    --via-pr)
+      MERGE_MODE="pr"
+      shift
+      ;;
+    --direct-only)
+      MERGE_MODE="direct"
+      shift
+      ;;
     *)
       echo "[agent-branch-finish] Unknown argument: $1" >&2
-      echo "Usage: $0 [--base <branch>] [--branch <branch>] [--no-push] [--keep-remote-branch]" >&2
+      echo "Usage: $0 [--base <branch>] [--branch <branch>] [--no-push] [--keep-remote-branch] [--mode auto|direct|pr|--via-pr|--direct-only]" >&2
       exit 1
       ;;
   esac
 done
+
+case "$MERGE_MODE" in
+  auto|direct|pr) ;;
+  *)
+    echo "[agent-branch-finish] Invalid --mode value: ${MERGE_MODE} (expected auto|direct|pr)" >&2
+    exit 1
+    ;;
+esac
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[agent-branch-finish] Not inside a git repository." >&2
@@ -169,8 +191,94 @@ if ! git -C "$integration_worktree" merge --no-ff --no-edit "$SOURCE_BRANCH"; th
   exit 1
 fi
 
+merge_completed=1
+merge_status="direct"
+direct_push_error=""
+pr_url=""
+
+run_pr_flow() {
+  if ! command -v "$GH_BIN" >/dev/null 2>&1; then
+    echo "[agent-branch-finish] PR fallback requested but GitHub CLI not found: ${GH_BIN}" >&2
+    return 1
+  fi
+
+  git -C "$source_worktree" push -u origin "$SOURCE_BRANCH"
+
+  pr_title="$(git -C "$repo_root" log -1 --pretty=%s "$SOURCE_BRANCH" 2>/dev/null || true)"
+  if [[ -z "$pr_title" ]]; then
+    pr_title="Merge ${SOURCE_BRANCH} into ${BASE_BRANCH}"
+  fi
+  pr_body="Automated by scripts/agent-branch-finish.sh (PR flow)."
+
+  "$GH_BIN" pr create \
+    --base "$BASE_BRANCH" \
+    --head "$SOURCE_BRANCH" \
+    --title "$pr_title" \
+    --body "$pr_body" >/dev/null 2>&1 || true
+
+  pr_url="$("$GH_BIN" pr view "$SOURCE_BRANCH" --json url --jq '.url' 2>/dev/null || true)"
+
+  merge_output=""
+  if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch 2>&1)"; then
+    return 0
+  fi
+
+  auto_output=""
+  if auto_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch --auto 2>&1)"; then
+    echo "[agent-branch-finish] PR auto-merge enabled; waiting for required checks/reviews." >&2
+    return 2
+  fi
+
+  if [[ -n "$merge_output" ]]; then
+    echo "[agent-branch-finish] PR merge not completed yet; leaving PR open." >&2
+    echo "${merge_output}" >&2
+  fi
+  if [[ -n "$auto_output" ]]; then
+    echo "${auto_output}" >&2
+  fi
+  return 2
+}
+
 if [[ "$PUSH_ENABLED" -eq 1 ]]; then
-  git -C "$integration_worktree" push origin "HEAD:${BASE_BRANCH}"
+  if [[ "$MERGE_MODE" != "pr" ]]; then
+    if ! direct_push_output="$(git -C "$integration_worktree" push origin "HEAD:${BASE_BRANCH}" 2>&1)"; then
+      direct_push_error="$direct_push_output"
+      merge_completed=0
+    fi
+  else
+    merge_completed=0
+  fi
+
+  if [[ "$merge_completed" -eq 0 ]]; then
+    if [[ "$MERGE_MODE" == "direct" ]]; then
+      echo "[agent-branch-finish] Direct push/merge failed in --direct-only mode." >&2
+      if [[ -n "$direct_push_error" ]]; then
+        echo "$direct_push_error" >&2
+      fi
+      exit 1
+    fi
+
+    if run_pr_flow; then
+      merge_completed=1
+      merge_status="pr"
+    else
+      pr_exit=$?
+      if [[ "$pr_exit" -eq 2 ]]; then
+        echo "[agent-branch-finish] PR flow created/updated branch '${SOURCE_BRANCH}' against '${BASE_BRANCH}'." >&2
+        if [[ -n "$pr_url" ]]; then
+          echo "[agent-branch-finish] PR: ${pr_url}" >&2
+        fi
+        echo "[agent-branch-finish] Merge pending review/check policy. Branch cleanup skipped for now." >&2
+        exit 0
+      fi
+      echo "[agent-branch-finish] PR flow failed." >&2
+      if [[ -n "$direct_push_error" ]]; then
+        echo "[agent-branch-finish] Direct push failure details:" >&2
+        echo "$direct_push_error" >&2
+      fi
+      exit 1
+    fi
+  fi
 fi
 
 if [[ -x "${repo_root}/scripts/agent-file-locks.py" ]]; then
@@ -209,7 +317,7 @@ if [[ -x "${repo_root}/scripts/agent-worktree-prune.sh" ]]; then
   fi
 fi
 
-echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' and removed branch."
+echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via ${merge_status} flow and removed branch."
 if [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${repo_root}/.omx/agent-worktrees"/* ]]; then
   echo "[agent-branch-finish] Current worktree '${source_worktree}' still exists because it is the active shell cwd." >&2
   echo "[agent-branch-finish] Leave this directory, then run: bash scripts/agent-worktree-prune.sh --base ${BASE_BRANCH}" >&2
