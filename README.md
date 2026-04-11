@@ -17,7 +17,7 @@ confusing ownership.
 
 `musafety` adds strict guardrails so parallel agent work stays safe and predictable.
 
-![Multi-agent dashboard example](docs/images/dashboard-multi-agent.png)
+![Multi-agent dashboard example](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/dashboard-multi-agent.png)
 
 The dashboard above is the exact kind of parallel workflow this tool is built for.
 
