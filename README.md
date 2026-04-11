@@ -102,6 +102,66 @@ By default this writes:
 
 ![musafety source control multi-agent screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-source-control.svg)
 
+#### Real VS Code Source Control example (after `musafety setup`)
+
+This is the exact layout you should expect in VS Code Source Control after setup
+and a few `agent-branch-start` runs:
+
+```text
+multiagent-safety (main)
+agent_codex_<timestamp>-<snapshot>-<task>
+agent_bot_<timestamp>-<snapshot>-<task>
+agent_bot_<timestamp>-<snapshot>-<task>
+```
+
+That gives you one stable main repo view plus parallel agent worktrees in the
+same VS Code window, so branch ownership and progress stay visible at once.
+
+## Companion tool: `codex-auth` account switcher
+
+If you run multiple Codex identities, this workflow pairs well with
+[`codex-auth`](https://github.com/recodeecom/codex-account-switcher-cli/tree/main),
+a CLI that snapshots `~/.codex/auth.json` per account and lets you switch fast
+without repeated login/logout loops.
+
+> [!WARNING]
+> Not affiliated with OpenAI or Codex. Not an official tool.
+
+How `codex-auth` works:
+
+- stores named snapshots in `~/.codex/accounts/*.json`
+- switches by replacing active `~/.codex/auth.json`
+- keeps lightweight per-terminal session memory (default key is shell PPID),
+  so older terminals can keep their original account context
+
+Requirements: Node.js 18+
+
+Install:
+
+```sh
+npm i -g @imdeadpool/codex-account-switcher
+```
+
+Common commands:
+
+```sh
+codex-auth login [name]
+codex-auth save <name>
+codex-auth use <name>
+codex-auth list --details
+codex-auth current
+codex-auth status
+codex-auth self-update --check
+```
+
+Optional shell-hook helpers:
+
+```sh
+codex-auth setup-login-hook
+codex-auth hook-status
+codex-auth remove-login-hook
+```
+
 ## Copy prompt for your AI (Codex / Claude)
 
 ```sh
