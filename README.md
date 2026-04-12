@@ -48,7 +48,6 @@ Alias support:
 
 - preferred: `gx`
 - full: `guardex`
-- legacy: `musafety`, `multiagent-safety`
 
 ## Copy-paste: daily workflow (per new user task)
 
@@ -89,14 +88,6 @@ If you use `scripts/codex-agent.sh`, the finish flow is auto-run after the Codex
 
 ![gx lock and delete guard screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-lock-guard.svg)
 
-### Source control visibility
-
-![gx source control multi-agent screenshot](https://raw.githubusercontent.com/recodeecom/multiagent-safety/main/docs/images/workflow-source-control.svg)
-
-### Real VS Code Source Control example
-
-![GuardeX real VS Code Source Control layout](./docs/images/workflow-vscode-guardex-real.png)
-
 ## Copy-paste: common commands
 
 ```sh
@@ -133,6 +124,7 @@ gx report scorecard --repo github.com/recodeecom/multiagent-safety
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
+- `scripts/agent-branch-start.sh` hydrates `scripts/codex-agent.sh` into new sandbox worktrees when missing, so auto-finish launcher flow stays available.
 
 ## Configure protected branches
 

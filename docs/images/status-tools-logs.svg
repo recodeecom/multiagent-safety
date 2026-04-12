@@ -12,36 +12,35 @@
   <circle cx="54" cy="52" r="7" fill="#FF5F57"/>
   <circle cx="78" cy="52" r="7" fill="#FEBC2E"/>
   <circle cx="102" cy="52" r="7" fill="#28C840"/>
-  <text x="126" y="57" fill="#9CA3AF" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="20">musafety status</text>
+  <text x="126" y="57" fill="#9CA3AF" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="20">gx status</text>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="22" fill="#E5E7EB">
-    <text x="48" y="106">[musafety] CLI: musafety/0.4.6 linux-x64 node-v22.22.0</text>
-    <text x="48" y="140">[musafety] Global services:</text>
+    <text x="48" y="106">[guardex] CLI: @imdeadpool/guardex/5.0.2 linux-x64 node-v22.22.0</text>
+    <text x="48" y="140">[guardex] Global services:</text>
     <text x="72" y="174">- ● oh-my-codex: active</text>
     <text x="72" y="208">- ● @fission-ai/openspec: active</text>
-    <text x="48" y="242">[musafety] Repo safety service: ● active.</text>
-    <text x="48" y="276">[musafety] Repo: /home/deadpool/KFB-WIRELESS-CLIP-TESTER/GUI</text>
-    <text x="48" y="310">[musafety] Branch: ksskkfb02</text>
-    <text x="48" y="344">musafety-tools logs:</text>
+    <text x="72" y="242">- ● @imdeadpool/codex-account-switcher: active</text>
+    <text x="48" y="276">[guardex] Repo safety service: ● active.</text>
+    <text x="48" y="310">[guardex] Repo: /path/to/your/repo</text>
+    <text x="48" y="344">[guardex] Branch: agent/your-branch</text>
+    <text x="48" y="378">guardex-tools logs:</text>
 
-    <text x="72" y="378" fill="#93C5FD">├─ USAGE</text>
-    <text x="72" y="412" fill="#93C5FD">│</text>
-    <text x="100" y="412">$ musafety &lt;command&gt; [options]</text>
+    <text x="72" y="412" fill="#93C5FD">├─ USAGE</text>
+    <text x="72" y="446" fill="#93C5FD">│</text>
+    <text x="100" y="446">$ gx &lt;command&gt; [options]</text>
 
-    <text x="72" y="446" fill="#93C5FD">├─ COMMANDS</text>
-    <text x="72" y="480" fill="#93C5FD">│</text>
-    <text x="100" y="480">status                Show musafety CLI + service health without modifying files</text>
+    <text x="72" y="480" fill="#93C5FD">├─ COMMANDS</text>
     <text x="72" y="514" fill="#93C5FD">│</text>
-    <text x="100" y="514">setup                 Install + repair guardrails in a git repo (supports --no-gitignore)</text>
+    <text x="100" y="514">status                Show GuardeX CLI + service health without modifying files</text>
     <text x="72" y="548" fill="#93C5FD">│</text>
-    <text x="100" y="548">doctor                Repair safety setup drift, then verify repo safety</text>
+    <text x="100" y="548">setup                 Install + repair guardrails in a git repo (supports --no-gitignore)</text>
     <text x="72" y="582" fill="#93C5FD">│</text>
-    <text x="100" y="582">copy-prompt           Print the AI-ready setup checklist</text>
+    <text x="100" y="582">doctor                Repair safety setup drift, then verify repo safety</text>
     <text x="72" y="616" fill="#93C5FD">│</text>
     <text x="100" y="616">protect               Manage protected branches (list/add/remove/set/reset)</text>
     <text x="72" y="650" fill="#93C5FD">│</text>
     <text x="100" y="650">sync                  Check or sync agent branches with origin/&lt;base&gt;</text>
     <text x="72" y="684" fill="#93C5FD">└─</text>
-    <text x="100" y="684" fill="#A7F3D0">Try 'musafety doctor' for one-step repair + verification.</text>
+    <text x="100" y="684" fill="#A7F3D0">Try 'gx doctor' for one-step repair + verification.</text>
   </g>
 </svg>

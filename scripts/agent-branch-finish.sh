@@ -10,6 +10,9 @@ DELETE_REMOTE_BRANCH_EXPLICIT=0
 MERGE_MODE="auto"
 GH_BIN="${MUSAFETY_GH_BIN:-gh}"
 CLEANUP_AFTER_MERGE_RAW="${MUSAFETY_FINISH_CLEANUP:-false}"
+WAIT_FOR_MERGE_RAW="${MUSAFETY_FINISH_WAIT_FOR_MERGE:-false}"
+WAIT_TIMEOUT_SECONDS_RAW="${MUSAFETY_FINISH_WAIT_TIMEOUT_SECONDS:-1800}"
+WAIT_POLL_SECONDS_RAW="${MUSAFETY_FINISH_WAIT_POLL_SECONDS:-10}"
 
 normalize_bool() {
   local raw="${1:-}"
@@ -24,7 +27,27 @@ normalize_bool() {
   esac
 }
 
+normalize_int() {
+  local raw="${1:-}"
+  local fallback="${2:-0}"
+  local min_value="${3:-0}"
+  local value="$raw"
+
+  if [[ -z "$value" || ! "$value" =~ ^[0-9]+$ ]]; then
+    value="$fallback"
+  fi
+
+  if (( value < min_value )); then
+    value="$min_value"
+  fi
+
+  printf '%s' "$value"
+}
+
 CLEANUP_AFTER_MERGE="$(normalize_bool "$CLEANUP_AFTER_MERGE_RAW" "0")"
+WAIT_FOR_MERGE="$(normalize_bool "$WAIT_FOR_MERGE_RAW" "0")"
+WAIT_TIMEOUT_SECONDS="$(normalize_int "$WAIT_TIMEOUT_SECONDS_RAW" "1800" "30")"
+WAIT_POLL_SECONDS="$(normalize_int "$WAIT_POLL_SECONDS_RAW" "10" "0")"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -59,6 +82,22 @@ while [[ $# -gt 0 ]]; do
       CLEANUP_AFTER_MERGE=0
       shift
       ;;
+    --wait-for-merge)
+      WAIT_FOR_MERGE=1
+      shift
+      ;;
+    --no-wait-for-merge)
+      WAIT_FOR_MERGE=0
+      shift
+      ;;
+    --wait-timeout-seconds)
+      WAIT_TIMEOUT_SECONDS="$(normalize_int "${2:-}" "1800" "30")"
+      shift 2
+      ;;
+    --wait-poll-seconds)
+      WAIT_POLL_SECONDS="$(normalize_int "${2:-}" "10" "0")"
+      shift 2
+      ;;
     --mode)
       MERGE_MODE="${2:-auto}"
       shift 2
@@ -73,7 +112,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "[agent-branch-finish] Unknown argument: $1" >&2
-      echo "Usage: $0 [--base <branch>] [--branch <branch>] [--no-push] [--cleanup|--no-cleanup] [--keep-remote-branch|--delete-remote-branch] [--mode auto|direct|pr|--via-pr|--direct-only]" >&2
+      echo "Usage: $0 [--base <branch>] [--branch <branch>] [--no-push] [--cleanup|--no-cleanup] [--wait-for-merge|--no-wait-for-merge] [--wait-timeout-seconds <n>] [--wait-poll-seconds <n>] [--keep-remote-branch|--delete-remote-branch] [--mode auto|direct|pr|--via-pr|--direct-only]" >&2
       exit 1
       ;;
   esac
@@ -98,6 +137,14 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 current_worktree="$(pwd -P)"
+common_git_dir_raw="$(git -C "$repo_root" rev-parse --git-common-dir)"
+if [[ "$common_git_dir_raw" == /* ]]; then
+  common_git_dir="$common_git_dir_raw"
+else
+  common_git_dir="$(cd "$repo_root/$common_git_dir_raw" && pwd -P)"
+fi
+repo_common_root="$(cd "$common_git_dir/.." && pwd -P)"
+agent_worktree_root="${repo_common_root}/.omx/agent-worktrees"
 
 if [[ -z "$SOURCE_BRANCH" ]]; then
   SOURCE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
@@ -171,7 +218,7 @@ created_source_probe=0
 source_probe_path=""
 
 if [[ -z "$source_worktree" ]]; then
-  source_probe_path="${repo_root}/.omx/agent-worktrees/__source-probe-${SOURCE_BRANCH//\//__}-$(date +%Y%m%d-%H%M%S)"
+  source_probe_path="${agent_worktree_root}/__source-probe-${SOURCE_BRANCH//\//__}-$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$(dirname "$source_probe_path")"
   git -C "$repo_root" worktree add "$source_probe_path" "$SOURCE_BRANCH" >/dev/null
   source_worktree="$source_probe_path"
@@ -229,7 +276,7 @@ if [[ "$should_require_sync" -eq 1 ]] && git -C "$repo_root" show-ref --verify -
   fi
 fi
 
-integration_worktree="${repo_root}/.omx/agent-worktrees/__integrate-${BASE_BRANCH//\//__}-$(date +%Y%m%d-%H%M%S)"
+integration_worktree="${agent_worktree_root}/__integrate-${BASE_BRANCH//\//__}-$(date +%Y%m%d-%H%M%S)"
 integration_branch="__agent_integrate_${BASE_BRANCH//\//_}_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$(dirname "$integration_worktree")"
 
@@ -289,6 +336,78 @@ is_local_branch_delete_error() {
   return 1
 }
 
+read_pr_state() {
+  local state_line
+  state_line="$("$GH_BIN" pr view "$SOURCE_BRANCH" --json state,mergedAt,url --jq '[.state, (.mergedAt // ""), (.url // "")] | @tsv' 2>/dev/null || true)"
+  if [[ -z "$state_line" ]]; then
+    return 1
+  fi
+
+  local parsed_state=""
+  local parsed_merged_at=""
+  local parsed_url=""
+  IFS=$'\t' read -r parsed_state parsed_merged_at parsed_url <<< "$state_line"
+  PR_STATE="$parsed_state"
+  PR_MERGED_AT="$parsed_merged_at"
+  if [[ -n "$parsed_url" ]]; then
+    pr_url="$parsed_url"
+  fi
+  return 0
+}
+
+wait_for_pr_merge() {
+  local deadline
+  deadline=$(( $(date +%s) + WAIT_TIMEOUT_SECONDS ))
+  local wait_notice_printed=0
+  local merge_output=""
+
+  while true; do
+    if merge_output="$("$GH_BIN" pr merge "$SOURCE_BRANCH" --squash --delete-branch 2>&1)"; then
+      return 0
+    fi
+    if is_local_branch_delete_error "$merge_output"; then
+      echo "[agent-branch-finish] PR merged but gh could not delete the local branch (active worktree); continuing local cleanup." >&2
+      return 0
+    fi
+
+    PR_STATE=""
+    PR_MERGED_AT=""
+    if read_pr_state; then
+      if [[ "$PR_STATE" == "MERGED" || -n "$PR_MERGED_AT" ]]; then
+        return 0
+      fi
+      if [[ "$PR_STATE" == "CLOSED" ]]; then
+        echo "[agent-branch-finish] PR closed without merge; cannot continue auto-finish." >&2
+        if [[ -n "$pr_url" ]]; then
+          echo "[agent-branch-finish] PR: ${pr_url}" >&2
+        fi
+        if [[ -n "$merge_output" ]]; then
+          echo "$merge_output" >&2
+        fi
+        return 1
+      fi
+    fi
+
+    if [[ "$wait_notice_printed" -eq 0 ]]; then
+      echo "[agent-branch-finish] Waiting for required checks/reviews, then retrying merge automatically (timeout ${WAIT_TIMEOUT_SECONDS}s)." >&2
+      if [[ -n "$pr_url" ]]; then
+        echo "[agent-branch-finish] PR: ${pr_url}" >&2
+      fi
+      wait_notice_printed=1
+    fi
+
+    if (( $(date +%s) >= deadline )); then
+      echo "[agent-branch-finish] Timed out waiting for PR merge after ${WAIT_TIMEOUT_SECONDS}s." >&2
+      if [[ -n "$merge_output" ]]; then
+        echo "$merge_output" >&2
+      fi
+      return 2
+    fi
+
+    sleep "$WAIT_POLL_SECONDS"
+  done
+}
+
 run_pr_flow() {
   if ! command -v "$GH_BIN" >/dev/null 2>&1; then
     echo "[agent-branch-finish] PR fallback requested but GitHub CLI not found: ${GH_BIN}" >&2
@@ -318,6 +437,11 @@ run_pr_flow() {
   if is_local_branch_delete_error "$merge_output"; then
     echo "[agent-branch-finish] PR merged but gh could not delete the local branch (active worktree); continuing local cleanup." >&2
     return 0
+  fi
+
+  if [[ "$WAIT_FOR_MERGE" -eq 1 ]]; then
+    wait_for_pr_merge
+    return $?
   fi
 
   auto_output=""
@@ -365,6 +489,10 @@ if [[ "$PUSH_ENABLED" -eq 1 ]]; then
         if [[ -n "$pr_url" ]]; then
           echo "[agent-branch-finish] PR: ${pr_url}" >&2
         fi
+        if [[ "$WAIT_FOR_MERGE" -eq 1 ]]; then
+          echo "[agent-branch-finish] Merge did not complete within wait window; keeping branch open." >&2
+          exit 1
+        fi
         echo "[agent-branch-finish] Merge pending review/check policy. Branch cleanup skipped for now." >&2
         exit 0
       fi
@@ -390,16 +518,21 @@ fi
 if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   if [[ "$source_worktree" == "$repo_root" ]]; then
     if is_clean_worktree "$source_worktree"; then
-      git -C "$source_worktree" checkout "$BASE_BRANCH" >/dev/null 2>&1 || true
-      if [[ "$PUSH_ENABLED" -eq 1 ]] && git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
+      switched_to_base=0
+      if git -C "$source_worktree" checkout "$BASE_BRANCH" >/dev/null 2>&1; then
+        switched_to_base=1
+      else
+        git -C "$source_worktree" checkout --detach >/dev/null 2>&1 || true
+      fi
+      if [[ "$switched_to_base" -eq 1 && "$PUSH_ENABLED" -eq 1 ]] && git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
         git -C "$source_worktree" pull --ff-only origin "$BASE_BRANCH" >/dev/null 2>&1 || true
       fi
     fi
-  elif [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${repo_root}/.omx/agent-worktrees"/* ]]; then
+  elif [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${agent_worktree_root}"/* ]]; then
     git -C "$source_worktree" checkout --detach >/dev/null 2>&1 || true
   fi
 
-  if [[ "$source_worktree" != "$current_worktree" && "$source_worktree" == "${repo_root}/.omx/agent-worktrees"/* ]]; then
+  if [[ "$source_worktree" != "$current_worktree" && "$source_worktree" == "${agent_worktree_root}"/* ]]; then
     git -C "$repo_root" worktree remove "$source_worktree" --force >/dev/null 2>&1 || true
   fi
 
@@ -423,7 +556,7 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   fi
 
   echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via ${merge_status} flow and cleaned source branch/worktree."
-  if [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${repo_root}/.omx/agent-worktrees"/* ]]; then
+  if [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${agent_worktree_root}"/* ]]; then
     echo "[agent-branch-finish] Current worktree '${source_worktree}' still exists because it is the active shell cwd." >&2
     echo "[agent-branch-finish] Leave this directory, then run: bash scripts/agent-worktree-prune.sh --base ${BASE_BRANCH} --delete-branches" >&2
   fi

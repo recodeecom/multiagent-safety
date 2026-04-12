@@ -8,7 +8,8 @@ BASE_BRANCH_EXPLICIT=0
 CODEX_BIN="${MUSAFETY_CODEX_BIN:-codex}"
 AUTO_FINISH_RAW="${MUSAFETY_CODEX_AUTO_FINISH:-true}"
 AUTO_REVIEW_ON_CONFLICT_RAW="${MUSAFETY_CODEX_AUTO_REVIEW_ON_CONFLICT:-true}"
-AUTO_CLEANUP_RAW="${MUSAFETY_CODEX_AUTO_CLEANUP:-false}"
+AUTO_CLEANUP_RAW="${MUSAFETY_CODEX_AUTO_CLEANUP:-true}"
+AUTO_WAIT_FOR_MERGE_RAW="${MUSAFETY_CODEX_WAIT_FOR_MERGE:-true}"
 
 normalize_bool() {
   local raw="${1:-}"
@@ -25,7 +26,8 @@ normalize_bool() {
 
 AUTO_FINISH="$(normalize_bool "$AUTO_FINISH_RAW" "1")"
 AUTO_REVIEW_ON_CONFLICT="$(normalize_bool "$AUTO_REVIEW_ON_CONFLICT_RAW" "1")"
-AUTO_CLEANUP="$(normalize_bool "$AUTO_CLEANUP_RAW" "0")"
+AUTO_CLEANUP="$(normalize_bool "$AUTO_CLEANUP_RAW" "1")"
+AUTO_WAIT_FOR_MERGE="$(normalize_bool "$AUTO_WAIT_FOR_MERGE_RAW" "1")"
 
 if [[ -n "$BASE_BRANCH" ]]; then
   BASE_BRANCH_EXPLICIT=1
@@ -72,6 +74,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-cleanup)
       AUTO_CLEANUP=0
+      shift
+      ;;
+    --wait-for-merge)
+      AUTO_WAIT_FOR_MERGE=1
+      shift
+      ;;
+    --no-wait-for-merge)
+      AUTO_WAIT_FOR_MERGE=0
       shift
       ;;
     --)
@@ -306,6 +316,9 @@ run_finish_flow() {
   if [[ "$AUTO_CLEANUP" -eq 1 ]]; then
     finish_args+=(--cleanup)
   fi
+  if [[ "$AUTO_WAIT_FOR_MERGE" -eq 1 ]]; then
+    finish_args+=(--wait-for-merge)
+  fi
 
   if has_origin_remote; then
     if command -v gh >/dev/null 2>&1 || command -v "${MUSAFETY_GH_BIN:-gh}" >/dev/null 2>&1; then
@@ -368,7 +381,11 @@ auto_finish_completed=0
 worktree_branch="$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 
 if [[ "$AUTO_FINISH" -eq 1 && -n "$worktree_branch" && "$worktree_branch" != "HEAD" ]]; then
-  if [[ "$AUTO_CLEANUP" -eq 1 ]]; then
+  if [[ "$AUTO_WAIT_FOR_MERGE" -eq 1 && "$AUTO_CLEANUP" -eq 1 ]]; then
+    echo "[codex-agent] Auto-finish enabled: commit -> push/PR -> wait for merge -> cleanup."
+  elif [[ "$AUTO_WAIT_FOR_MERGE" -eq 1 ]]; then
+    echo "[codex-agent] Auto-finish enabled: commit -> push/PR -> wait for merge (keep branch/worktree)."
+  elif [[ "$AUTO_CLEANUP" -eq 1 ]]; then
     echo "[codex-agent] Auto-finish enabled: commit -> push/PR -> merge -> cleanup."
   else
     echo "[codex-agent] Auto-finish enabled: commit -> push/PR -> merge (keep branch/worktree)."
@@ -401,7 +418,7 @@ if [[ -x "${repo_root}/scripts/agent-worktree-prune.sh" ]]; then
   if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 ]]; then
     prune_args+=(--base "$BASE_BRANCH")
   fi
-  if [[ "$AUTO_CLEANUP" -eq 1 ]]; then
+  if [[ "$AUTO_CLEANUP" -eq 1 && "$auto_finish_completed" -eq 1 ]]; then
     prune_args+=(--delete-branches --delete-remote-branches)
   fi
   if ! bash "${repo_root}/scripts/agent-worktree-prune.sh" "${prune_args[@]}"; then

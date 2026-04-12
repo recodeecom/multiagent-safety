@@ -671,6 +671,34 @@ test('agent-branch-start moves protected-branch local changes into the new agent
   assert.doesNotMatch(stashList.stdout, /musafety-auto-transfer-/);
 });
 
+test('agent-branch-start hydrates codex-agent helper into new worktrees when missing locally', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const localCodexAgent = path.join(repoDir, 'scripts', 'codex-agent.sh');
+  assert.equal(fs.existsSync(localCodexAgent), true, 'setup should provision local codex-agent helper');
+
+  result = runCmd('bash', ['scripts/agent-branch-start.sh', 'hydrate-codex', 'bot'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Hydrated local helper in worktree: scripts\/codex-agent\.sh/);
+
+  const createdWorktree = extractCreatedWorktree(result.stdout);
+  const worktreeCodexAgent = path.join(createdWorktree, 'scripts', 'codex-agent.sh');
+  assert.equal(fs.existsSync(worktreeCodexAgent), true, 'worktree should receive codex-agent helper');
+  const mode = fs.statSync(worktreeCodexAgent).mode;
+  assert.equal((mode & 0o111) !== 0, true, 'hydrated codex-agent helper should be executable');
+});
+
 test('agent-branch-finish infers base from source branch metadata and updates main worktree', () => {
   const repoDir = initRepoOnBranch('main');
   seedCommit(repoDir);
@@ -1057,7 +1085,7 @@ test('codex-agent keeps dirty sandbox worktrees after session exit', () => {
   assert.equal(fs.existsSync(path.join(launchedCwd, 'codex-dirty.txt')), true);
 });
 
-test('codex-agent auto-finishes dirty sandbox branches via PR flow when origin is configured', () => {
+test('codex-agent waits for PR merge completion and cleans merged sandbox branch/worktree by default', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
   attachOriginRemote(repoDir);
@@ -1085,6 +1113,8 @@ test('codex-agent auto-finishes dirty sandbox branches via PR flow when origin i
   );
   fs.chmodSync(fakeCodexPath, 0o755);
 
+  const ghMergeState = path.join(repoDir, '.codex-agent-gh-merge-attempts');
+
   const { fakePath: fakeGhPath } = createFakeGhScript(`
 if [[ "$1" == "pr" && "$2" == "create" ]]; then
   exit 0
@@ -1098,6 +1128,16 @@ if [[ "$1" == "pr" && "$2" == "view" ]]; then
   exit 1
 fi
 if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  attempts=0
+  if [[ -f "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}" ]]; then
+    attempts="$(cat "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}")"
+  fi
+  attempts=$((attempts + 1))
+  echo "$attempts" > "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}"
+  if [[ "$attempts" -lt 2 ]]; then
+    echo "Required status check \\"test (node 22)\\" is expected." >&2
+    exit 1
+  fi
   exit 0
 fi
 echo "unexpected gh args: $*" >&2
@@ -1114,21 +1154,25 @@ exit 1
       PATH: `${fakeCodexBin}:${process.env.PATH}`,
       MUSAFETY_TEST_CODEX_CWD: cwdMarker,
       MUSAFETY_TEST_CODEX_ARGS: argsMarker,
+      MUSAFETY_TEST_GH_MERGE_STATE: ghMergeState,
       MUSAFETY_GH_BIN: fakeGhPath,
+      MUSAFETY_FINISH_WAIT_TIMEOUT_SECONDS: '60',
+      MUSAFETY_FINISH_WAIT_POLL_SECONDS: '0',
     },
   );
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
-  assert.match(launch.stdout, /\[codex-agent\] Auto-finish enabled: commit -> push\/PR -> merge \(keep branch\/worktree\)\./);
+  assert.match(launch.stdout, /\[codex-agent\] Auto-finish enabled: commit -> push\/PR -> wait for merge -> cleanup\./);
   assert.match(launch.stdout, /\[codex-agent\] Auto-finish completed for/);
-  assert.match(launch.stdout, /\[codex-agent\] Sandbox worktree kept:/);
+  assert.match(launch.stdout, /\[codex-agent\] Auto-cleaned sandbox worktree:/);
+  assert.equal(fs.readFileSync(ghMergeState, 'utf8').trim(), '2', 'finish flow should retry merge until checks are ready');
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
-  assert.equal(fs.existsSync(launchedCwd), true, 'auto-finished sandbox should stay until explicit cleanup');
+  assert.equal(fs.existsSync(launchedCwd), false, 'auto-finished sandbox should be cleaned by default');
   const launchedBranch = extractCreatedBranch(launch.stdout);
   result = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${launchedBranch}`], repoDir);
-  assert.equal(result.status, 0, 'auto-finished branch should remain locally by default');
+  assert.notEqual(result.status, 0, 'auto-finished branch should be removed locally by default');
   result = runCmd('git', ['ls-remote', '--heads', 'origin', launchedBranch], repoDir);
-  assert.match(result.stdout, /refs\/heads\//, 'auto-finished branch should remain on origin by default');
+  assert.equal(result.stdout.trim(), '', 'auto-finished branch should be removed on origin by default');
 
   const launchedArgs = fs.readFileSync(argsMarker, 'utf8').trim();
   assert.match(launchedArgs, /--model gpt-5\.4-mini/);
@@ -1383,6 +1427,189 @@ exit 1
 
   result = runCmd('git', ['ls-remote', '--heads', 'origin', 'agent/test-pr-delete-error'], repoDir);
   assert.equal(result.stdout.trim(), '', 'agent branch should be deleted on origin');
+});
+
+test('agent-branch-finish cleanup succeeds from active agent worktree when base branch is checked out elsewhere', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  const agentWorktreePath = path.join(repoDir, '.omx', 'agent-worktrees', 'agent__active-cleanup');
+  result = runCmd(
+    'git',
+    ['worktree', 'add', '-b', 'agent/test-active-worktree-cleanup', agentWorktreePath, 'dev'],
+    repoDir,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.writeFileSync(path.join(agentWorktreePath, 'active-worktree-cleanup.txt'), 'cleanup from active worktree\n', 'utf8');
+  result = runCmd(
+    'git',
+    ['add', 'active-worktree-cleanup.txt'],
+    agentWorktreePath,
+  );
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '--no-verify', '-m', 'active worktree cleanup change'], agentWorktreePath);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', '-u', 'origin', 'agent/test-active-worktree-cleanup'], agentWorktreePath);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/active-cleanup"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const finish = runCmd(
+    'bash',
+    [
+      path.join(repoDir, 'scripts', 'agent-branch-finish.sh'),
+      '--branch',
+      'agent/test-active-worktree-cleanup',
+      '--base',
+      'dev',
+      '--mode',
+      'pr',
+      '--cleanup',
+    ],
+    agentWorktreePath,
+    { MUSAFETY_GH_BIN: fakeGhPath },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-active-worktree-cleanup' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+  );
+  assert.match(finish.stderr, /Current worktree '.+' still exists because it is the active shell cwd/);
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', 'refs/heads/agent/test-active-worktree-cleanup'], repoDir);
+  assert.notEqual(result.status, 0, 'agent branch should be deleted locally');
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', 'agent/test-active-worktree-cleanup'], repoDir);
+  assert.equal(result.stdout.trim(), '', 'agent branch should be deleted on origin');
+  assert.equal(fs.existsSync(agentWorktreePath), true, 'active cwd worktree should remain until manual prune');
+  result = runCmd('git', ['rev-parse', '--abbrev-ref', 'HEAD'], agentWorktreePath);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stdout.trim(), 'HEAD', 'active worktree should detach before local branch deletion');
+});
+
+test('agent-branch-finish waits for required checks in PR mode and merges when ready', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  result = runCmd('git', ['checkout', '-b', 'agent/test-pr-wait-merge'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  commitFile(repoDir, 'agent-pr-wait.txt', 'agent wait merge\n', 'agent wait merge change');
+
+  const ghMergeState = path.join(repoDir, '.finish-gh-merge-attempts');
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/2"
+    exit 0
+  fi
+  if [[ " $* " == *" --json state,mergedAt,url "* ]]; then
+    attempts=0
+    if [[ -f "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}" ]]; then
+      attempts="$(cat "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}")"
+    fi
+    if [[ "$attempts" -ge 2 ]]; then
+      echo -e "MERGED\\t2026-04-12T00:00:00Z\\thttps://example.test/pr/2"
+    else
+      echo -e "OPEN\\t\\thttps://example.test/pr/2"
+    fi
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  attempts=0
+  if [[ -f "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}" ]]; then
+    attempts="$(cat "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}")"
+  fi
+  attempts=$((attempts + 1))
+  echo "$attempts" > "${'${MUSAFETY_TEST_GH_MERGE_STATE}'}"
+  if [[ "$attempts" -lt 2 ]]; then
+    echo "Required status check \\"test (node 22)\\" is expected." >&2
+    exit 1
+  fi
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const finish = runCmd(
+    'bash',
+    [
+      'scripts/agent-branch-finish.sh',
+      '--branch',
+      'agent/test-pr-wait-merge',
+      '--mode',
+      'pr',
+      '--cleanup',
+      '--wait-for-merge',
+      '--wait-timeout-seconds',
+      '60',
+      '--wait-poll-seconds',
+      '0',
+    ],
+    repoDir,
+    {
+      MUSAFETY_GH_BIN: fakeGhPath,
+      MUSAFETY_TEST_GH_MERGE_STATE: ghMergeState,
+    },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.equal(fs.readFileSync(ghMergeState, 'utf8').trim(), '2', 'finish flow should retry merge until checks are ready');
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-pr-wait-merge' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+  );
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', 'refs/heads/agent/test-pr-wait-merge'], repoDir);
+  assert.notEqual(result.status, 0, 'agent branch should be deleted locally after wait+merge cleanup');
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', 'agent/test-pr-wait-merge'], repoDir);
+  assert.equal(result.stdout.trim(), '', 'agent branch should be deleted on origin after wait+merge cleanup');
 });
 
 test('OpenSpec plan workspace scaffold creates expected role/task structure', () => {

@@ -152,6 +152,36 @@ is_protected_branch_name() {
   return 1
 }
 
+hydrate_local_helper_in_worktree() {
+  local repo="$1"
+  local worktree="$2"
+  local relative_path="$3"
+  local worktree_target="${worktree}/${relative_path}"
+  local source_path=""
+
+  if [[ -e "$worktree_target" ]]; then
+    return 0
+  fi
+
+  if [[ -f "${repo}/${relative_path}" ]]; then
+    source_path="${repo}/${relative_path}"
+  elif [[ -f "${repo}/templates/${relative_path}" ]]; then
+    source_path="${repo}/templates/${relative_path}"
+  fi
+
+  if [[ -z "$source_path" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "$worktree_target")"
+  cp "$source_path" "$worktree_target"
+  if [[ -x "$source_path" ]]; then
+    chmod +x "$worktree_target"
+  fi
+
+  echo "[agent-branch-start] Hydrated local helper in worktree: ${relative_path}"
+}
+
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[agent-branch-start] Not inside a git repository." >&2
   exit 1
@@ -281,6 +311,8 @@ if [[ -n "$auto_transfer_stash_ref" ]]; then
     exit 1
   fi
 fi
+
+hydrate_local_helper_in_worktree "$repo_root" "$worktree_path" "scripts/codex-agent.sh"
 
 echo "[agent-branch-start] Created branch: ${branch_name}"
 echo "[agent-branch-start] Worktree: ${worktree_path}"

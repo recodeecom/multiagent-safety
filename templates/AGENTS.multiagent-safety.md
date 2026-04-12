@@ -12,9 +12,9 @@
 - For git isolation, each agent must start on a dedicated branch via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
 - Treat the base branch (`main` or the user's current local base branch) as read-only while the agent branch is active.
 - Agent completion defaults to `scripts/codex-agent.sh`, which auto-finishes the branch (auto-commit changed files, push/create PR, attempt merge, and pull the local base branch after merge).
-- Auto-finish keeps the sandbox branch/worktree by default so conflict follow-ups and audits stay reproducible.
-- Use explicit cleanup when done: `gx cleanup --branch "<agent-branch>"` (or `gx cleanup` for all merged agent branches).
-- If codex-agent auto-finish cannot complete, immediately run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --via-pr` and keep the branch open until checks/review pass.
+- Auto-finish now waits for required checks/merge and then cleans merged sandbox branch/worktree by default.
+- Use `--no-cleanup` only when you explicitly need to keep a merged sandbox for audit/debug follow-up.
+- If codex-agent auto-finish cannot complete, immediately run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --via-pr --wait-for-merge` and keep the branch open until checks/review pass.
 - If merge/rebase conflicts block auto-finish, run a conflict-resolution review pass in that sandbox branch, then rerun `agent-branch-finish.sh --via-pr` until merged.
 - Completion is not valid until these are true: commit exists on the agent branch, branch is pushed to `origin`, and PR/merge status is produced by `agent-branch-finish.sh` or `codex-agent`.
 - Per-message loop is mandatory: for every new user message/task, start a fresh agent branch/worktree, claim ownership locks, implement and verify, finish via PR/merge cleanup, then repeat for the next message/task.
