@@ -195,15 +195,17 @@ snapshot_name="$(resolve_active_codex_snapshot_name)"
 snapshot_slug="$(sanitize_slug "$snapshot_name" "")"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 if [[ -n "$snapshot_slug" ]]; then
-  branch_name="agent/${agent_slug}/${timestamp}-${snapshot_slug}-${task_slug}"
+  branch_name_base="agent/${agent_slug}/${snapshot_slug}-${task_slug}"
 else
-  branch_name="agent/${agent_slug}/${timestamp}-${task_slug}"
+  branch_name_base="agent/${agent_slug}/${task_slug}"
 fi
 
-if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
-  echo "[agent-branch-start] Branch already exists: ${branch_name}" >&2
-  exit 1
-fi
+branch_name="$branch_name_base"
+branch_suffix=2
+while git show-ref --verify --quiet "refs/heads/${branch_name}"; do
+  branch_name="${branch_name_base}-${branch_suffix}"
+  branch_suffix=$((branch_suffix + 1))
+done
 
 if [[ "$WORKTREE_MODE" -eq 0 ]]; then
   if [[ "$ALLOW_IN_PLACE" -ne 1 ]]; then

@@ -474,7 +474,7 @@ OUT
     { env: { PATH: `${fakeBin}:${process.env.PATH || ''}` } },
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Created branch: agent\/planner\/\d{8}-\d{6}-zeus-edix-hu-restore-snapshot/);
+  assert.match(result.stdout, /Created branch: agent\/planner\/zeus-edix-hu-restore-snapshot(?:-\d+)?/);
 });
 
 test('setup agent-branch-start supports explicit snapshot override without codex-auth', () => {
@@ -491,7 +491,7 @@ test('setup agent-branch-start supports explicit snapshot override without codex
     { env: { MUSAFETY_CODEX_AUTH_SNAPSHOT: 'Prod Snapshot One' } },
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Created branch: agent\/bot\/\d{8}-\d{6}-prod-snapshot-one-ship-fix/);
+  assert.match(result.stdout, /Created branch: agent\/bot\/prod-snapshot-one-ship-fix(?:-\d+)?/);
 });
 
 test('setup agent-branch-start defaults base to current branch and stores per-branch base metadata', () => {

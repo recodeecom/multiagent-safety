@@ -121,9 +121,9 @@ and a few `agent-branch-start` runs:
 
 ```text
 GuardeX (your preferred local branch: main/dev)
-agent_codex_<timestamp>-<snapshot>-<task>
-agent_bot_<timestamp>-<snapshot>-<task>
-agent_bot_<timestamp>-<snapshot>-<task>
+agent_codex_<snapshot>-<task>
+agent_bot_<snapshot>-<task>
+agent_bot_<snapshot>-<task>-2
 ```
 
 That gives you one stable main repo view plus parallel agent worktrees in the
