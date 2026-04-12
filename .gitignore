@@ -12,7 +12,7 @@ scripts/install-agent-git-hooks.sh
 scripts/openspec/init-plan-workspace.sh
 .githooks/pre-commit
 oh-my-codex/
-.codex/skills/musafety/SKILL.md
-.claude/commands/musafety.md
+.codex/skills/guardex/SKILL.md
+.claude/commands/guardex.md
 .omx/state/agent-file-locks.json
 # multiagent-safety:END

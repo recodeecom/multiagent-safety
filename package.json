@@ -15,7 +15,7 @@
     "agent:codex": "bash ./scripts/codex-agent.sh",
     "agent:branch:start": "bash ./scripts/agent-branch-start.sh",
     "agent:branch:finish": "bash ./scripts/agent-branch-finish.sh",
-    "agent:cleanup": "bash ./scripts/agent-worktree-prune.sh --base dev",
+    "agent:cleanup": "gx cleanup",
     "agent:hooks:install": "bash ./scripts/install-agent-git-hooks.sh",
     "agent:locks:claim": "python3 ./scripts/agent-file-locks.py claim",
     "agent:locks:allow-delete": "python3 ./scripts/agent-file-locks.py allow-delete",
