@@ -298,7 +298,7 @@ NOTES
   - ${SHORT_TOOL_NAME} init is an alias of ${SHORT_TOOL_NAME} setup
   - ${TOOL_NAME} setup asks for Y/N approval before global installs
   - In initialized repos, setup/install/fix block in-place writes on protected main by default
-  - doctor auto-starts a sandbox agent branch/worktree when run on protected main
+  - doctor auto-runs in a sandbox agent branch/worktree on protected main and tries auto-finish PR flow
   - agent-branch-finish merges by default and keeps agent branches/worktrees until explicit cleanup
   - use '${SHORT_TOOL_NAME} cleanup' to remove merged agent branches/worktrees (optionally remote refs too)
   - Legacy command aliases are still supported: ${LEGACY_NAMES.join(', ')}`);
@@ -699,13 +699,13 @@ function hasGuardexBootstrapFiles(repoRoot) {
   return required.every((relativePath) => fs.existsSync(path.join(repoRoot, relativePath)));
 }
 
-function protectedBaseWriteBlock(options) {
+function protectedBaseWriteBlock(options, { requireBootstrap = true } = {}) {
   if (options.dryRun || options.allowProtectedBaseWrite) {
     return null;
   }
 
   const repoRoot = resolveRepoRoot(options.target);
-  if (!hasGuardexBootstrapFiles(repoRoot)) {
+  if (requireBootstrap && !hasGuardexBootstrapFiles(repoRoot)) {
     return null;
   }
 
@@ -771,13 +771,96 @@ function buildSandboxDoctorArgs(options, sandboxTarget) {
   return args;
 }
 
-function runDoctorInSandbox(options, blocked) {
+function isSpawnFailure(result) {
+  return Boolean(result?.error) && typeof result?.status !== 'number';
+}
+
+function doctorSandboxBranchPrefix() {
+  const now = new Date();
+  const stamp = [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('') + '-' + [
+    String(now.getUTCHours()).padStart(2, '0'),
+    String(now.getUTCMinutes()).padStart(2, '0'),
+    String(now.getUTCSeconds()).padStart(2, '0'),
+  ].join('');
+  return `agent/gx/${stamp}`;
+}
+
+function doctorSandboxWorktreePath(repoRoot, branchName) {
+  return path.join(repoRoot, '.omx', 'agent-worktrees', branchName.replace(/\//g, '__'));
+}
+
+function gitRefExists(repoRoot, ref) {
+  return run('git', ['-C', repoRoot, 'show-ref', '--verify', '--quiet', ref]).status === 0;
+}
+
+function resolveDoctorSandboxStartRef(repoRoot, baseBranch) {
+  run('git', ['-C', repoRoot, 'fetch', 'origin', baseBranch, '--quiet'], { timeout: 20_000 });
+  if (gitRefExists(repoRoot, `refs/remotes/origin/${baseBranch}`)) {
+    return `origin/${baseBranch}`;
+  }
+  if (gitRefExists(repoRoot, `refs/heads/${baseBranch}`)) {
+    return baseBranch;
+  }
+  throw new Error(`Unable to find base ref for sandbox doctor: ${baseBranch}`);
+}
+
+function startDoctorSandboxFallback(blocked) {
+  const branchPrefix = doctorSandboxBranchPrefix();
+  let selectedBranch = '';
+  let selectedWorktreePath = '';
+
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const suffix = attempt === 0 ? 'gx-doctor' : `${attempt + 1}-gx-doctor`;
+    const candidateBranch = `${branchPrefix}-${suffix}`;
+    const candidateWorktreePath = doctorSandboxWorktreePath(blocked.repoRoot, candidateBranch);
+    if (gitRefExists(blocked.repoRoot, `refs/heads/${candidateBranch}`)) {
+      continue;
+    }
+    if (fs.existsSync(candidateWorktreePath)) {
+      continue;
+    }
+    selectedBranch = candidateBranch;
+    selectedWorktreePath = candidateWorktreePath;
+    break;
+  }
+
+  if (!selectedBranch || !selectedWorktreePath) {
+    throw new Error('Unable to allocate unique sandbox branch/worktree for doctor');
+  }
+
+  fs.mkdirSync(path.dirname(selectedWorktreePath), { recursive: true });
+  const startRef = resolveDoctorSandboxStartRef(blocked.repoRoot, blocked.branch);
+  const addResult = run(
+    'git',
+    ['-C', blocked.repoRoot, 'worktree', 'add', '-b', selectedBranch, selectedWorktreePath, startRef],
+  );
+  if (isSpawnFailure(addResult)) {
+    throw addResult.error;
+  }
+  if (addResult.status !== 0) {
+    throw new Error((addResult.stderr || addResult.stdout || 'failed to create doctor sandbox').trim());
+  }
+
+  return {
+    metadata: {
+      branch: selectedBranch,
+      worktreePath: selectedWorktreePath,
+    },
+    stdout:
+      `[agent-branch-start] Created branch: ${selectedBranch}\n` +
+      `[agent-branch-start] Worktree: ${selectedWorktreePath}\n`,
+    stderr: addResult.stderr || '',
+  };
+}
+
+function startDoctorSandbox(blocked) {
   const startScript = path.join(blocked.repoRoot, 'scripts', 'agent-branch-start.sh');
   if (!fs.existsSync(startScript)) {
-    throw new Error(
-      `doctor sandbox fallback is unavailable because '${startScript}' is missing.\n` +
-      `Run '${SHORT_TOOL_NAME} setup --allow-protected-base-write' once to restore branch-start tooling.`,
-    );
+    return startDoctorSandboxFallback(blocked);
   }
 
   const startResult = run('bash', [
@@ -789,7 +872,7 @@ function runDoctorInSandbox(options, blocked) {
     '--base',
     blocked.branch,
   ], { cwd: blocked.repoRoot });
-  if (startResult.error) {
+  if (isSpawnFailure(startResult)) {
     throw startResult.error;
   }
   if (startResult.status !== 0) {
@@ -801,31 +884,268 @@ function runDoctorInSandbox(options, blocked) {
     throw new Error(`Failed to parse sandbox worktree from agent-branch-start output:\n${startResult.stdout}`);
   }
 
+  return {
+    metadata,
+    stdout: startResult.stdout || '',
+    stderr: startResult.stderr || '',
+  };
+}
+
+function parseGitPathList(output) {
+  return String(output || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line !== LOCK_FILE_RELATIVE);
+}
+
+function collectDoctorChangedPaths(worktreePath) {
+  const changed = new Set();
+  const commands = [
+    ['diff', '--name-only'],
+    ['diff', '--cached', '--name-only'],
+    ['ls-files', '--others', '--exclude-standard'],
+  ];
+  for (const gitArgs of commands) {
+    const result = run('git', ['-C', worktreePath, ...gitArgs], { timeout: 20_000 });
+    for (const filePath of parseGitPathList(result.stdout)) {
+      changed.add(filePath);
+    }
+  }
+  return Array.from(changed);
+}
+
+function collectDoctorDeletedPaths(worktreePath) {
+  const deleted = new Set();
+  const commands = [
+    ['diff', '--name-only', '--diff-filter=D'],
+    ['diff', '--cached', '--name-only', '--diff-filter=D'],
+  ];
+  for (const gitArgs of commands) {
+    const result = run('git', ['-C', worktreePath, ...gitArgs], { timeout: 20_000 });
+    for (const filePath of parseGitPathList(result.stdout)) {
+      deleted.add(filePath);
+    }
+  }
+  return Array.from(deleted);
+}
+
+function claimDoctorChangedLocks(metadata) {
+  const lockScript = path.join(metadata.worktreePath, 'scripts', 'agent-file-locks.py');
+  if (!fs.existsSync(lockScript) || !metadata.branch) {
+    return {
+      status: 'skipped',
+      note: 'lock helper unavailable in sandbox',
+      changedCount: 0,
+      deletedCount: 0,
+    };
+  }
+
+  const changedPaths = collectDoctorChangedPaths(metadata.worktreePath);
+  const deletedPaths = collectDoctorDeletedPaths(metadata.worktreePath);
+  if (changedPaths.length > 0) {
+    run('python3', [lockScript, 'claim', '--branch', metadata.branch, ...changedPaths], {
+      cwd: metadata.worktreePath,
+      timeout: 30_000,
+    });
+  }
+  if (deletedPaths.length > 0) {
+    run('python3', [lockScript, 'allow-delete', '--branch', metadata.branch, ...deletedPaths], {
+      cwd: metadata.worktreePath,
+      timeout: 30_000,
+    });
+  }
+
+  return {
+    status: 'claimed',
+    note: 'claimed locks for doctor auto-commit',
+    changedCount: changedPaths.length,
+    deletedCount: deletedPaths.length,
+  };
+}
+
+function autoCommitDoctorSandboxChanges(metadata) {
+  if (!metadata.worktreePath || !metadata.branch) {
+    return {
+      status: 'skipped',
+      note: 'missing sandbox branch metadata',
+    };
+  }
+
+  claimDoctorChangedLocks(metadata);
+  run('git', ['-C', metadata.worktreePath, 'add', '-A'], { timeout: 20_000 });
+  const staged = run(
+    'git',
+    ['-C', metadata.worktreePath, 'diff', '--cached', '--name-only', '--', '.', `:(exclude)${LOCK_FILE_RELATIVE}`],
+    { timeout: 20_000 },
+  );
+  const stagedFiles = parseGitPathList(staged.stdout);
+  if (stagedFiles.length === 0) {
+    return {
+      status: 'no-changes',
+      note: 'no committable doctor changes found in sandbox',
+    };
+  }
+
+  const commitResult = run(
+    'git',
+    ['-C', metadata.worktreePath, 'commit', '-m', 'Auto-finish: gx doctor repairs'],
+    { timeout: 30_000 },
+  );
+  if (commitResult.status !== 0) {
+    return {
+      status: 'failed',
+      note: 'doctor sandbox auto-commit failed',
+      stdout: commitResult.stdout || '',
+      stderr: commitResult.stderr || '',
+    };
+  }
+
+  return {
+    status: 'committed',
+    note: 'doctor sandbox repairs committed',
+    commitMessage: 'Auto-finish: gx doctor repairs',
+    stagedFiles,
+  };
+}
+
+function hasOriginRemote(repoRoot) {
+  return run('git', ['-C', repoRoot, 'remote', 'get-url', 'origin']).status === 0;
+}
+
+function isCommandAvailable(commandName) {
+  return run('which', [commandName]).status === 0;
+}
+
+function finishDoctorSandboxBranch(blocked, metadata) {
+  const finishScript = path.join(metadata.worktreePath, 'scripts', 'agent-branch-finish.sh');
+  if (!fs.existsSync(finishScript)) {
+    return {
+      status: 'skipped',
+      note: `${path.relative(metadata.worktreePath, finishScript)} missing in sandbox`,
+    };
+  }
+  if (!hasOriginRemote(blocked.repoRoot)) {
+    return {
+      status: 'skipped',
+      note: 'origin remote missing; skipped auto-finish',
+    };
+  }
+
+  const ghBin = process.env.MUSAFETY_GH_BIN || 'gh';
+  if (!isCommandAvailable(ghBin)) {
+    return {
+      status: 'skipped',
+      note: `'${ghBin}' not available; skipped auto-finish PR flow`,
+    };
+  }
+  const ghAuthStatus = run(ghBin, ['auth', 'status'], { timeout: 20_000 });
+  if (ghAuthStatus.status !== 0) {
+    return {
+      status: 'skipped',
+      note: `'${ghBin}' auth unavailable; skipped auto-finish PR flow`,
+      stderr: ghAuthStatus.stderr || '',
+    };
+  }
+
+  const finishResult = run(
+    'bash',
+    [finishScript, '--branch', metadata.branch, '--via-pr'],
+    { cwd: metadata.worktreePath, timeout: 180_000 },
+  );
+  if (isSpawnFailure(finishResult)) {
+    return {
+      status: 'failed',
+      note: 'doctor sandbox finish flow errored',
+      stdout: finishResult.stdout || '',
+      stderr: finishResult.stderr || '',
+    };
+  }
+  if (finishResult.status !== 0) {
+    return {
+      status: 'failed',
+      note: 'doctor sandbox finish flow failed',
+      stdout: finishResult.stdout || '',
+      stderr: finishResult.stderr || '',
+    };
+  }
+
+  return {
+    status: 'completed',
+    note: 'doctor sandbox finish flow completed',
+    stdout: finishResult.stdout || '',
+    stderr: finishResult.stderr || '',
+  };
+}
+
+function runDoctorInSandbox(options, blocked) {
+  const startResult = startDoctorSandbox(blocked);
+  const metadata = startResult.metadata;
+
   const sandboxTarget = resolveSandboxTarget(blocked.repoRoot, metadata.worktreePath, options.target);
   const nestedResult = run(
     process.execPath,
     [__filename, ...buildSandboxDoctorArgs(options, sandboxTarget)],
     { cwd: metadata.worktreePath },
   );
-  if (nestedResult.error) {
+  if (isSpawnFailure(nestedResult)) {
     throw nestedResult.error;
   }
+
+  let autoCommitResult = {
+    status: 'skipped',
+    note: 'sandbox doctor did not complete successfully',
+  };
+  let finishResult = {
+    status: 'skipped',
+    note: 'sandbox doctor did not complete successfully',
+  };
 
   let lockSyncResult = {
     status: 'skipped',
     note: 'sandbox doctor did not complete successfully',
   };
   if (nestedResult.status === 0) {
+    if (!options.dryRun) {
+      autoCommitResult = autoCommitDoctorSandboxChanges(metadata);
+      if (autoCommitResult.status === 'committed') {
+        finishResult = finishDoctorSandboxBranch(blocked, metadata);
+      } else if (autoCommitResult.status === 'no-changes') {
+        finishResult = {
+          status: 'skipped',
+          note: 'no doctor changes to auto-finish',
+        };
+      } else if (autoCommitResult.status !== 'failed') {
+        finishResult = {
+          status: 'skipped',
+          note: 'auto-commit did not run',
+        };
+      }
+    } else {
+      autoCommitResult = {
+        status: 'skipped',
+        note: 'dry-run skips doctor sandbox auto-commit',
+      };
+      finishResult = {
+        status: 'skipped',
+        note: 'dry-run skips doctor sandbox finish flow',
+      };
+    }
+
     const sandboxLockPath = path.join(metadata.worktreePath, LOCK_FILE_RELATIVE);
     const baseLockPath = path.join(blocked.repoRoot, LOCK_FILE_RELATIVE);
-    if (!fs.existsSync(sandboxLockPath)) {
+    if (!fs.existsSync(baseLockPath)) {
+      lockSyncResult = {
+        status: 'skipped',
+        note: `${LOCK_FILE_RELATIVE} missing in protected base workspace`,
+      };
+    } else if (!fs.existsSync(sandboxLockPath)) {
       lockSyncResult = {
         status: 'skipped',
         note: `${LOCK_FILE_RELATIVE} missing in sandbox worktree`,
       };
     } else {
       const sourceContent = fs.readFileSync(sandboxLockPath, 'utf8');
-      const destinationContent = fs.existsSync(baseLockPath) ? fs.readFileSync(baseLockPath, 'utf8') : '';
+      const destinationContent = fs.readFileSync(baseLockPath, 'utf8');
       if (sourceContent === destinationContent) {
         lockSyncResult = {
           status: 'unchanged',
@@ -852,6 +1172,8 @@ function runDoctorInSandbox(options, blocked) {
               {
                 ...parsed,
                 sandboxLockSync: lockSyncResult,
+                sandboxAutoCommit: autoCommitResult,
+                sandboxFinish: finishResult,
               },
               null,
               2,
@@ -875,6 +1197,30 @@ function runDoctorInSandbox(options, blocked) {
     if (nestedResult.stdout) process.stdout.write(nestedResult.stdout);
     if (nestedResult.stderr) process.stderr.write(nestedResult.stderr);
     if (nestedResult.status === 0) {
+      if (autoCommitResult.status === 'committed') {
+        console.log(
+          `[${TOOL_NAME}] Auto-committed doctor repairs in sandbox branch '${metadata.branch}'.`,
+        );
+      } else if (autoCommitResult.status === 'failed') {
+        console.log(`[${TOOL_NAME}] Doctor sandbox auto-commit failed; branch left for manual follow-up.`);
+        if (autoCommitResult.stdout) process.stdout.write(autoCommitResult.stdout);
+        if (autoCommitResult.stderr) process.stderr.write(autoCommitResult.stderr);
+      } else {
+        console.log(`[${TOOL_NAME}] Doctor sandbox auto-commit skipped: ${autoCommitResult.note}.`);
+      }
+
+      if (finishResult.status === 'completed') {
+        console.log(`[${TOOL_NAME}] Auto-finish flow completed for sandbox branch '${metadata.branch}'.`);
+        if (finishResult.stdout) process.stdout.write(finishResult.stdout);
+        if (finishResult.stderr) process.stderr.write(finishResult.stderr);
+      } else if (finishResult.status === 'failed') {
+        console.log(`[${TOOL_NAME}] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
+        if (finishResult.stdout) process.stdout.write(finishResult.stdout);
+        if (finishResult.stderr) process.stderr.write(finishResult.stderr);
+      } else {
+        console.log(`[${TOOL_NAME}] Auto-finish skipped: ${finishResult.note}.`);
+      }
+
       if (lockSyncResult.status === 'synced') {
         console.log(
           `[${TOOL_NAME}] Synced repaired lock registry back to protected branch workspace (${LOCK_FILE_RELATIVE}).`,
@@ -2146,7 +2492,7 @@ function doctor(rawArgs) {
     allowProtectedBaseWrite: false,
   });
 
-  const blocked = protectedBaseWriteBlock(options);
+  const blocked = protectedBaseWriteBlock(options, { requireBootstrap: false });
   if (blocked) {
     runDoctorInSandbox(options, blocked);
     return;
