@@ -182,6 +182,24 @@ function extractCreatedWorktree(output) {
   return match[1].trim();
 }
 
+const spawnProbe = cp.spawnSync(process.execPath, ['-e', 'process.exit(0)'], { encoding: 'utf8' });
+const canSpawnChildProcesses = !spawnProbe.error && spawnProbe.status === 0;
+const spawnUnavailableReason = spawnProbe.error
+  ? `${spawnProbe.error.code || 'unknown'}: ${spawnProbe.error.message}`
+  : `status=${spawnProbe.status}`;
+
+if (!canSpawnChildProcesses) {
+  test('self-update prompt requires explicit y/n when approval is not preconfigured', () => {
+    const source = fs.readFileSync(cliPath, 'utf8');
+    assert.match(
+      source,
+      /const shouldUpdate = interactive\s*\?\s*promptYesNoStrict\(\s*`Update now\?\s*\(\$\{NPM_BIN\} i -g \$\{packageJson\.name\}@latest\)`\s*,?\s*\)\s*:\s*autoApproval;/s,
+    );
+  });
+
+  test('install integration suite requires child_process spawnSync support', { skip: `spawn unavailable (${spawnUnavailableReason})` }, () => {});
+} else {
+
 test('setup provisions workflow files and repo config', () => {
   const repoDir = initRepo();
 
@@ -1833,3 +1851,5 @@ test('unknown command suggests nearest valid command', () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Did you mean 'release'\?/);
 });
+
+}
