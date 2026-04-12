@@ -376,6 +376,94 @@ test('doctor on protected main syncs repaired stale lock state back to base work
   assert.equal(scanAfter.status, 0, scanAfter.stderr || scanAfter.stdout);
 });
 
+test('doctor on protected main bootstraps sandbox branch even before setup exists', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+
+  const result = runNode(['doctor', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /doctor detected protected branch 'main'/);
+  const createdBranch = extractCreatedBranch(result.stdout);
+  const createdWorktree = extractCreatedWorktree(result.stdout);
+  assert.match(createdBranch, /^agent\/gx\/.+-gx-doctor$/);
+  assert.equal(fs.existsSync(path.join(createdWorktree, 'scripts', 'agent-branch-start.sh')), true);
+
+  const rootStatus = runCmd('git', ['status', '--short', '--untracked-files=no'], repoDir);
+  assert.equal(rootStatus.status, 0, rootStatus.stderr || rootStatus.stdout);
+  assert.equal(rootStatus.stdout.trim(), '', 'protected main checkout should keep tracked files clean');
+
+  const currentBranch = runCmd('git', ['branch', '--show-current'], repoDir);
+  assert.equal(currentBranch.status, 0, currentBranch.stderr || currentBranch.stdout);
+  assert.equal(currentBranch.stdout.trim(), 'main');
+});
+
+test('doctor on protected main auto-commits sandbox repairs and runs PR finish flow when gh is authenticated', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.rmSync(path.join(repoDir, 'AGENTS.md'));
+  result = runCmd('git', ['add', '-A'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'simulate drift remove agents'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "auth" && "$2" == "status" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/doctor-autofinish"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  result = runNodeWithEnv(['doctor', '--target', repoDir], repoDir, { MUSAFETY_GH_BIN: fakeGhPath });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Auto-committed doctor repairs in sandbox branch/);
+  assert.match(result.stdout, /Auto-finish flow completed for sandbox branch/);
+
+  const createdBranch = extractCreatedBranch(result.stdout);
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${createdBranch}`], repoDir);
+  assert.equal(result.status, 0, 'doctor auto-finish should keep sandbox branch locally by default');
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', createdBranch], repoDir);
+  assert.match(result.stdout, /refs\/heads\//, 'doctor auto-finish should push sandbox branch to origin');
+
+  const rootStatus = runCmd('git', ['status', '--short', '--untracked-files=no'], repoDir);
+  assert.equal(rootStatus.status, 0, rootStatus.stderr || rootStatus.stdout);
+  assert.equal(rootStatus.stdout.trim(), '', 'protected main checkout should stay clean');
+});
+
 test('setup pre-commit blocks codex session commits on non-agent branches by default', () => {
   const repoDir = initRepo();
 
