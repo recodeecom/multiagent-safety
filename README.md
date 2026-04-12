@@ -120,6 +120,7 @@ gx report scorecard --repo github.com/recodeecom/multiagent-safety
 - No command defaults to `gx status`.
 - `gx init` is alias of `gx setup`.
 - Setup/doctor can install missing global OMX/OpenSpec/codex-auth with explicit Y/N confirmation.
+- `gx setup` checks GitHub CLI (`gh`) and prints install guidance if missing.
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
@@ -143,6 +144,19 @@ Stored in git config key:
 
 ```text
 multiagent.protectedBranches
+```
+
+## Companion dependency: GitHub CLI (`gh`)
+
+GuardeX PR/merge automation depends on GitHub CLI (`gh`), including
+`agent-branch-finish.sh` PR flows and `codex-agent.sh` auto-finish behavior.
+
+Install + verify:
+
+```sh
+# install guide: https://cli.github.com/
+gh --version
+gh auth status
 ```
 
 ## Companion dependency: `codex-auth` account switcher

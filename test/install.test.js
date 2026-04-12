@@ -1836,6 +1836,7 @@ test('copy-commands outputs command-only checklist', () => {
   const result = runNode(['copy-commands'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /^npm i -g @imdeadpool\/guardex/m);
+  assert.match(result.stdout, /^gh --version/m);
   assert.match(result.stdout, /gx setup/);
   assert.match(result.stdout, /gx doctor/);
   assert.match(result.stdout, /scripts\/agent-file-locks.py claim/);
@@ -1909,6 +1910,42 @@ exit 1
   assert.equal(fs.existsSync(marker), true, 'global install should run for missing package');
   const args = fs.readFileSync(marker, 'utf8').trim();
   assert.equal(args, 'i -g @fission-ai/openspec @imdeadpool/codex-account-switcher');
+});
+
+test('status reports gh dependency as inactive when gh is unavailable', () => {
+  const repoDir = initRepo();
+  const result = runNodeWithEnv(['status', '--target', repoDir, '--json'], repoDir, {
+    MUSAFETY_GH_BIN: 'gh-command-not-found-for-test',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  const ghService = payload.services.find((service) => service.name === 'gh');
+  assert.ok(ghService, 'gh service should be included in status payload');
+  assert.equal(ghService.status, 'inactive');
+});
+
+test('setup warns when gh dependency is missing', () => {
+  const repoDir = initRepo();
+  const fakeNpm = createFakeNpmScript(`
+if [[ "$1" == "list" ]]; then
+  cat <<'JSON'
+{"dependencies":{"oh-my-codex":{"version":"1.0.0"},"@fission-ai/openspec":{"version":"1.0.0"},"@imdeadpool/codex-account-switcher":{"version":"1.0.0"}}}
+JSON
+  exit 0
+fi
+echo "unexpected npm args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(['setup', '--target', repoDir, '--yes-global-install'], repoDir, {
+    MUSAFETY_NPM_BIN: fakeNpm,
+    MUSAFETY_GH_BIN: 'gh-command-not-found-for-test',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Missing required system tool\(s\): gh/);
+  assert.match(result.stdout, /https:\/\/cli\.github\.com\//);
 });
 
 test('worktree prune keeps merged agent worktrees/branches unless delete flags are set', () => {

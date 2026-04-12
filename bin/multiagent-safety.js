@@ -15,6 +15,14 @@ const GLOBAL_TOOLCHAIN_PACKAGES = [
   '@fission-ai/openspec',
   '@imdeadpool/codex-account-switcher',
 ];
+const GH_BIN = process.env.MUSAFETY_GH_BIN || 'gh';
+const REQUIRED_SYSTEM_TOOLS = [
+  {
+    name: 'gh',
+    command: GH_BIN,
+    installHint: 'https://cli.github.com/',
+  },
+];
 const MAINTAINER_RELEASE_REPO = path.resolve(
   process.env.MUSAFETY_RELEASE_REPO || '/tmp/multiagent-safety',
 );
@@ -141,10 +149,12 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
    gx setup
    # alias: gx init
 
-   - Setup detects global OMX/OpenSpec/codex-auth first.
+   - Setup detects global OMX/OpenSpec/codex-auth npm packages first.
    - If one is missing and setup asks for approval, reply explicitly:
      - y = run: npm i -g oh-my-codex @fission-ai/openspec @imdeadpool/codex-account-switcher (missing ones only)
      - n = skip global installs
+   - Setup also checks GitHub CLI (gh), required for PR/merge automation.
+   - If gh is missing: install it from https://cli.github.com/ and rerun gx setup.
 
 3) If setup reports warnings/errors, repair + re-check:
    gx doctor
@@ -176,6 +186,7 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
 `;
 
 const AI_SETUP_COMMANDS = `npm i -g @imdeadpool/guardex
+gh --version
 gx setup
 gx doctor
 bash scripts/codex-agent.sh "task" "agent-name"
@@ -297,6 +308,7 @@ NOTES
   - Short alias: ${SHORT_TOOL_NAME}
   - ${SHORT_TOOL_NAME} init is an alias of ${SHORT_TOOL_NAME} setup
   - ${TOOL_NAME} setup asks for Y/N approval before global installs
+  - ${TOOL_NAME} setup checks GitHub CLI (gh) and prints install guidance if missing
   - In initialized repos, setup/install/fix block in-place writes on protected main by default
   - doctor auto-runs in a sandbox agent branch/worktree on protected main and tries auto-finish PR flow
   - agent-branch-finish merges by default and keeps agent branches/worktrees until explicit cleanup
@@ -2029,6 +2041,26 @@ function detectGlobalToolchainPackages() {
   return { ok: true, installed, missing };
 }
 
+function detectRequiredSystemTools() {
+  const services = [];
+  for (const tool of REQUIRED_SYSTEM_TOOLS) {
+    const result = run(tool.command, ['--version']);
+    const active = result.status === 0;
+    const rawReason = result.error && result.error.code
+      ? result.error.code
+      : (result.stderr || '').trim();
+    const reason = rawReason.split('\n')[0] || '';
+    services.push({
+      name: tool.name,
+      command: tool.command,
+      installHint: tool.installHint,
+      status: active ? 'active' : 'inactive',
+      reason,
+    });
+  }
+  return services;
+}
+
 function askGlobalInstallForMissing(options, missingPackages) {
   const approval = resolveGlobalInstallApproval(options);
   if (!approval.approved) {
@@ -2358,7 +2390,7 @@ function status(rawArgs) {
   });
 
   const toolchain = detectGlobalToolchainPackages();
-  const services = GLOBAL_TOOLCHAIN_PACKAGES.map((pkg) => {
+  const npmServices = GLOBAL_TOOLCHAIN_PACKAGES.map((pkg) => {
     if (!toolchain.ok) {
       return { name: pkg, status: 'unknown' };
     }
@@ -2367,6 +2399,14 @@ function status(rawArgs) {
       status: toolchain.installed.includes(pkg) ? 'active' : 'inactive',
     };
   });
+  const requiredSystemTools = detectRequiredSystemTools();
+  const services = [
+    ...npmServices,
+    ...requiredSystemTools.map((tool) => ({
+      name: tool.name,
+      status: tool.status,
+    })),
+  ];
 
   const targetPath = path.resolve(options.target);
   const inGitRepo = isGitRepo(targetPath);
@@ -2413,6 +2453,15 @@ function status(rawArgs) {
   console.log(`[${TOOL_NAME}] Global services:`);
   for (const service of services) {
     console.log(`  - ${statusDot(service.status)} ${service.name}: ${service.status}`);
+  }
+  const missingSystemTools = requiredSystemTools.filter((tool) => tool.status !== 'active');
+  if (missingSystemTools.length > 0) {
+    const tools = missingSystemTools.map((tool) => tool.name).join(', ');
+    console.log(`[${TOOL_NAME}] ⚠️ Missing required system tool(s): ${tools}`);
+    for (const tool of missingSystemTools) {
+      const reasonText = tool.reason ? ` (${tool.reason})` : '';
+      console.log(`  - install ${tool.name}: ${tool.installHint}${reasonText}`);
+    }
   }
 
   if (!scanResult) {
@@ -2666,7 +2715,7 @@ function setup(rawArgs) {
       `[${TOOL_NAME}] ✅ Global tools installed (${(globalInstallStatus.packages || []).join(', ')}).`,
     );
   } else if (globalInstallStatus.status === 'already-installed') {
-    console.log(`[${TOOL_NAME}] ✅ OMX/OpenSpec/codex-auth global tools already installed. Skipping.`);
+    console.log(`[${TOOL_NAME}] ✅ OMX/OpenSpec/codex-auth npm global tools already installed. Skipping.`);
   } else if (globalInstallStatus.status === 'failed') {
     console.log(
       `[${TOOL_NAME}] ⚠️ Global install failed: ${globalInstallStatus.reason}\n` +
@@ -2678,6 +2727,18 @@ function setup(rawArgs) {
       `[${TOOL_NAME}] Skipping global installs (non-interactive mode). ` +
       `Use --yes-global-install to force or run interactively for Y/N prompt.`,
     );
+  }
+  const requiredSystemTools = detectRequiredSystemTools();
+  const missingSystemTools = requiredSystemTools.filter((tool) => tool.status !== 'active');
+  if (missingSystemTools.length === 0) {
+    console.log(`[${TOOL_NAME}] ✅ Required system tools available (${requiredSystemTools.map((tool) => tool.name).join(', ')}).`);
+  } else {
+    const names = missingSystemTools.map((tool) => tool.name).join(', ');
+    console.log(`[${TOOL_NAME}] ⚠️ Missing required system tool(s): ${names}`);
+    for (const tool of missingSystemTools) {
+      const reasonText = tool.reason ? ` (${tool.reason})` : '';
+      console.log(`[${TOOL_NAME}] Install ${tool.name}: ${tool.installHint}${reasonText}`);
+    }
   }
 
   assertProtectedMainWriteAllowed(options, 'setup');
