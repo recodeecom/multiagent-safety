@@ -132,6 +132,7 @@ gx report scorecard --repo github.com/recodeecom/multiagent-safety
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
+- `scripts/agent-branch-start.sh` hydrates `scripts/codex-agent.sh` into new sandbox worktrees when missing, so auto-finish launcher flow stays available.
 
 ## Configure protected branches
 

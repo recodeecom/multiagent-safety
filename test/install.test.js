@@ -671,6 +671,34 @@ test('agent-branch-start moves protected-branch local changes into the new agent
   assert.doesNotMatch(stashList.stdout, /musafety-auto-transfer-/);
 });
 
+test('agent-branch-start hydrates codex-agent helper into new worktrees when missing locally', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const localCodexAgent = path.join(repoDir, 'scripts', 'codex-agent.sh');
+  assert.equal(fs.existsSync(localCodexAgent), true, 'setup should provision local codex-agent helper');
+
+  result = runCmd('bash', ['scripts/agent-branch-start.sh', 'hydrate-codex', 'bot'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Hydrated local helper in worktree: scripts\/codex-agent\.sh/);
+
+  const createdWorktree = extractCreatedWorktree(result.stdout);
+  const worktreeCodexAgent = path.join(createdWorktree, 'scripts', 'codex-agent.sh');
+  assert.equal(fs.existsSync(worktreeCodexAgent), true, 'worktree should receive codex-agent helper');
+  const mode = fs.statSync(worktreeCodexAgent).mode;
+  assert.equal((mode & 0o111) !== 0, true, 'hydrated codex-agent helper should be executable');
+});
+
 test('agent-branch-finish infers base from source branch metadata and updates main worktree', () => {
   const repoDir = initRepoOnBranch('main');
   seedCommit(repoDir);
