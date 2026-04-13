@@ -25,6 +25,7 @@ This AGENTS.md is the top-level operating contract for this repository.
 - Treat `main` and any currently checked-out base branch as read-only workspaces.
 - Every new session must start by creating an isolated agent branch/worktree via `scripts/agent-branch-start.sh` before making edits.
 - If edits are found on `main`/base by mistake, immediately move them to a dedicated agent branch/worktree before continuing.
+- In-place agent branching is disallowed; keep the visible local/base checkout unchanged and do all edits in dedicated agent worktrees.
 - Prefer deletion over addition.
 - Reuse existing patterns before introducing new abstractions.
 - No new dependencies without explicit request.
@@ -91,6 +92,7 @@ OMX runtime state typically lives under `.omx/`:
 - Before deleting/replacing code, each agent must read the latest session comments/handoffs first and confirm the target code is in their owned scope.
 - If ownership is unclear or overlaps, stop that edit, post a blocker comment, and let the leader/integrator reassign scope.
 - For git isolation, each agent must start on a dedicated branch via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
+- In-place branch mode is disallowed: never switch the active local/base checkout to an agent branch.
 - Do not implement changes directly on `main` or other base branches; all edits must happen on dedicated agent branches/worktrees.
 - If the current local branch already contains accidental edits, move them to an agent branch/worktree first, then continue implementation.
 - Treat the base branch (`main` or the user's current local base branch) as read-only while the agent branch is active.

@@ -701,7 +701,7 @@ test('setup pre-commit allows codex managed guardrail commits on protected main 
   assert.match(result.stderr, /\[guardex-preedit-guard\] Codex edit\/commit detected on a protected branch\./);
 });
 
-test('setup agent-branch-start requires --allow-in-place when using --in-place', () => {
+test('setup agent-branch-start rejects in-place flags to keep local checkout unchanged', () => {
   const repoDir = initRepo();
 
   let result = runNode(['setup', '--target', repoDir], repoDir);
@@ -711,8 +711,12 @@ test('setup agent-branch-start requires --allow-in-place when using --in-place',
 
   result = runCmd('bash', ['scripts/agent-branch-start.sh', 'demo', 'bot', 'dev', '--in-place'], repoDir);
   assert.notEqual(result.status, 0, result.stdout);
-  assert.match(result.stderr, /--in-place is blocked by default/);
-  assert.match(result.stderr, /--in-place --allow-in-place/);
+  assert.match(result.stderr, /In-place branch mode is disabled/);
+  assert.match(result.stderr, /always creates an isolated worktree/);
+
+  result = runCmd('bash', ['scripts/agent-branch-start.sh', 'demo', 'bot', 'dev', '--allow-in-place'], repoDir);
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /In-place branch mode is disabled/);
 });
 
 test('setup agent-branch-start includes active codex snapshot slug in branch name', () => {
@@ -1321,6 +1325,70 @@ test('codex-agent launches codex inside a fresh sandbox worktree and keeps branc
   const launchedBranch = extractCreatedBranch(launch.stdout);
   const branchResult = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${launchedBranch}`], repoDir);
   assert.equal(branchResult.status, 0, 'agent branch should remain after default codex-agent run');
+});
+
+test('codex-agent restores local branch and falls back to safe worktree start when starter script switches in-place', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  const setupResult = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(setupResult.status, 0, setupResult.stderr || setupResult.stdout);
+  let result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.writeFileSync(
+    path.join(repoDir, 'scripts', 'agent-branch-start.sh'),
+    '#!/usr/bin/env bash\n' +
+      'set -euo pipefail\n' +
+      'branch_name="agent/legacy/in-place-start"\n' +
+      'git checkout -B "$branch_name" >/dev/null\n' +
+      'echo "[agent-branch-start] Created in-place branch: ${branch_name}"\n',
+    'utf8',
+  );
+  fs.chmodSync(path.join(repoDir, 'scripts', 'agent-branch-start.sh'), 0o755);
+
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-codex-fallback-'));
+  const fakeCodexPath = path.join(fakeBin, 'codex');
+  fs.writeFileSync(
+    fakeCodexPath,
+    `#!/usr/bin/env bash\n` +
+      `pwd > "${'${MUSAFETY_TEST_CODEX_CWD}'}"\n` +
+      `echo "$@" > "${'${MUSAFETY_TEST_CODEX_ARGS}'}"\n`,
+    'utf8',
+  );
+  fs.chmodSync(fakeCodexPath, 0o755);
+
+  const cwdMarker = path.join(repoDir, '.codex-agent-cwd-fallback');
+  const argsMarker = path.join(repoDir, '.codex-agent-args-fallback');
+  const launch = runCmd(
+    'bash',
+    ['scripts/codex-agent.sh', 'fallback-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'],
+    repoDir,
+    {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      MUSAFETY_TEST_CODEX_CWD: cwdMarker,
+      MUSAFETY_TEST_CODEX_ARGS: argsMarker,
+    },
+  );
+  assert.equal(launch.status, 0, launch.stderr || launch.stdout);
+  const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
+  assert.match(combinedOutput, /Unsafe starter output/);
+  assert.match(combinedOutput, /\[agent-branch-start\] Created branch: agent\/planner\//);
+
+  const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
+  assert.match(
+    launchedCwd,
+    new RegExp(`${escapeRegexLiteral(repoDir)}/\\.omx/agent-worktrees/agent__planner__`),
+  );
+  assert.notEqual(launchedCwd, repoDir);
+
+  const currentBranch = runCmd('git', ['branch', '--show-current'], repoDir);
+  assert.equal(currentBranch.status, 0, currentBranch.stderr || currentBranch.stdout);
+  assert.equal(currentBranch.stdout.trim(), 'dev');
 });
 
 test('codex-agent supports --codex-bin override before positional arguments', () => {

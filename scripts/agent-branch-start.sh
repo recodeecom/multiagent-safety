@@ -5,8 +5,6 @@ TASK_NAME="task"
 AGENT_NAME="agent"
 BASE_BRANCH=""
 BASE_BRANCH_EXPLICIT=0
-WORKTREE_MODE=1
-ALLOW_IN_PLACE=0
 WORKTREE_ROOT_REL=".omx/agent-worktrees"
 POSITIONAL_ARGS=()
 
@@ -25,13 +23,10 @@ while [[ $# -gt 0 ]]; do
       BASE_BRANCH_EXPLICIT=1
       shift 2
       ;;
-    --in-place)
-      WORKTREE_MODE=0
-      shift
-      ;;
-    --allow-in-place)
-      ALLOW_IN_PLACE=1
-      shift
+    --in-place|--allow-in-place)
+      echo "[agent-branch-start] In-place branch mode is disabled." >&2
+      echo "[agent-branch-start] This command always creates an isolated worktree to keep your active checkout unchanged." >&2
+      exit 1
       ;;
     --worktree-root)
       WORKTREE_ROOT_REL="${2:-.omx/agent-worktrees}"
@@ -47,7 +42,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       echo "[agent-branch-start] Unknown option: $1" >&2
-      echo "Usage: $0 [task] [agent] [base] [--in-place --allow-in-place] [--worktree-root <path>]" >&2
+      echo "Usage: $0 [task] [agent] [base] [--worktree-root <path>]" >&2
       exit 1
       ;;
     *)
@@ -59,7 +54,7 @@ done
 
 if [[ "${#POSITIONAL_ARGS[@]}" -gt 3 ]]; then
   echo "[agent-branch-start] Too many positional arguments." >&2
-  echo "Usage: $0 [task] [agent] [base] [--in-place --allow-in-place] [--worktree-root <path>]" >&2
+  echo "Usage: $0 [task] [agent] [base] [--worktree-root <path>]" >&2
   exit 1
 fi
 
@@ -236,34 +231,6 @@ while git show-ref --verify --quiet "refs/heads/${branch_name}"; do
   branch_name="${branch_name_base}-${branch_suffix}"
   branch_suffix=$((branch_suffix + 1))
 done
-
-if [[ "$WORKTREE_MODE" -eq 0 ]]; then
-  if [[ "$ALLOW_IN_PLACE" -ne 1 ]]; then
-    echo "[agent-branch-start] --in-place is blocked by default to prevent accidental edits on protected branches." >&2
-    echo "[agent-branch-start] If you really need it, pass both: --in-place --allow-in-place" >&2
-    exit 1
-  fi
-
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "[agent-branch-start] Working tree is not clean. Commit/stash changes before starting an in-place branch." >&2
-    exit 1
-  fi
-
-  current_branch="$(git rev-parse --abbrev-ref HEAD)"
-  if [[ "$current_branch" != "$BASE_BRANCH" ]]; then
-    git checkout "$BASE_BRANCH"
-  fi
-
-  if git show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
-    git pull --ff-only origin "$BASE_BRANCH"
-  fi
-
-  git checkout -b "$branch_name"
-  git -C "$repo_root" config "branch.${branch_name}.musafetyBase" "$BASE_BRANCH" >/dev/null 2>&1 || true
-  echo "[agent-branch-start] Created in-place branch: ${branch_name}"
-  echo "$branch_name"
-  exit 0
-fi
 
 worktree_root="${repo_root}/${WORKTREE_ROOT_REL}"
 mkdir -p "$worktree_root"

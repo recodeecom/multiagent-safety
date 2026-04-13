@@ -10,6 +10,7 @@
 - Before deleting/replacing code, each agent must read the latest session comments/handoffs first and confirm the target code is in their owned scope.
 - If ownership is unclear or overlaps, stop that edit, post a blocker comment, and let the leader/integrator reassign scope.
 - For git isolation, each agent must start on a dedicated branch via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
+- In-place branch mode is disallowed: never switch the active local/base checkout to an agent branch.
 - Treat the base branch (`main` or the user's current local base branch) as read-only while the agent branch is active.
 - Agent completion defaults to `scripts/codex-agent.sh`, which auto-finishes the branch (auto-commit changed files, push/create PR, attempt merge, and pull the local base branch after merge).
 - Auto-finish now waits for required checks/merge and then cleans merged sandbox branch/worktree by default.
