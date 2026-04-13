@@ -238,6 +238,10 @@ npm pack --dry-run
 
 ## Release notes
 
+### v5.0.4
+
+- Bumped package version from `5.0.3` to `5.0.4` to stay one patch ahead of the current npm published version.
+
 ### v5.0.3
 
 - Bumped package version from `5.0.2` to `5.0.3` for the next npm publish.
