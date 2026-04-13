@@ -83,6 +83,7 @@ const AGENTS_MARKER_END = '<!-- multiagent-safety:END -->';
 const GITIGNORE_MARKER_START = '# multiagent-safety:START';
 const GITIGNORE_MARKER_END = '# multiagent-safety:END';
 const MANAGED_GITIGNORE_PATHS = [
+  '.omx/',
   'scripts/agent-branch-start.sh',
   'scripts/agent-branch-finish.sh',
   'scripts/codex-agent.sh',
@@ -98,6 +99,17 @@ const MANAGED_GITIGNORE_PATHS = [
   '.claude/commands/guardex.md',
   LOCK_FILE_RELATIVE,
 ];
+const OMX_SCAFFOLD_DIRECTORIES = [
+  '.omx',
+  '.omx/state',
+  '.omx/logs',
+  '.omx/plans',
+  '.omx/agent-worktrees',
+];
+const OMX_SCAFFOLD_FILES = new Map([
+  ['.omx/notepad.md', '\n\n## WORKING MEMORY\n'],
+  ['.omx/project-memory.json', '{}\n'],
+]);
 const COMMAND_TYPO_ALIASES = new Map([
   ['relaese', 'release'],
   ['realaese', 'release'],
@@ -115,6 +127,7 @@ const SUGGESTIBLE_COMMANDS = [
   'setup',
   'init',
   'doctor',
+  'review',
   'report',
   'copy-prompt',
   'copy-commands',
@@ -149,8 +162,7 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['version', 'Print GuardeX version'],
 ];
 const AGENT_BOT_DESCRIPTIONS = [
-  ['review', 'Monitor open PRs targeting current branch and dispatch codex-agent review flow'],
-  ['start', 'bash scripts/review-bot-watch.sh --interval 30'],
+  ['review', 'Start PR monitor + codex-agent review flow (default interval: 30s)'],
 ];
 
 const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-Rex for your repo) in this repository for Codex or Claude.
@@ -172,7 +184,10 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
 3) If setup reports warnings/errors, repair + re-check:
    gx doctor
 
-4) Confirm next safe agent workflow commands:
+4) Optional: start continuous PR monitor from this repo:
+   gx review --interval 30
+
+5) Confirm next safe agent workflow commands:
    bash scripts/codex-agent.sh "task" "agent-name"
    bash scripts/agent-branch-start.sh "task" "agent-name"
    python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
@@ -184,17 +199,17 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
      Remove them explicitly when done:
      gx cleanup --branch "$(git rev-parse --abbrev-ref HEAD)"
 
-5) Optional: create OpenSpec planning workspace:
+6) Optional: create OpenSpec planning workspace:
    bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
 
-6) Optional: protect extra branches:
+7) Optional: protect extra branches:
    gx protect add release staging
 
-7) Optional: sync your current agent branch with latest base branch:
+8) Optional: sync your current agent branch with latest base branch:
    gx sync --check
    gx sync
 
-8) Optional (GitHub remote cleanup): enable:
+9) Optional (GitHub remote cleanup): enable:
    Settings -> General -> Pull Requests -> Automatically delete head branches
 `;
 
@@ -202,6 +217,7 @@ const AI_SETUP_COMMANDS = `npm i -g @imdeadpool/guardex
 gh --version
 gx setup
 gx doctor
+gx review --interval 30
 bash scripts/codex-agent.sh "task" "agent-name"
 bash scripts/agent-branch-start.sh "task" "agent-name"
 python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
@@ -349,6 +365,7 @@ NOTES
   - ${SHORT_TOOL_NAME} init is an alias of ${SHORT_TOOL_NAME} setup
   - ${TOOL_NAME} setup asks for Y/N approval before global installs
   - ${TOOL_NAME} setup checks GitHub CLI (gh) and prints install guidance if missing
+  - For other repos: ${SHORT_TOOL_NAME} setup --target <repo-path> then ${SHORT_TOOL_NAME} doctor --target <repo-path>
   - In initialized repos, setup/install/fix block in-place writes on protected main by default
   - setup/doctor auto-finish clean pending agent/* branches via PR flow into the current local base branch
   - doctor auto-runs in a sandbox agent branch/worktree on protected main and tries auto-finish PR flow
@@ -360,7 +377,8 @@ NOTES
     console.log(`
 [${TOOL_NAME}] No git repository detected in current directory.
 [${TOOL_NAME}] Start from a repo root, or pass an explicit target:
-  ${TOOL_NAME} setup --target <path-to-git-repo>`);
+  ${TOOL_NAME} setup --target <path-to-git-repo>
+  ${TOOL_NAME} doctor --target <path-to-git-repo>`);
   }
 }
 
@@ -501,6 +519,45 @@ function ensureTemplateFilePresent(repoRoot, relativeTemplatePath, dryRun) {
 
 function lockFilePath(repoRoot) {
   return path.join(repoRoot, LOCK_FILE_RELATIVE);
+}
+
+function ensureOmxScaffold(repoRoot, dryRun) {
+  const operations = [];
+
+  for (const relativeDir of OMX_SCAFFOLD_DIRECTORIES) {
+    const absoluteDir = path.join(repoRoot, relativeDir);
+    if (fs.existsSync(absoluteDir)) {
+      if (!fs.statSync(absoluteDir).isDirectory()) {
+        throw new Error(`Expected directory at ${relativeDir} but found a file.`);
+      }
+      operations.push({ status: 'unchanged', file: relativeDir });
+      continue;
+    }
+
+    if (!dryRun) {
+      fs.mkdirSync(absoluteDir, { recursive: true });
+    }
+    operations.push({ status: 'created', file: relativeDir });
+  }
+
+  for (const [relativeFile, defaultContent] of OMX_SCAFFOLD_FILES.entries()) {
+    const absoluteFile = path.join(repoRoot, relativeFile);
+    if (fs.existsSync(absoluteFile)) {
+      if (!fs.statSync(absoluteFile).isFile()) {
+        throw new Error(`Expected file at ${relativeFile} but found a directory.`);
+      }
+      operations.push({ status: 'unchanged', file: relativeFile });
+      continue;
+    }
+
+    if (!dryRun) {
+      fs.mkdirSync(path.dirname(absoluteFile), { recursive: true });
+      fs.writeFileSync(absoluteFile, defaultContent, 'utf8');
+    }
+    operations.push({ status: 'created', file: relativeFile });
+  }
+
+  return operations;
 }
 
 function ensureLockRegistry(repoRoot, dryRun) {
@@ -845,6 +902,33 @@ function isSpawnFailure(result) {
   return Boolean(result?.error) && typeof result?.status !== 'number';
 }
 
+function ensureRepoBranch(repoRoot, branch) {
+  const current = currentBranchName(repoRoot);
+  if (current === branch) {
+    return { ok: true, changed: false };
+  }
+
+  const checkoutResult = run('git', ['-C', repoRoot, 'checkout', branch], { timeout: 20_000 });
+  if (isSpawnFailure(checkoutResult)) {
+    return {
+      ok: false,
+      changed: false,
+      stdout: checkoutResult.stdout || '',
+      stderr: checkoutResult.stderr || '',
+    };
+  }
+  if (checkoutResult.status !== 0) {
+    return {
+      ok: false,
+      changed: false,
+      stdout: checkoutResult.stdout || '',
+      stderr: checkoutResult.stderr || '',
+    };
+  }
+
+  return { ok: true, changed: true };
+}
+
 function doctorSandboxBranchPrefix() {
   const now = new Date();
   const stamp = [
@@ -946,12 +1030,26 @@ function startDoctorSandbox(blocked) {
     throw startResult.error;
   }
   if (startResult.status !== 0) {
-    throw new Error((startResult.stderr || startResult.stdout || 'failed to start doctor sandbox').trim());
+    return startDoctorSandboxFallback(blocked);
   }
 
   const metadata = extractAgentBranchStartMetadata(startResult.stdout);
-  if (!metadata.worktreePath) {
-    throw new Error(`Failed to parse sandbox worktree from agent-branch-start output:\n${startResult.stdout}`);
+  const currentBranch = currentBranchName(blocked.repoRoot);
+  const worktreePath = metadata.worktreePath ? path.resolve(metadata.worktreePath) : '';
+  const repoRootPath = path.resolve(blocked.repoRoot);
+  const hasSafeWorktree = Boolean(worktreePath) && worktreePath !== repoRootPath;
+  const branchChanged = Boolean(currentBranch) && currentBranch !== blocked.branch;
+
+  if (!hasSafeWorktree || branchChanged) {
+    const restoreResult = ensureRepoBranch(blocked.repoRoot, blocked.branch);
+    if (!restoreResult.ok) {
+      const detail = [restoreResult.stderr, restoreResult.stdout].filter(Boolean).join('\n').trim();
+      throw new Error(
+        `doctor sandbox startup switched protected base checkout and could not restore '${blocked.branch}'.` +
+        (detail ? `\n${detail}` : ''),
+      );
+    }
+    return startDoctorSandboxFallback(blocked);
   }
 
   return {
@@ -1205,8 +1303,27 @@ function runDoctorInSandbox(options, blocked) {
     skipped: 0,
     failed: 0,
     details: ['Skipped auto-finish sweep (sandbox doctor did not complete successfully).'],
+  let omxScaffoldSyncResult = {
+    status: 'skipped',
+    note: 'sandbox doctor did not complete successfully',
   };
   if (nestedResult.status === 0) {
+    const omxScaffoldOps = ensureOmxScaffold(blocked.repoRoot, Boolean(options.dryRun));
+    const changedOmxPaths = omxScaffoldOps.filter((operation) => operation.status !== 'unchanged');
+    if (changedOmxPaths.length === 0) {
+      omxScaffoldSyncResult = {
+        status: 'unchanged',
+        note: '.omx scaffold already in sync',
+        operations: omxScaffoldOps,
+      };
+    } else {
+      omxScaffoldSyncResult = {
+        status: options.dryRun ? 'would-sync' : 'synced',
+        note: `${options.dryRun ? 'would sync' : 'synced'} ${changedOmxPaths.length} .omx path(s)`,
+        operations: omxScaffoldOps,
+      };
+    }
+
     if (!options.dryRun) {
       autoCommitResult = autoCommitDoctorSandboxChanges(metadata);
       if (autoCommitResult.status === 'committed') {
@@ -1279,6 +1396,7 @@ function runDoctorInSandbox(options, blocked) {
             JSON.stringify(
               {
                 ...parsed,
+                sandboxOmxScaffoldSync: omxScaffoldSyncResult,
                 sandboxLockSync: lockSyncResult,
                 sandboxAutoCommit: autoCommitResult,
                 sandboxFinish: finishResult,
@@ -1358,6 +1476,14 @@ function runDoctorInSandbox(options, blocked) {
         }
       } else if (postSandboxAutoFinishSummary.details.length > 0) {
         console.log(`[${TOOL_NAME}] ${postSandboxAutoFinishSummary.details[0]}`);
+      if (omxScaffoldSyncResult.status === 'synced') {
+        console.log(`[${TOOL_NAME}] Synced .omx scaffold back to protected branch workspace.`);
+      } else if (omxScaffoldSyncResult.status === 'unchanged') {
+        console.log(`[${TOOL_NAME}] .omx scaffold already aligned in protected branch workspace.`);
+      } else if (omxScaffoldSyncResult.status === 'would-sync') {
+        console.log(`[${TOOL_NAME}] Dry run: would sync .omx scaffold back to protected branch workspace.`);
+      } else {
+        console.log(`[${TOOL_NAME}] .omx scaffold sync skipped: ${omxScaffoldSyncResult.note}.`);
       }
     }
   }
@@ -1388,6 +1514,18 @@ function parseTargetFlag(rawArgs, defaultTarget = process.cwd()) {
   }
 
   return { target, args: remaining };
+}
+
+function parseReviewArgs(rawArgs) {
+  const parsed = parseTargetFlag(rawArgs, process.cwd());
+  const passthroughArgs = [...parsed.args];
+  if (passthroughArgs[0] === 'start') {
+    passthroughArgs.shift();
+  }
+  return {
+    target: parsed.target,
+    passthroughArgs,
+  };
 }
 
 function parseReportArgs(rawArgs) {
@@ -2549,6 +2687,8 @@ function runInstallInternal(options) {
   const repoRoot = resolveRepoRoot(options.target);
   const operations = [];
 
+  operations.push(...ensureOmxScaffold(repoRoot, Boolean(options.dryRun)));
+
   for (const templateFile of TEMPLATE_FILES) {
     operations.push(copyTemplateFile(repoRoot, templateFile, Boolean(options.force), Boolean(options.dryRun)));
   }
@@ -2574,6 +2714,8 @@ function runInstallInternal(options) {
 function runFixInternal(options) {
   const repoRoot = resolveRepoRoot(options.target);
   const operations = [];
+
+  operations.push(...ensureOmxScaffold(repoRoot, Boolean(options.dryRun)));
 
   for (const templateFile of TEMPLATE_FILES) {
     operations.push(ensureTemplateFilePresent(repoRoot, templateFile, Boolean(options.dryRun)));
@@ -2628,6 +2770,8 @@ function runScanInternal(options) {
   const findings = [];
 
   const requiredPaths = [
+    ...OMX_SCAFFOLD_DIRECTORIES,
+    ...Array.from(OMX_SCAFFOLD_FILES.keys()),
     ...TEMPLATE_FILES.map((entry) => toDestinationPath(entry)),
     LOCK_FILE_RELATIVE,
   ];
@@ -3035,6 +3179,27 @@ function doctor(rawArgs) {
     );
   }
   setExitCodeFromScan(scanResult);
+}
+
+function review(rawArgs) {
+  const options = parseReviewArgs(rawArgs);
+  const repoRoot = resolveRepoRoot(options.target);
+  const reviewScriptPath = path.join(repoRoot, 'scripts', 'review-bot-watch.sh');
+  if (!fs.existsSync(reviewScriptPath)) {
+    throw new Error(
+      `Missing review bot script: ${reviewScriptPath}\n` +
+      `Run '${SHORT_TOOL_NAME} setup --target ${repoRoot}' then '${SHORT_TOOL_NAME} doctor --target ${repoRoot}'.`,
+    );
+  }
+
+  const result = run('bash', [reviewScriptPath, ...options.passthroughArgs], { cwd: repoRoot });
+  if (isSpawnFailure(result)) {
+    throw result.error;
+  }
+
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  process.exitCode = typeof result.status === 'number' ? result.status : 1;
 }
 
 function report(rawArgs) {
@@ -3640,6 +3805,11 @@ function main() {
 
   if (command === 'doctor') {
     doctor(rest);
+    return;
+  }
+
+  if (command === 'review') {
+    review(rest);
     return;
   }
 

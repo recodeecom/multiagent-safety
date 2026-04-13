@@ -125,6 +125,106 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 repo_root="$(git rev-parse --show-toplevel)"
 
+sanitize_slug() {
+  local raw="$1"
+  local fallback="${2:-task}"
+  local slug
+  slug="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+  if [[ -z "$slug" ]]; then
+    slug="$fallback"
+  fi
+  printf '%s' "$slug"
+}
+
+resolve_start_base_branch() {
+  if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -n "$BASE_BRANCH" ]]; then
+    printf '%s' "$BASE_BRANCH"
+    return 0
+  fi
+
+  local configured_base
+  configured_base="$(git -C "$repo_root" config --get multiagent.baseBranch || true)"
+  if [[ -n "$configured_base" ]]; then
+    printf '%s' "$configured_base"
+    return 0
+  fi
+
+  local current_branch
+  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
+    printf '%s' "$current_branch"
+    return 0
+  fi
+
+  printf 'dev'
+}
+
+resolve_start_ref() {
+  local base_branch="$1"
+  git -C "$repo_root" fetch origin "$base_branch" --quiet >/dev/null 2>&1 || true
+  if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+    printf 'origin/%s' "$base_branch"
+    return 0
+  fi
+  if git -C "$repo_root" show-ref --verify --quiet "refs/heads/${base_branch}"; then
+    printf '%s' "$base_branch"
+    return 0
+  fi
+  return 1
+}
+
+restore_repo_branch_if_changed() {
+  local expected_branch="$1"
+  if [[ -z "$expected_branch" || "$expected_branch" == "HEAD" ]]; then
+    return 0
+  fi
+  local current_branch
+  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -z "$current_branch" || "$current_branch" == "$expected_branch" ]]; then
+    return 0
+  fi
+  git -C "$repo_root" checkout "$expected_branch" >/dev/null 2>&1
+}
+
+start_sandbox_fallback() {
+  local base_branch start_ref timestamp task_slug agent_slug branch_name_base branch_name suffix
+  local worktree_root worktree_path
+
+  base_branch="$(resolve_start_base_branch)"
+  if ! start_ref="$(resolve_start_ref "$base_branch")"; then
+    echo "[codex-agent] Unable to resolve base ref for fallback sandbox start: ${base_branch}" >&2
+    return 1
+  fi
+
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  task_slug="$(sanitize_slug "$TASK_NAME" "task")"
+  agent_slug="$(sanitize_slug "$AGENT_NAME" "agent")"
+  branch_name_base="agent/${agent_slug}/${timestamp}-${task_slug}"
+  branch_name="$branch_name_base"
+  suffix=2
+  while git -C "$repo_root" show-ref --verify --quiet "refs/heads/${branch_name}"; do
+    branch_name="${branch_name_base}-${suffix}"
+    suffix=$((suffix + 1))
+  done
+
+  worktree_root="${repo_root}/.omx/agent-worktrees"
+  mkdir -p "$worktree_root"
+  worktree_path="${worktree_root}/${branch_name//\//__}"
+  if [[ -e "$worktree_path" ]]; then
+    echo "[codex-agent] Fallback worktree path already exists: $worktree_path" >&2
+    return 1
+  fi
+
+  git -C "$repo_root" worktree add -b "$branch_name" "$worktree_path" "$start_ref" >/dev/null
+  git -C "$repo_root" config "branch.${branch_name}.musafetyBase" "$base_branch" >/dev/null 2>&1 || true
+  if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+    git -C "$worktree_path" branch --set-upstream-to="origin/${base_branch}" "$branch_name" >/dev/null 2>&1 || true
+  fi
+
+  printf '[agent-branch-start] Created branch: %s\n' "$branch_name"
+  printf '[agent-branch-start] Worktree: %s\n' "$worktree_path"
+}
+
 if [[ ! -x "${repo_root}/scripts/agent-branch-start.sh" ]]; then
   echo "[codex-agent] Missing scripts/agent-branch-start.sh. Run: gx setup" >&2
   exit 1
@@ -135,12 +235,53 @@ if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 ]]; then
   start_args+=("$BASE_BRANCH")
 fi
 
-start_output="$(bash "${repo_root}/scripts/agent-branch-start.sh" "${start_args[@]}")"
-printf '%s\n' "$start_output"
+initial_repo_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+start_output=""
+start_status=0
+set +e
+start_output="$(bash "${repo_root}/scripts/agent-branch-start.sh" "${start_args[@]}" 2>&1)"
+start_status=$?
+set -e
 
 worktree_path="$(printf '%s\n' "$start_output" | sed -n 's/^\[agent-branch-start\] Worktree: //p' | tail -n1)"
+current_repo_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+resolved_repo_root="$(cd "$repo_root" && pwd -P)"
+resolved_worktree_path=""
+if [[ -n "$worktree_path" && -d "$worktree_path" ]]; then
+  resolved_worktree_path="$(cd "$worktree_path" && pwd -P)"
+fi
+
+fallback_reason=""
+if [[ "$start_status" -ne 0 ]]; then
+  fallback_reason="starter exited with status ${start_status}"
+elif [[ -z "$worktree_path" ]]; then
+  fallback_reason="starter did not report worktree path"
+elif [[ -n "$resolved_worktree_path" && "$resolved_worktree_path" == "$resolved_repo_root" ]]; then
+  fallback_reason="starter pointed to active checkout path"
+elif [[ -n "$initial_repo_branch" && -n "$current_repo_branch" && "$current_repo_branch" != "$initial_repo_branch" ]]; then
+  fallback_reason="starter switched active checkout branch"
+fi
+
+if [[ -n "$fallback_reason" ]]; then
+  if ! restore_repo_branch_if_changed "$initial_repo_branch"; then
+    echo "[codex-agent] agent-branch-start changed the active checkout branch and restore failed." >&2
+    echo "[codex-agent] Run 'gx setup --target ${repo_root}' and 'gx doctor --target ${repo_root}', then retry." >&2
+    exit 1
+  fi
+  if [[ -n "$start_output" ]]; then
+    printf '%s\n' "$start_output" >&2
+  fi
+  echo "[codex-agent] Unsafe starter output (${fallback_reason}); creating sandbox worktree directly." >&2
+  start_output="$(start_sandbox_fallback)"
+  printf '%s\n' "$start_output"
+  worktree_path="$(printf '%s\n' "$start_output" | sed -n 's/^\[agent-branch-start\] Worktree: //p' | tail -n1)"
+else
+  printf '%s\n' "$start_output"
+fi
+
 if [[ -z "$worktree_path" ]]; then
-  echo "[codex-agent] Could not determine sandbox worktree path from agent-branch-start output." >&2
+  echo "[codex-agent] Could not determine sandbox worktree path from sandbox startup output." >&2
+  echo "[codex-agent] Run 'gx setup --target ${repo_root}' and 'gx doctor --target ${repo_root}', then retry." >&2
   exit 1
 fi
 

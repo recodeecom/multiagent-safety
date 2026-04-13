@@ -24,13 +24,13 @@ if [[ -n "${CODEX_THREAD_ID:-}" || -n "${OMX_SESSION_ID:-}" || "${CODEX_CI:-0}" 
 fi
 
 is_vscode_git_context=0
-if [[ -n "${VSCODE_GIT_IPC_HANDLE:-}" || -n "${VSCODE_GIT_ASKPASS_NODE:-}" || -n "${VSCODE_IPC_HOOK_CLI:-}" || "${TERM_PROGRAM:-}" == "vscode" ]]; then
+if [[ -n "${VSCODE_GIT_IPC_HANDLE:-}" || -n "${VSCODE_GIT_ASKPASS_NODE:-}" || -n "${VSCODE_IPC_HOOK_CLI:-}" ]]; then
   is_vscode_git_context=1
 fi
 
 allow_vscode_protected_raw="${MUSAFETY_ALLOW_VSCODE_PROTECTED_BRANCH_WRITES:-$(git config --get multiagent.allowVscodeProtectedBranchWrites || true)}"
 if [[ -z "$allow_vscode_protected_raw" ]]; then
-  allow_vscode_protected_raw="false"
+  allow_vscode_protected_raw="true"
 fi
 allow_vscode_protected="$(printf '%s' "$allow_vscode_protected_raw" | tr '[:upper:]' '[:lower:]')"
 
@@ -54,6 +54,15 @@ for protected_branch in $protected_branches_raw; do
     break
   fi
 done
+
+is_local_only_branch=0
+if [[ "$is_protected_branch" == "1" ]]; then
+  upstream_ref="$(git for-each-ref --format='%(upstream:short)' "refs/heads/${branch}" | head -n 1)"
+  remote_branch_ref="$(git for-each-ref --format='%(refname:short)' "refs/remotes/*/${branch}" | head -n 1)"
+  if [[ -z "$upstream_ref" && -z "$remote_branch_ref" ]]; then
+    is_local_only_branch=1
+  fi
+fi
 
 codex_require_agent_branch_raw="${MUSAFETY_CODEX_REQUIRE_AGENT_BRANCH:-$(git config --get multiagent.codexRequireAgentBranch || true)}"
 if [[ -z "$codex_require_agent_branch_raw" ]]; then
@@ -124,8 +133,10 @@ MSG
 fi
 
 if [[ "$is_protected_branch" == "1" ]]; then
-  if [[ "$is_codex_session" != "1" && "$is_vscode_git_context" == "1" && "$allow_vscode_protected_branch_writes" == "1" ]]; then
-    exit 0
+  if [[ "$is_codex_session" != "1" && "$is_vscode_git_context" == "1" ]]; then
+    if [[ "$allow_vscode_protected_branch_writes" == "1" || "$is_local_only_branch" == "1" ]]; then
+      exit 0
+    fi
   fi
 
   if [[ "$is_unborn_branch" == "1" && "$is_codex_session" != "1" ]]; then
@@ -144,8 +155,11 @@ Use an agent branch first:
 After finishing work:
   bash scripts/agent-branch-finish.sh
 
-Optional repo override for manual VS Code protected-branch commits:
-  git config multiagent.allowVscodeProtectedBranchWrites true
+Optional repo hard-block for VS Code protected-branch commits:
+  git config multiagent.allowVscodeProtectedBranchWrites false
+
+VS Code Source Control commits on protected local-only branches
+(no upstream and no remote branch) are allowed automatically.
 
 Temporary bypass (not recommended):
   ALLOW_COMMIT_ON_PROTECTED_BRANCH=1 git commit ...

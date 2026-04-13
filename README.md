@@ -98,6 +98,9 @@ gx status
 # setup and repair
 gx setup
 gx doctor
+# setup + repair another repo without switching your current repo checkout
+gx setup --target /path/to/repo
+gx doctor --target /path/to/repo
 
 # protected branch management
 gx protect list
@@ -109,7 +112,7 @@ gx sync --check
 gx sync
 
 # continuously monitor open PRs targeting current branch and dispatch codex-agent review/merge tasks
-bash scripts/review-bot-watch.sh --interval 30
+gx review --interval 30
 
 # cleanup merged agent branches and hide clean stale agent worktrees
 gx cleanup
@@ -124,7 +127,7 @@ gx report scorecard --repo github.com/recodeecom/multiagent-safety
 Run this in your local shell to keep watching PRs targeting the current branch (or `--base <branch>`):
 
 ```sh
-bash scripts/review-bot-watch.sh --interval 30
+gx review --interval 30
 ```
 
 Useful flags:
@@ -144,11 +147,12 @@ Note: the monitor dispatches Codex through explicit `--task/--agent/--base` flag
 - `gx setup` checks GitHub CLI (`gh`) and prints install guidance if missing.
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
-- `gx setup` and `gx doctor` auto-finish clean pending `agent/*` branches (push + PR merge cleanup) against the current local base branch.
-- Direct commits/pushes to protected branches are blocked by default (including VS Code Source Control).
+- Direct commits/pushes to protected branches are blocked by default.
+- Exception: VS Code Source Control commits are allowed on protected branches that exist only locally (no upstream and no remote branch).
 - Optional repo override for manual VS Code protected-branch writes: `git config multiagent.allowVscodeProtectedBranchWrites true`.
 - Codex/agent sessions stay blocked on protected branches and must use `agent/*` branch + PR workflow.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
+- In-place agent branching is disabled; `scripts/agent-branch-start.sh` always creates a separate worktree to keep your visible local/base branch unchanged.
 - `scripts/agent-branch-start.sh` hydrates `scripts/codex-agent.sh` into new sandbox worktrees when missing, so auto-finish launcher flow stays available.
 
 ## Configure protected branches
