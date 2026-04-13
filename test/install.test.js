@@ -1483,6 +1483,152 @@ exit 1
   assert.match(launchedArgs, /--model gpt-5\.4-mini/);
 });
 
+test('codex-agent still auto-finishes when base branch advances during task run', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  const originPath = attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['config', 'multiagent.sync.requireBeforeCommit', 'true'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['config', 'multiagent.sync.maxBehindCommits', '0'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const fakeCodexBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-codex-retry-'));
+  const fakeCodexPath = path.join(fakeCodexBin, 'codex');
+  fs.writeFileSync(
+    fakeCodexPath,
+    `#!/usr/bin/env bash\n` +
+      `set -e\n` +
+      `pwd > "${'${MUSAFETY_TEST_CODEX_CWD}'}"\n` +
+      `echo "$@" > "${'${MUSAFETY_TEST_CODEX_ARGS}'}"\n` +
+      `echo "retry" > codex-autocommit-retry.txt\n` +
+      `clone_dir="${'${MUSAFETY_TEST_ORIGIN_ADVANCE_CLONE}'}"\n` +
+      `rm -rf "$clone_dir"\n` +
+      `git clone "${'${MUSAFETY_TEST_ORIGIN_PATH}'}" "$clone_dir" >/dev/null 2>&1\n` +
+      `git -C "$clone_dir" config user.email "bot@example.com"\n` +
+      `git -C "$clone_dir" config user.name "Bot"\n` +
+      `git -C "$clone_dir" checkout dev >/dev/null 2>&1\n` +
+      `echo "advance base" > "$clone_dir/base-advance.txt"\n` +
+      `git -C "$clone_dir" add base-advance.txt\n` +
+      `git -C "$clone_dir" commit -m "advance base during codex run" >/dev/null 2>&1\n` +
+      `git -C "$clone_dir" push origin dev >/dev/null 2>&1\n`,
+    'utf8',
+  );
+  fs.chmodSync(fakeCodexPath, 0o755);
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json state,mergedAt,url "* ]]; then
+    printf 'MERGED\\t2026-04-13T00:00:00Z\\thttps://example.test/pr/autocommit-retry\\n'
+    exit 0
+  fi
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/autocommit-retry"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const cwdMarker = path.join(repoDir, '.codex-agent-cwd-autocommit-retry');
+  const argsMarker = path.join(repoDir, '.codex-agent-args-autocommit-retry');
+  const originAdvanceClone = path.join(repoDir, '.origin-advance-clone');
+  const launch = runCmd(
+    'bash',
+    ['scripts/codex-agent.sh', 'autocommit-retry-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'],
+    repoDir,
+    {
+      PATH: `${fakeCodexBin}:${process.env.PATH}`,
+      MUSAFETY_TEST_CODEX_CWD: cwdMarker,
+      MUSAFETY_TEST_CODEX_ARGS: argsMarker,
+      MUSAFETY_TEST_ORIGIN_PATH: originPath,
+      MUSAFETY_TEST_ORIGIN_ADVANCE_CLONE: originAdvanceClone,
+      MUSAFETY_GH_BIN: fakeGhPath,
+      MUSAFETY_FINISH_WAIT_TIMEOUT_SECONDS: '60',
+      MUSAFETY_FINISH_WAIT_POLL_SECONDS: '0',
+    },
+  );
+  assert.equal(launch.status, 0, launch.stderr || launch.stdout);
+  const sawCommitRetry = /Auto-commit retry: .*behind origin\/dev/.test(launch.stdout);
+  const sawFinishSync = /\[agent-sync-guard\] Auto-syncing .* onto origin\/dev before finish/.test(launch.stdout);
+  assert.equal(
+    sawCommitRetry || sawFinishSync,
+    true,
+    `expected sync retry evidence in output, got:\n${launch.stdout}`,
+  );
+  assert.match(launch.stdout, /\[codex-agent\] Auto-finish completed for/);
+  assert.match(launch.stdout, /\[codex-agent\] Auto-cleaned sandbox worktree:/);
+
+  const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
+  assert.equal(fs.existsSync(launchedCwd), false, 'auto-finished sandbox should be cleaned by default');
+});
+
+test('codex-agent surfaces commit-hook failures so unfinished sandboxes are actionable', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.writeFileSync(
+    path.join(repoDir, '.githooks', 'pre-commit'),
+    '#!/usr/bin/env bash\nset -euo pipefail\necho "forced pre-commit failure for test" >&2\nexit 1\n',
+    'utf8',
+  );
+  fs.chmodSync(path.join(repoDir, '.githooks', 'pre-commit'), 0o755);
+  result = runCmd('git', ['config', 'core.hooksPath', `${repoDir}/.githooks`], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const fakeCodexBin = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fake-codex-hookfail-'));
+  const fakeCodexPath = path.join(fakeCodexBin, 'codex');
+  fs.writeFileSync(fakeCodexPath, '#!/usr/bin/env bash\nset -e\necho "hook-fail" > codex-hook-fail.txt\n', 'utf8');
+  fs.chmodSync(fakeCodexPath, 0o755);
+
+  const launch = runCmd(
+    'bash',
+    ['scripts/codex-agent.sh', 'hook-fail-task', 'planner', 'dev'],
+    repoDir,
+    {
+      PATH: `${fakeCodexBin}:${process.env.PATH}`,
+      MUSAFETY_CODEX_WAIT_FOR_MERGE: 'false',
+      MUSAFETY_FINISH_WAIT_TIMEOUT_SECONDS: '30',
+      MUSAFETY_FINISH_WAIT_POLL_SECONDS: '0',
+    },
+  );
+  assert.notEqual(launch.status, 0, launch.stderr || launch.stdout);
+  assert.match(launch.stderr, /Auto-commit failed in sandbox/);
+  assert.match(launch.stderr, /forced pre-commit failure for test/);
+});
+
 test('sync command rebases current agent branch onto latest origin/dev', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);

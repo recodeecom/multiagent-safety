@@ -285,13 +285,84 @@ auto_commit_worktree_changes() {
 
   local default_message="Auto-finish: ${TASK_NAME}"
   local commit_message="${MUSAFETY_CODEX_AUTO_COMMIT_MESSAGE:-$default_message}"
+  local commit_output=""
 
-  if ! git -C "$wt" commit -m "$commit_message" >/dev/null 2>&1; then
-    echo "[codex-agent] Auto-commit failed in sandbox. Keeping branch for manual review: $branch" >&2
+  if commit_output="$(git -C "$wt" commit -m "$commit_message" 2>&1)"; then
+    echo "[codex-agent] Auto-committed sandbox changes on '${branch}'."
+    return 0
+  fi
+
+  if auto_sync_for_commit_retry "$wt" "$branch"; then
+    claim_changed_files "$wt" "$branch"
+    git -C "$wt" add -A
+    if commit_output="$(git -C "$wt" commit -m "$commit_message" 2>&1)"; then
+      echo "[codex-agent] Auto-committed sandbox changes on '${branch}' after sync retry."
+      return 0
+    fi
+  fi
+
+  echo "[codex-agent] Auto-commit failed in sandbox. Keeping branch for manual review: $branch" >&2
+  if [[ -n "$commit_output" ]]; then
+    printf '%s\n' "$commit_output" >&2
+  fi
+  return 1
+}
+
+auto_sync_for_commit_retry() {
+  local wt="$1"
+  local branch="$2"
+
+  if ! has_origin_remote; then
     return 1
   fi
 
-  echo "[codex-agent] Auto-committed sandbox changes on '${branch}'."
+  local base_branch
+  base_branch="$(resolve_worktree_base_branch "$wt")"
+  if [[ -z "$base_branch" ]]; then
+    return 1
+  fi
+
+  if ! git -C "$wt" fetch origin "$base_branch" --quiet; then
+    return 1
+  fi
+
+  if ! git -C "$wt" show-ref --verify --quiet "refs/remotes/origin/${base_branch}"; then
+    return 1
+  fi
+
+  local behind_count
+  behind_count="$(git -C "$wt" rev-list --left-right --count "HEAD...origin/${base_branch}" 2>/dev/null | awk '{print $2}')"
+  behind_count="${behind_count:-0}"
+  if [[ "$behind_count" -le 0 ]]; then
+    return 1
+  fi
+
+  echo "[codex-agent] Auto-commit retry: '${branch}' is behind origin/${base_branch} by ${behind_count} commit(s). Syncing and retrying..."
+
+  local stash_ref=""
+  local stash_output=""
+  if worktree_has_changes "$wt"; then
+    if ! stash_output="$(git -C "$wt" stash push --include-untracked -m "codex-agent-autocommit-sync-${branch}-$(date +%s)" 2>&1)"; then
+      return 1
+    fi
+    stash_ref="$(printf '%s\n' "$stash_output" | grep -o 'stash@{[0-9]\+}' | head -n 1 || true)"
+  fi
+
+  if ! git -C "$wt" rebase "origin/${base_branch}" >/dev/null 2>&1; then
+    git -C "$wt" rebase --abort >/dev/null 2>&1 || true
+    if [[ -n "$stash_ref" ]]; then
+      git -C "$wt" stash pop "$stash_ref" >/dev/null 2>&1 || true
+    fi
+    return 1
+  fi
+
+  if [[ -n "$stash_ref" ]]; then
+    if ! git -C "$wt" stash pop "$stash_ref" >/dev/null 2>&1; then
+      echo "[codex-agent] Auto-commit retry could not re-apply local changes after sync. Manual resolution required in: $wt" >&2
+      return 1
+    fi
+  fi
+
   return 0
 }
 
