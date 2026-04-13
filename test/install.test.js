@@ -213,6 +213,13 @@ test('setup provisions workflow files and repo config', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const requiredFiles = [
+    '.omx',
+    '.omx/state',
+    '.omx/logs',
+    '.omx/plans',
+    '.omx/agent-worktrees',
+    '.omx/notepad.md',
+    '.omx/project-memory.json',
     'scripts/agent-branch-start.sh',
     'scripts/agent-branch-finish.sh',
     'scripts/codex-agent.sh',
@@ -257,6 +264,7 @@ test('setup provisions workflow files and repo config', () => {
   assert.match(gitignoreContent, /scripts\/agent-file-locks\.py/);
   assert.match(gitignoreContent, /\.githooks\/pre-commit/);
   assert.match(gitignoreContent, /\.githooks\/pre-push/);
+  assert.match(gitignoreContent, /\.omx\//);
   assert.match(gitignoreContent, /oh-my-codex\//);
   assert.match(gitignoreContent, /\.codex\/skills\/guardex\/SKILL\.md/);
   assert.match(gitignoreContent, /\.claude\/commands\/guardex\.md/);
@@ -532,10 +540,17 @@ test('doctor on protected main bootstraps sandbox branch even before setup exist
   const result = runNode(['doctor', '--target', repoDir], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /doctor detected protected branch 'main'/);
+  assert.match(result.stdout, /\.omx scaffold/);
   const createdBranch = extractCreatedBranch(result.stdout);
   const createdWorktree = extractCreatedWorktree(result.stdout);
   assert.match(createdBranch, /^agent\/gx\/.+-gx-doctor$/);
   assert.equal(fs.existsSync(path.join(createdWorktree, 'scripts', 'agent-branch-start.sh')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'state')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'logs')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'plans')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'agent-worktrees')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'notepad.md')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'project-memory.json')), true);
 
   const rootStatus = runCmd('git', ['status', '--short', '--untracked-files=no'], repoDir);
   assert.equal(rootStatus.status, 0, rootStatus.stderr || rootStatus.stdout);
@@ -2312,6 +2327,10 @@ test('doctor repairs setup drift and confirms repo is safe', () => {
 
   // Simulate broken setup + stale lock.
   fs.rmSync(path.join(repoDir, 'scripts', 'agent-branch-start.sh'));
+  fs.rmSync(path.join(repoDir, '.omx', 'notepad.md'));
+  fs.rmSync(path.join(repoDir, '.omx', 'project-memory.json'));
+  fs.rmSync(path.join(repoDir, '.omx', 'logs'), { recursive: true, force: true });
+  fs.rmSync(path.join(repoDir, '.omx', 'plans'), { recursive: true, force: true });
   fs.writeFileSync(path.join(repoDir, '.githooks', 'pre-commit'), '#!/usr/bin/env bash\necho broken hook >&2\nexit 1\n', 'utf8');
   result = runCmd('git', ['config', 'core.hooksPath', '.git/hooks'], repoDir);
   assert.equal(result.status, 0, result.stderr);
@@ -2341,6 +2360,10 @@ test('doctor repairs setup drift and confirms repo is safe', () => {
 
   const repairedHook = fs.readFileSync(path.join(repoDir, '.githooks', 'pre-commit'), 'utf8');
   assert.match(repairedHook, /AGENTS\.md\|\.gitignore/);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'notepad.md')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'project-memory.json')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'logs')), true);
+  assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'plans')), true);
 
   const scanAfter = runNode(['scan', '--target', repoDir], repoDir);
   assert.equal(scanAfter.status, 0, scanAfter.stderr || scanAfter.stdout);
