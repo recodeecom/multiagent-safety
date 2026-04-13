@@ -245,6 +245,13 @@ npm pack --dry-run
 
 ## Release notes
 
+### v5.0.8
+
+- Fixed `bin/multiagent-safety.js` syntax regressions in the doctor sandbox flow (`Unexpected identifier` / `Unexpected end of input`) that were breaking CLI execution and CI tests.
+- Restored `scripts/codex-agent.sh` from `templates/scripts/codex-agent.sh` so critical runtime helper parity checks pass in clean CI clones.
+- Bumped package version from `5.0.7` to `5.0.8` for the next npm publish.
+
+### v5.0.7
 ### Unreleased (generated draft, not versioned yet)
 
 - Add the user-facing changes for the next release here before assigning a version number.

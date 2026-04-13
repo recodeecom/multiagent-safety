@@ -1303,6 +1303,7 @@ function runDoctorInSandbox(options, blocked) {
     skipped: 0,
     failed: 0,
     details: ['Skipped auto-finish sweep (sandbox doctor did not complete successfully).'],
+  };
   let omxScaffoldSyncResult = {
     status: 'skipped',
     note: 'sandbox doctor did not complete successfully',
@@ -1476,6 +1477,7 @@ function runDoctorInSandbox(options, blocked) {
         }
       } else if (postSandboxAutoFinishSummary.details.length > 0) {
         console.log(`[${TOOL_NAME}] ${postSandboxAutoFinishSummary.details[0]}`);
+      }
       if (omxScaffoldSyncResult.status === 'synced') {
         console.log(`[${TOOL_NAME}] Synced .omx scaffold back to protected branch workspace.`);
       } else if (omxScaffoldSyncResult.status === 'unchanged') {
