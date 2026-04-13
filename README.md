@@ -214,6 +214,10 @@ npm pack --dry-run
 
 ## Release notes
 
+### v5.0.3
+
+- Bumped package version from `5.0.2` to `5.0.3` for the next npm publish.
+
 ### v5.0.2
 
 - Auto-closes Codex sandbox branches through PR workflow and keeps merged branch/worktree sandboxes for explicit cleanup via `gx cleanup`.
