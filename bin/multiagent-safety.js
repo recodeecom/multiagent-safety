@@ -46,6 +46,7 @@ const TEMPLATE_FILES = [
   'scripts/install-agent-git-hooks.sh',
   'scripts/openspec/init-plan-workspace.sh',
   'githooks/pre-commit',
+  'githooks/pre-push',
   'codex/skills/guardex/SKILL.md',
   'claude/commands/guardex.md',
 ];
@@ -59,11 +60,13 @@ const EXECUTABLE_RELATIVE_PATHS = new Set([
   'scripts/install-agent-git-hooks.sh',
   'scripts/openspec/init-plan-workspace.sh',
   '.githooks/pre-commit',
+  '.githooks/pre-push',
 ]);
 
 const CRITICAL_GUARDRAIL_PATHS = new Set([
   'AGENTS.md',
   '.githooks/pre-commit',
+  '.githooks/pre-push',
   'scripts/agent-branch-start.sh',
   'scripts/agent-branch-finish.sh',
   'scripts/agent-worktree-prune.sh',
@@ -84,6 +87,7 @@ const MANAGED_GITIGNORE_PATHS = [
   'scripts/install-agent-git-hooks.sh',
   'scripts/openspec/init-plan-workspace.sh',
   '.githooks/pre-commit',
+  '.githooks/pre-push',
   'oh-my-codex/',
   '.codex/skills/guardex/SKILL.md',
   '.claude/commands/guardex.md',
@@ -706,6 +710,7 @@ function hasGuardexBootstrapFiles(repoRoot) {
     'AGENTS.md',
     'scripts/agent-branch-start.sh',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
     LOCK_FILE_RELATIVE,
   ];
   return required.every((relativePath) => fs.existsSync(path.join(repoRoot, relativePath)));

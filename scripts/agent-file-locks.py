@@ -26,6 +26,7 @@ LOCK_FILE_RELATIVE = Path('.omx/state/agent-file-locks.json')
 CRITICAL_GUARDRAIL_PATHS = {
     'AGENTS.md',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
     'scripts/agent-branch-start.sh',
     'scripts/agent-branch-finish.sh',
     'scripts/agent-file-locks.py',

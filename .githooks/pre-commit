@@ -23,6 +23,11 @@ if [[ -n "${CODEX_THREAD_ID:-}" || -n "${OMX_SESSION_ID:-}" || "${CODEX_CI:-0}" 
   is_codex_session=1
 fi
 
+is_vscode_git_context=0
+if [[ -n "${VSCODE_GIT_IPC_HANDLE:-}" || -n "${VSCODE_GIT_ASKPASS_NODE:-}" || -n "${VSCODE_IPC_HOOK_CLI:-}" || "${TERM_PROGRAM:-}" == "vscode" ]]; then
+  is_vscode_git_context=1
+fi
+
 protected_branches_raw="${MUSAFETY_PROTECTED_BRANCHES:-$(git config --get multiagent.protectedBranches || true)}"
 if [[ -z "$protected_branches_raw" ]]; then
   protected_branches_raw="dev main master"
@@ -106,6 +111,10 @@ MSG
 fi
 
 if [[ "$is_protected_branch" == "1" ]]; then
+  if [[ "$is_codex_session" != "1" && "$is_vscode_git_context" == "1" ]]; then
+    exit 0
+  fi
+
   if [[ "$is_unborn_branch" == "1" && "$is_codex_session" != "1" ]]; then
     exit 0
   fi

@@ -32,10 +32,16 @@ function runCmd(cmd, args, cwd, options = {}) {
   delete sanitizedEnv.OMX_SESSION_ID;
   delete sanitizedEnv.CODEX_CI;
 
+  const overrideEnv = options.env || options;
+  const pushBypassEnv =
+    cmd === 'git' && Array.isArray(args) && args[0] === 'push'
+      ? { ALLOW_PUSH_ON_PROTECTED_BRANCH: '1' }
+      : {};
+
   return cp.spawnSync(cmd, args, {
     cwd,
     encoding: 'utf8',
-    env: { ...sanitizedEnv, ...(options.env || options) },
+    env: { ...sanitizedEnv, ...pushBypassEnv, ...overrideEnv },
   });
 }
 
@@ -215,6 +221,7 @@ test('setup provisions workflow files and repo config', () => {
     'scripts/install-agent-git-hooks.sh',
     'scripts/openspec/init-plan-workspace.sh',
     '.githooks/pre-commit',
+    '.githooks/pre-push',
     '.codex/skills/guardex/SKILL.md',
     '.claude/commands/guardex.md',
     '.omx/state/agent-file-locks.json',
@@ -246,6 +253,7 @@ test('setup provisions workflow files and repo config', () => {
   assert.match(gitignoreContent, /scripts\/codex-agent\.sh/);
   assert.match(gitignoreContent, /scripts\/agent-file-locks\.py/);
   assert.match(gitignoreContent, /\.githooks\/pre-commit/);
+  assert.match(gitignoreContent, /\.githooks\/pre-push/);
   assert.match(gitignoreContent, /oh-my-codex\//);
   assert.match(gitignoreContent, /\.codex\/skills\/guardex\/SKILL\.md/);
   assert.match(gitignoreContent, /\.claude\/commands\/guardex\.md/);
@@ -500,7 +508,7 @@ test('setup pre-commit blocks codex session commits on non-agent branches by def
   assert.match(result.stderr, /\[codex-branch-guard\] Codex agent commit blocked on non-agent branch\./);
 });
 
-test('setup pre-commit detects codex commit attempts on protected main and requires GuardeX sub-branch', () => {
+test('setup pre-commit detects codex commit attempts on protected main (including VS Code env) and requires GuardeX sub-branch', () => {
   const repoDir = initRepoOnBranch('main');
 
   let result = runNode(['setup', '--target', repoDir], repoDir);
@@ -510,7 +518,12 @@ test('setup pre-commit detects codex commit attempts on protected main and requi
   result = runCmd('git', ['add', 'notes-main.txt'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  result = runCmd('git', ['commit', '-m', 'codex protected commit'], repoDir, { CODEX_THREAD_ID: 'test-thread' });
+  result = runCmd('git', ['commit', '-m', 'codex protected commit'], repoDir, {
+    CODEX_THREAD_ID: 'test-thread',
+    VSCODE_GIT_IPC_HANDLE: '1',
+    VSCODE_GIT_ASKPASS_NODE: '1',
+    VSCODE_IPC_HOOK_CLI: '1',
+  });
   assert.notEqual(result.status, 0, result.stdout);
   assert.match(result.stderr, /\[guardex-preedit-guard\] Codex edit\/commit detected on a protected branch\./);
   assert.match(result.stderr, /bash scripts\/codex-agent\.sh/);
@@ -888,7 +901,7 @@ test('protect command manages configured protected branches', () => {
   assert.match(result.stdout, /reset to defaults/);
 });
 
-test('pre-commit blocks custom protected branches configured via musafety protect', () => {
+test('pre-commit allows non-codex VS Code commits on custom protected branches configured via musafety protect', () => {
   const repoDir = initRepoOnBranch('release');
   seedCommit(repoDir);
 
@@ -902,11 +915,10 @@ test('pre-commit blocks custom protected branches configured via musafety protec
     ALLOW_COMMIT_ON_PROTECTED_BRANCH: '0',
     VSCODE_GIT_IPC_HANDLE: '1',
   });
-  assert.equal(hookResult.status, 1, hookResult.stderr || hookResult.stdout);
-  assert.match(hookResult.stderr, /Direct commits on protected branches are blocked/);
+  assert.equal(hookResult.status, 0, hookResult.stderr || hookResult.stdout);
 });
 
-test('pre-commit blocks protected branch commits even from VS Code Source Control env', () => {
+test('pre-commit allows non-codex protected branch commits from VS Code Source Control env', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
 
@@ -924,8 +936,55 @@ test('pre-commit blocks protected branch commits even from VS Code Source Contro
       VSCODE_IPC_HOOK_CLI: '1',
     },
   );
+  assert.equal(hookResult.status, 0, hookResult.stderr || hookResult.stdout);
+});
+
+test('pre-push allows non-codex protected branch pushes from VS Code Source Control env', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+
+  const setupResult = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(setupResult.status, 0, setupResult.stderr || setupResult.stdout);
+
+  const hookResult = runCmd(
+    'bash',
+    [
+      '-lc',
+      `printf '%s\\n' 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000' | .githooks/pre-push origin origin`,
+    ],
+    repoDir,
+    {
+      VSCODE_GIT_IPC_HANDLE: '1',
+      VSCODE_GIT_ASKPASS_NODE: '1',
+      VSCODE_IPC_HOOK_CLI: '1',
+    },
+  );
+  assert.equal(hookResult.status, 0, hookResult.stderr || hookResult.stdout);
+});
+
+test('pre-push blocks codex protected branch pushes even from VS Code Source Control env', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+
+  const setupResult = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(setupResult.status, 0, setupResult.stderr || setupResult.stdout);
+
+  const hookResult = runCmd(
+    'bash',
+    [
+      '-lc',
+      `printf '%s\\n' 'refs/heads/main 1111111111111111111111111111111111111111 refs/heads/main 0000000000000000000000000000000000000000' | .githooks/pre-push origin origin`,
+    ],
+    repoDir,
+    {
+      CODEX_THREAD_ID: 'test-thread',
+      VSCODE_GIT_IPC_HANDLE: '1',
+      VSCODE_GIT_ASKPASS_NODE: '1',
+      VSCODE_IPC_HOOK_CLI: '1',
+    },
+  );
   assert.equal(hookResult.status, 1, hookResult.stderr || hookResult.stdout);
-  assert.match(hookResult.stderr, /Direct commits on protected branches are blocked/);
+  assert.match(hookResult.stderr, /\[guardex-preedit-guard\] Codex push detected toward protected branch\./);
 });
 
 test('codex-agent launches codex inside a fresh sandbox worktree and keeps branch/worktree by default', () => {

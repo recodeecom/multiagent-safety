@@ -10,8 +10,9 @@ if [[ -n "${VSCODE_GIT_IPC_HANDLE:-}" || -n "${VSCODE_GIT_ASKPASS_NODE:-}" || -n
   is_vscode_git_context=1
 fi
 
-if [[ "$is_vscode_git_context" == "1" ]]; then
-  exit 0
+is_codex_session=0
+if [[ -n "${CODEX_THREAD_ID:-}" || -n "${OMX_SESSION_ID:-}" || "${CODEX_CI:-0}" == "1" ]]; then
+  is_codex_session=1
 fi
 
 protected_branches_raw="${MUSAFETY_PROTECTED_BRANCHES:-$(git config --get multiagent.protectedBranches || true)}"
@@ -43,6 +44,22 @@ while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
 done
 
 if [[ "${#blocked_refs[@]}" -gt 0 ]]; then
+  if [[ "$is_codex_session" == "1" ]]; then
+    {
+      echo "[guardex-preedit-guard] Codex push detected toward protected branch."
+      echo "[guardex-preedit-guard] Protected target(s): ${blocked_refs[*]}"
+      echo "[guardex-preedit-guard] Run Codex from an agent/* branch and merge via PR."
+      echo
+      echo "Temporary bypass (not recommended):"
+      echo "  ALLOW_PUSH_ON_PROTECTED_BRANCH=1 git push ..."
+    } >&2
+    exit 1
+  fi
+
+  if [[ "$is_vscode_git_context" == "1" ]]; then
+    exit 0
+  fi
+
   {
     echo "[agent-branch-guard] Push to protected branch blocked outside VS Code Git context."
     echo "[agent-branch-guard] Protected target(s): ${blocked_refs[*]}"

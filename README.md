@@ -123,6 +123,8 @@ gx report scorecard --repo github.com/recodeecom/multiagent-safety
 - `gx setup` checks GitHub CLI (`gh`) and prints install guidance if missing.
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
+- In VS Code Source Control, manual (non-Codex) commits/pushes to protected branches are allowed by default.
+- Codex/agent sessions stay blocked on protected branches and must use `agent/*` branch + PR workflow.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
 - `scripts/agent-branch-start.sh` hydrates `scripts/codex-agent.sh` into new sandbox worktrees when missing, so auto-finish launcher flow stays available.
 
@@ -190,6 +192,7 @@ scripts/agent-file-locks.py
 scripts/install-agent-git-hooks.sh
 scripts/openspec/init-plan-workspace.sh
 .githooks/pre-commit
+.githooks/pre-push
 .codex/skills/guardex/SKILL.md
 .claude/commands/guardex.md
 .omx/state/agent-file-locks.json
