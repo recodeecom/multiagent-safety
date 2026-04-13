@@ -143,7 +143,8 @@ Note: the monitor dispatches Codex through explicit `--task/--agent/--base` flag
 - `gx setup` checks GitHub CLI (`gh`) and prints install guidance if missing.
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
-- Direct commits/pushes to protected branches are blocked by default (including VS Code Source Control).
+- Direct commits/pushes to protected branches are blocked by default.
+- Exception: VS Code Source Control commits are allowed on protected branches that exist only locally (no upstream and no remote branch).
 - Optional repo override for manual VS Code protected-branch writes: `git config multiagent.allowVscodeProtectedBranchWrites true`.
 - Codex/agent sessions stay blocked on protected branches and must use `agent/*` branch + PR workflow.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
