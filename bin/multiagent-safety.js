@@ -1530,6 +1530,88 @@ function uniquePreserveOrder(items) {
   return result;
 }
 
+function readConfiguredProtectedBranches(repoRoot) {
+  const result = gitRun(repoRoot, ['config', '--get', GIT_PROTECTED_BRANCHES_KEY], { allowFailure: true });
+  if (result.status !== 0) {
+    return null;
+  }
+  const parsed = uniquePreserveOrder(parseBranchList(result.stdout.trim()));
+  if (parsed.length === 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function listLocalUserBranches(repoRoot) {
+  const result = gitRun(repoRoot, ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], { allowFailure: true });
+  const branchNames = result.status === 0
+    ? uniquePreserveOrder(
+      String(result.stdout || '')
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    )
+    : [];
+
+  const additionalUserBranches = branchNames.filter(
+    (branchName) =>
+      !branchName.startsWith('agent/') &&
+      !DEFAULT_PROTECTED_BRANCHES.includes(branchName),
+  );
+  if (additionalUserBranches.length > 0) {
+    return additionalUserBranches;
+  }
+
+  const current = gitRun(repoRoot, ['branch', '--show-current'], { allowFailure: true });
+  if (current.status !== 0) {
+    return [];
+  }
+
+  const branchName = String(current.stdout || '').trim();
+  if (
+    !branchName ||
+    branchName.startsWith('agent/') ||
+    DEFAULT_PROTECTED_BRANCHES.includes(branchName)
+  ) {
+    return [];
+  }
+
+  return [branchName];
+}
+
+function ensureSetupProtectedBranches(repoRoot, dryRun) {
+  const localUserBranches = listLocalUserBranches(repoRoot);
+  if (localUserBranches.length === 0) {
+    return {
+      status: 'unchanged',
+      file: `git config ${GIT_PROTECTED_BRANCHES_KEY}`,
+      note: 'no additional local user branches detected',
+    };
+  }
+
+  const configured = readConfiguredProtectedBranches(repoRoot);
+  const currentBranches = configured || [...DEFAULT_PROTECTED_BRANCHES];
+  const missingBranches = localUserBranches.filter((branchName) => !currentBranches.includes(branchName));
+  if (missingBranches.length === 0) {
+    return {
+      status: 'unchanged',
+      file: `git config ${GIT_PROTECTED_BRANCHES_KEY}`,
+      note: 'local user branches already protected',
+    };
+  }
+
+  const nextBranches = uniquePreserveOrder([...currentBranches, ...missingBranches]);
+  if (!dryRun) {
+    writeProtectedBranches(repoRoot, nextBranches);
+  }
+
+  return {
+    status: dryRun ? 'would-update' : 'updated',
+    file: `git config ${GIT_PROTECTED_BRANCHES_KEY}`,
+    note: `added local user branch(es): ${missingBranches.join(', ')}`,
+  };
+}
+
 function readProtectedBranches(repoRoot) {
   const result = gitRun(repoRoot, ['config', '--get', GIT_PROTECTED_BRANCHES_KEY], { allowFailure: true });
   if (result.status !== 0) {
@@ -2799,6 +2881,7 @@ function setup(rawArgs) {
 
   assertProtectedMainWriteAllowed(options, 'setup');
   const installPayload = runInstallInternal(options);
+  installPayload.operations.push(ensureSetupProtectedBranches(installPayload.repoRoot, Boolean(options.dryRun)));
   printOperations('Setup/install', installPayload, options.dryRun);
 
   const fixPayload = runFixInternal({

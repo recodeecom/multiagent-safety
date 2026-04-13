@@ -271,6 +271,27 @@ test('setup provisions workflow files and repo config', () => {
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
 });
 
+test('setup auto-adds existing local user branches to protected branches', () => {
+  const repoDir = initRepo();
+
+  let result = runCmd('git', ['checkout', '-b', 'release/2026-q2'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['config', '--get', 'multiagent.protectedBranches'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stdout.trim(), 'dev main master release/2026-q2');
+
+  const secondRun = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
+
+  result = runCmd('git', ['config', '--get', 'multiagent.protectedBranches'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.stdout.trim(), 'dev main master release/2026-q2');
+});
+
 test('init aliases setup and provisions workflow files', () => {
   const repoDir = initRepo();
 
