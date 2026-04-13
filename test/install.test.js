@@ -293,6 +293,14 @@ test('review-bot-watch script prints help after setup', () => {
   assert.match(helpResult.stdout, /Continuously monitor GitHub pull requests targeting a base branch/);
 });
 
+test('review-bot-watch uses explicit codex-agent flags for argument parsing compatibility', () => {
+  const script = fs.readFileSync(path.resolve(__dirname, '..', 'scripts', 'review-bot-watch.sh'), 'utf8');
+  assert.match(script, /--task \"\$task_name\"/);
+  assert.match(script, /--agent \"\$AGENT_NAME\"/);
+  assert.match(script, /--base \"\$BASE_BRANCH\"/);
+  assert.match(script, /-- exec \"\$prompt\"/);
+});
+
 test('setup blocks in-place maintenance writes on protected main after initialization', () => {
   const repoDir = initRepoOnBranch('main');
 

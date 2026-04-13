@@ -133,6 +133,8 @@ Useful flags:
 - `--once` run one polling cycle and exit
 - `--retry-failed` retry failed PRs without waiting for a new head SHA
 
+Note: the monitor dispatches Codex through explicit `--task/--agent/--base` flags for compatibility with both older and newer `scripts/codex-agent.sh` argument parsing.
+
 ## Important behavior defaults
 
 - No command defaults to `gx status`.

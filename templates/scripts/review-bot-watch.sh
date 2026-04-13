@@ -262,7 +262,11 @@ process_one_pr() {
 
   echo "[review-bot-watch] Dispatching Codex agent for PR #${pr} (${head_branch})"
   set +e
-  bash "$repo_root/scripts/codex-agent.sh" "$task_name" "$AGENT_NAME" "$BASE_BRANCH" -- exec "$prompt"
+  bash "$repo_root/scripts/codex-agent.sh" \
+    --task "$task_name" \
+    --agent "$AGENT_NAME" \
+    --base "$BASE_BRANCH" \
+    -- exec "$prompt"
   local exit_code="$?"
   set -e
 
