@@ -901,6 +901,33 @@ function isSpawnFailure(result) {
   return Boolean(result?.error) && typeof result?.status !== 'number';
 }
 
+function ensureRepoBranch(repoRoot, branch) {
+  const current = currentBranchName(repoRoot);
+  if (current === branch) {
+    return { ok: true, changed: false };
+  }
+
+  const checkoutResult = run('git', ['-C', repoRoot, 'checkout', branch], { timeout: 20_000 });
+  if (isSpawnFailure(checkoutResult)) {
+    return {
+      ok: false,
+      changed: false,
+      stdout: checkoutResult.stdout || '',
+      stderr: checkoutResult.stderr || '',
+    };
+  }
+  if (checkoutResult.status !== 0) {
+    return {
+      ok: false,
+      changed: false,
+      stdout: checkoutResult.stdout || '',
+      stderr: checkoutResult.stderr || '',
+    };
+  }
+
+  return { ok: true, changed: true };
+}
+
 function doctorSandboxBranchPrefix() {
   const now = new Date();
   const stamp = [
@@ -1002,12 +1029,26 @@ function startDoctorSandbox(blocked) {
     throw startResult.error;
   }
   if (startResult.status !== 0) {
-    throw new Error((startResult.stderr || startResult.stdout || 'failed to start doctor sandbox').trim());
+    return startDoctorSandboxFallback(blocked);
   }
 
   const metadata = extractAgentBranchStartMetadata(startResult.stdout);
-  if (!metadata.worktreePath) {
-    throw new Error(`Failed to parse sandbox worktree from agent-branch-start output:\n${startResult.stdout}`);
+  const currentBranch = currentBranchName(blocked.repoRoot);
+  const worktreePath = metadata.worktreePath ? path.resolve(metadata.worktreePath) : '';
+  const repoRootPath = path.resolve(blocked.repoRoot);
+  const hasSafeWorktree = Boolean(worktreePath) && worktreePath !== repoRootPath;
+  const branchChanged = Boolean(currentBranch) && currentBranch !== blocked.branch;
+
+  if (!hasSafeWorktree || branchChanged) {
+    const restoreResult = ensureRepoBranch(blocked.repoRoot, blocked.branch);
+    if (!restoreResult.ok) {
+      const detail = [restoreResult.stderr, restoreResult.stdout].filter(Boolean).join('\n').trim();
+      throw new Error(
+        `doctor sandbox startup switched protected base checkout and could not restore '${blocked.branch}'.` +
+        (detail ? `\n${detail}` : ''),
+      );
+    }
+    return startDoctorSandboxFallback(blocked);
   }
 
   return {

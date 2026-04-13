@@ -434,6 +434,54 @@ test('doctor on protected main auto-runs in a sandbox branch/worktree', () => {
   assert.equal(currentBranch.stdout.trim(), 'main');
 });
 
+test('doctor keeps protected base checkout on main even if local starter script switches branches in-place', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const legacyStartScript = path.join(repoDir, 'scripts', 'agent-branch-start.sh');
+  fs.writeFileSync(
+    legacyStartScript,
+    '#!/usr/bin/env bash\n' +
+      'set -euo pipefail\n' +
+      'branch_name="agent/legacy/doctor-in-place"\n' +
+      'git checkout -B "$branch_name"\n' +
+      'echo "[agent-branch-start] Created in-place branch: ${branch_name}"\n',
+    'utf8',
+  );
+  fs.chmodSync(legacyStartScript, 0o755);
+
+  result = runCmd('git', ['add', '-f', 'scripts/agent-branch-start.sh'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'simulate legacy in-place starter'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runNode(['doctor', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /doctor detected protected branch 'main'/);
+  assert.match(extractCreatedBranch(result.stdout), /^agent\/gx\/.+-gx-doctor$/);
+
+  const currentBranch = runCmd('git', ['branch', '--show-current'], repoDir);
+  assert.equal(currentBranch.status, 0, currentBranch.stderr || currentBranch.stdout);
+  assert.equal(currentBranch.stdout.trim(), 'main');
+});
+
 test('doctor on protected main syncs repaired stale lock state back to base workspace', () => {
   const repoDir = initRepoOnBranch('main');
   seedCommit(repoDir);
