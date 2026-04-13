@@ -147,6 +147,10 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['help', 'Show this help output'],
   ['version', 'Print GuardeX version'],
 ];
+const AGENT_BOT_DESCRIPTIONS = [
+  ['review', 'Monitor open PRs targeting current branch and dispatch codex-agent review flow'],
+  ['start', 'bash scripts/review-bot-watch.sh --interval 30'],
+];
 
 const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-Rex for your repo) in this repository for Codex or Claude.
 
@@ -261,9 +265,20 @@ function commandCatalogLines(indent = '  ') {
   );
 }
 
+function agentBotCatalogLines(indent = '  ') {
+  const maxCommandLength = AGENT_BOT_DESCRIPTIONS.reduce(
+    (max, [command]) => Math.max(max, command.length),
+    0,
+  );
+  return AGENT_BOT_DESCRIPTIONS.map(
+    ([command, description]) => `${indent}${command.padEnd(maxCommandLength + 2)}${description}`,
+  );
+}
+
 function printToolLogsSummary() {
   const usageLine = `    $ ${SHORT_TOOL_NAME} <command> [options]`;
   const commandDetails = commandCatalogLines('    ');
+  const agentBotDetails = agentBotCatalogLines('    ');
 
   if (!supportsAnsiColors()) {
     console.log(`${TOOL_NAME}-tools logs:`);
@@ -273,12 +288,17 @@ function printToolLogsSummary() {
     for (const line of commandDetails) {
       console.log(line);
     }
+    console.log('  AGENT BOT');
+    for (const line of agentBotDetails) {
+      console.log(line);
+    }
     return;
   }
 
   const title = colorize(`${TOOL_NAME}-tools logs`, '1;36');
   const usageHeader = colorize('USAGE', '1');
   const commandsHeader = colorize('COMMANDS', '1');
+  const agentBotHeader = colorize('AGENT BOT', '1');
   const pipe = colorize('│', '90');
   const tee = colorize('├', '90');
   const corner = colorize('└', '90');
@@ -288,6 +308,14 @@ function printToolLogsSummary() {
   console.log(`  ${pipe}${usageLine}`);
   console.log(`  ${tee}─ ${commandsHeader}`);
   for (const line of commandDetails) {
+    if (!line) {
+      console.log(`  ${pipe}`);
+      continue;
+    }
+    console.log(`  ${pipe}${line.slice(2)}`);
+  }
+  console.log(`  ${tee}─ ${agentBotHeader}`);
+  for (const line of agentBotDetails) {
     if (!line) {
       console.log(`  ${pipe}`);
       continue;
@@ -310,6 +338,9 @@ USAGE
 
 COMMANDS
 ${commandCatalogLines().join('\n')}
+
+AGENT BOT
+${agentBotCatalogLines().join('\n')}
 
 NOTES
   - Running ${TOOL_NAME} with no command defaults to: ${SHORT_TOOL_NAME} status

@@ -797,6 +797,11 @@ test('default invocation runs non-mutating status output', () => {
   assert.match(result.stdout, /guardex-tools logs:/);
   assert.match(result.stdout, /USAGE\n\s+\$ gx <command> \[options\]/);
   assert.match(result.stdout, /COMMANDS\n\s+status\s+Show GuardeX CLI \+ service health without modifying files/);
+  assert.match(
+    result.stdout,
+    /AGENT BOT\n\s+review\s+Monitor open PRs targeting current branch and dispatch codex-agent review flow/,
+  );
+  assert.match(result.stdout, /AGENT BOT[\s\S]*\n\s+start\s+bash scripts\/review-bot-watch\.sh --interval 30/);
   assert.equal(fs.existsSync(path.join(repoDir, '.githooks', 'pre-commit')), false);
 });
 
