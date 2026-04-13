@@ -30,7 +30,7 @@ fi
 
 allow_vscode_protected_raw="${MUSAFETY_ALLOW_VSCODE_PROTECTED_BRANCH_WRITES:-$(git config --get multiagent.allowVscodeProtectedBranchWrites || true)}"
 if [[ -z "$allow_vscode_protected_raw" ]]; then
-  allow_vscode_protected_raw="false"
+  allow_vscode_protected_raw="true"
 fi
 allow_vscode_protected="$(printf '%s' "$allow_vscode_protected_raw" | tr '[:upper:]' '[:lower:]')"
 
@@ -144,8 +144,8 @@ Use an agent branch first:
 After finishing work:
   bash scripts/agent-branch-finish.sh
 
-Optional repo override for manual VS Code protected-branch commits:
-  git config multiagent.allowVscodeProtectedBranchWrites true
+Optional repo hard-block for VS Code protected-branch commits:
+  git config multiagent.allowVscodeProtectedBranchWrites false
 
 Temporary bypass (not recommended):
   ALLOW_COMMIT_ON_PROTECTED_BRANCH=1 git commit ...

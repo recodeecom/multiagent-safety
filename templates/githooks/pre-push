@@ -12,7 +12,7 @@ fi
 
 allow_vscode_protected_raw="${MUSAFETY_ALLOW_VSCODE_PROTECTED_BRANCH_WRITES:-$(git config --get multiagent.allowVscodeProtectedBranchWrites || true)}"
 if [[ -z "$allow_vscode_protected_raw" ]]; then
-  allow_vscode_protected_raw="false"
+  allow_vscode_protected_raw="true"
 fi
 allow_vscode_protected="$(printf '%s' "$allow_vscode_protected_raw" | tr '[:upper:]' '[:lower:]')"
 
@@ -77,8 +77,8 @@ if [[ "${#blocked_refs[@]}" -gt 0 ]]; then
     echo "[agent-branch-guard] Push to protected branch blocked."
     echo "[agent-branch-guard] Protected target(s): ${blocked_refs[*]}"
     echo "[agent-branch-guard] Use an agent branch and merge via PR."
-    echo "[agent-branch-guard] Optional VS Code override:"
-    echo "  git config multiagent.allowVscodeProtectedBranchWrites true"
+    echo "[agent-branch-guard] Optional repo hard-block for VS Code protected-branch push:"
+    echo "  git config multiagent.allowVscodeProtectedBranchWrites false"
     echo
     echo "Temporary bypass (not recommended):"
     echo "  ALLOW_PUSH_ON_PROTECTED_BRANCH=1 git push ..."
