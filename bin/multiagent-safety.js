@@ -19,6 +19,7 @@ const GH_BIN = process.env.MUSAFETY_GH_BIN || 'gh';
 const REQUIRED_SYSTEM_TOOLS = [
   {
     name: 'gh',
+    displayName: 'GitHub (gh)',
     command: GH_BIN,
     installHint: 'https://cli.github.com/',
   },
@@ -2057,6 +2058,7 @@ function detectRequiredSystemTools() {
     const reason = rawReason.split('\n')[0] || '';
     services.push({
       name: tool.name,
+      displayName: tool.displayName || tool.name,
       command: tool.command,
       installHint: tool.installHint,
       status: active ? 'active' : 'inactive',
@@ -2409,6 +2411,7 @@ function status(rawArgs) {
     ...npmServices,
     ...requiredSystemTools.map((tool) => ({
       name: tool.name,
+      displayName: tool.displayName || tool.name,
       status: tool.status,
     })),
   ];
@@ -2457,11 +2460,14 @@ function status(rawArgs) {
 
   console.log(`[${TOOL_NAME}] Global services:`);
   for (const service of services) {
-    console.log(`  - ${statusDot(service.status)} ${service.name}: ${service.status}`);
+    const serviceLabel = service.displayName || service.name;
+    console.log(`  - ${statusDot(service.status)} ${serviceLabel}: ${service.status}`);
   }
   const missingSystemTools = requiredSystemTools.filter((tool) => tool.status !== 'active');
   if (missingSystemTools.length > 0) {
-    const tools = missingSystemTools.map((tool) => tool.name).join(', ');
+    const tools = missingSystemTools
+      .map((tool) => tool.displayName || tool.name)
+      .join(', ');
     console.log(`[${TOOL_NAME}] ⚠️ Missing required system tool(s): ${tools}`);
     for (const tool of missingSystemTools) {
       const reasonText = tool.reason ? ` (${tool.reason})` : '';
@@ -2479,6 +2485,16 @@ function status(rawArgs) {
 
   if (scanResult.errors === 0 && scanResult.warnings === 0) {
     console.log(`[${TOOL_NAME}] Repo safety service: ${statusDot('active')} active.`);
+  } else if (scanResult.errors === 0) {
+    console.log(
+      `[${TOOL_NAME}] Repo safety service: ${statusDot('degraded')} degraded (${scanResult.warnings} warning(s)).`,
+    );
+    console.log(`[${TOOL_NAME}] Run '${TOOL_NAME} scan' to review warning details.`);
+  } else if (scanResult.warnings === 0) {
+    console.log(
+      `[${TOOL_NAME}] Repo safety service: ${statusDot('degraded')} degraded (${scanResult.errors} error(s)).`,
+    );
+    console.log(`[${TOOL_NAME}] Run '${TOOL_NAME} scan' for detailed findings.`);
   } else {
     console.log(
       `[${TOOL_NAME}] Repo safety service: ${statusDot('degraded')} degraded (${scanResult.errors} error(s), ${scanResult.warnings} warning(s)).`,

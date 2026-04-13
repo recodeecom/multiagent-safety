@@ -778,6 +778,40 @@ test('default invocation runs non-mutating status output', () => {
   assert.equal(fs.existsSync(path.join(repoDir, '.githooks', 'pre-commit')), false);
 });
 
+test('status prints GitHub CLI service with friendly label', () => {
+  const repoDir = initRepo();
+  const fakeGh = createFakeGhScript(`
+if [[ "$1" == "--version" ]]; then
+  echo "gh version 9.9.9"
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv([], repoDir, {
+    MUSAFETY_GH_BIN: fakeGh.fakePath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /GitHub \(gh\): active/);
+});
+
+test('warning-only degraded status avoids zero-error wording and improves scan hint', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['config', 'core.hooksPath', '.bad-hooks'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runNode(['status', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Repo safety service: .*degraded \(\d+ warning\(s\)\)\./);
+  assert.doesNotMatch(result.stdout, /0 error\(s\),/);
+  assert.match(result.stdout, /Run 'guardex scan' to review warning details\./);
+});
+
 test('default invocation outside git repo reports inactive repo service', () => {
   const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-non-repo-'));
 
