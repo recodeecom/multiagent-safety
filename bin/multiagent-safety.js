@@ -367,6 +367,7 @@ NOTES
   - ${TOOL_NAME} setup checks GitHub CLI (gh) and prints install guidance if missing
   - For other repos: ${SHORT_TOOL_NAME} setup --target <repo-path> then ${SHORT_TOOL_NAME} doctor --target <repo-path>
   - In initialized repos, setup/install/fix block in-place writes on protected main by default
+  - setup/doctor auto-finish clean pending agent/* branches via PR flow into the current local base branch
   - doctor auto-runs in a sandbox agent branch/worktree on protected main and tries auto-finish PR flow
   - agent-branch-finish merges by default and keeps agent branches/worktrees until explicit cleanup
   - use '${SHORT_TOOL_NAME} cleanup' to remove merged agent branches/worktrees (optionally remote refs too)
@@ -1295,6 +1296,13 @@ function runDoctorInSandbox(options, blocked) {
     status: 'skipped',
     note: 'sandbox doctor did not complete successfully',
   };
+  let postSandboxAutoFinishSummary = {
+    enabled: false,
+    attempted: 0,
+    completed: 0,
+    skipped: 0,
+    failed: 0,
+    details: ['Skipped auto-finish sweep (sandbox doctor did not complete successfully).'],
   let omxScaffoldSyncResult = {
     status: 'skipped',
     note: 'sandbox doctor did not complete successfully',
@@ -1371,6 +1379,12 @@ function runDoctorInSandbox(options, blocked) {
         };
       }
     }
+
+    postSandboxAutoFinishSummary = autoFinishReadyAgentBranches(blocked.repoRoot, {
+      baseBranch: blocked.branch,
+      dryRun: options.dryRun,
+      excludeBranches: [metadata.branch],
+    });
   }
 
   if (options.json) {
@@ -1386,6 +1400,7 @@ function runDoctorInSandbox(options, blocked) {
                 sandboxLockSync: lockSyncResult,
                 sandboxAutoCommit: autoCommitResult,
                 sandboxFinish: finishResult,
+                autoFinish: postSandboxAutoFinishSummary,
               },
               null,
               2,
@@ -1452,6 +1467,15 @@ function runDoctorInSandbox(options, blocked) {
         console.log(`[${TOOL_NAME}] Lock registry sync skipped: ${lockSyncResult.note}.`);
       }
 
+      if (postSandboxAutoFinishSummary.enabled) {
+        console.log(
+          `[${TOOL_NAME}] Auto-finish sweep (base=${blocked.branch}): attempted=${postSandboxAutoFinishSummary.attempted}, completed=${postSandboxAutoFinishSummary.completed}, skipped=${postSandboxAutoFinishSummary.skipped}, failed=${postSandboxAutoFinishSummary.failed}`,
+        );
+        for (const detail of postSandboxAutoFinishSummary.details) {
+          console.log(`[${TOOL_NAME}]   ${detail}`);
+        }
+      } else if (postSandboxAutoFinishSummary.details.length > 0) {
+        console.log(`[${TOOL_NAME}] ${postSandboxAutoFinishSummary.details[0]}`);
       if (omxScaffoldSyncResult.status === 'synced') {
         console.log(`[${TOOL_NAME}] Synced .omx scaffold back to protected branch workspace.`);
       } else if (omxScaffoldSyncResult.status === 'unchanged') {
@@ -1767,6 +1791,203 @@ function listLocalUserBranches(repoRoot) {
   }
 
   return [branchName];
+}
+
+function listLocalAgentBranches(repoRoot) {
+  const result = gitRun(
+    repoRoot,
+    ['for-each-ref', '--format=%(refname:short)', 'refs/heads/agent/'],
+    { allowFailure: true },
+  );
+  if (result.status !== 0) {
+    return [];
+  }
+  return uniquePreserveOrder(
+    String(result.stdout || '')
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  );
+}
+
+function mapWorktreePathsByBranch(repoRoot) {
+  const result = gitRun(repoRoot, ['worktree', 'list', '--porcelain'], { allowFailure: true });
+  const map = new Map();
+  if (result.status !== 0) {
+    return map;
+  }
+
+  const lines = String(result.stdout || '').split('\n');
+  let currentWorktree = '';
+  for (const line of lines) {
+    if (line.startsWith('worktree ')) {
+      currentWorktree = line.slice('worktree '.length).trim();
+      continue;
+    }
+    if (line.startsWith('branch refs/heads/')) {
+      const branchName = line.slice('branch refs/heads/'.length).trim();
+      if (currentWorktree && branchName) {
+        map.set(branchName, currentWorktree);
+      }
+    }
+  }
+  return map;
+}
+
+function hasSignificantWorkingTreeChanges(worktreePath) {
+  const result = run('git', ['-C', worktreePath, 'status', '--porcelain']);
+  if (result.status !== 0) {
+    return true;
+  }
+
+  const lines = String(result.stdout || '')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+
+  for (const line of lines) {
+    const pathPart = (line.length > 3 ? line.slice(3) : '').trim();
+    if (!pathPart) continue;
+    if (pathPart === LOCK_FILE_RELATIVE) continue;
+    if (pathPart.startsWith(`${LOCK_FILE_RELATIVE} -> `)) continue;
+    if (pathPart.endsWith(` -> ${LOCK_FILE_RELATIVE}`)) continue;
+    return true;
+  }
+  return false;
+}
+
+function autoFinishReadyAgentBranches(repoRoot, options = {}) {
+  const baseBranch = String(options.baseBranch || '').trim();
+  const dryRun = Boolean(options.dryRun);
+  const excludedBranches = new Set(
+    Array.isArray(options.excludeBranches)
+      ? options.excludeBranches.map((branch) => String(branch || '').trim()).filter(Boolean)
+      : [],
+  );
+
+  const summary = {
+    enabled: true,
+    baseBranch,
+    attempted: 0,
+    completed: 0,
+    skipped: 0,
+    failed: 0,
+    details: [],
+  };
+
+  if (!baseBranch || baseBranch === 'HEAD' || baseBranch.startsWith('agent/')) {
+    summary.enabled = false;
+    summary.details.push('Skipped auto-finish sweep (base branch is missing or not a non-agent local branch).');
+    return summary;
+  }
+
+  if (String(process.env.MUSAFETY_DOCTOR_SANDBOX || '') === '1') {
+    summary.enabled = false;
+    summary.details.push('Skipped auto-finish sweep inside doctor sandbox pass.');
+    return summary;
+  }
+
+  if (String(process.env.MUSAFETY_SKIP_AUTO_FINISH_READY_BRANCHES || '') === '1') {
+    summary.enabled = false;
+    summary.details.push('Skipped auto-finish sweep (MUSAFETY_SKIP_AUTO_FINISH_READY_BRANCHES=1).');
+    return summary;
+  }
+
+  if (dryRun) {
+    summary.enabled = false;
+    summary.details.push('Skipped auto-finish sweep in dry-run mode.');
+    return summary;
+  }
+
+  const finishScript = path.join(repoRoot, 'scripts', 'agent-branch-finish.sh');
+  if (!fs.existsSync(finishScript)) {
+    summary.enabled = false;
+    summary.details.push(`Skipped auto-finish sweep (missing ${path.relative(repoRoot, finishScript)}).`);
+    return summary;
+  }
+
+  const hasOrigin = gitRun(repoRoot, ['remote', 'get-url', 'origin'], { allowFailure: true }).status === 0;
+  if (!hasOrigin) {
+    summary.enabled = false;
+    summary.details.push('Skipped auto-finish sweep (origin remote missing).');
+    return summary;
+  }
+
+  const ghBin = process.env.MUSAFETY_GH_BIN || 'gh';
+  if (run(ghBin, ['--version']).status !== 0) {
+    summary.enabled = false;
+    summary.details.push(`Skipped auto-finish sweep (${ghBin} not available).`);
+    return summary;
+  }
+
+  const branchWorktrees = mapWorktreePathsByBranch(repoRoot);
+  const agentBranches = listLocalAgentBranches(repoRoot);
+  if (agentBranches.length === 0) {
+    summary.enabled = false;
+    summary.details.push('No local agent branches found for auto-finish sweep.');
+    return summary;
+  }
+
+  for (const branch of agentBranches) {
+    if (excludedBranches.has(branch)) {
+      summary.skipped += 1;
+      summary.details.push(`[skip] ${branch}: excluded from this auto-finish sweep.`);
+      continue;
+    }
+
+    if (branch === baseBranch) {
+      summary.skipped += 1;
+      summary.details.push(`[skip] ${branch}: source branch equals base branch.`);
+      continue;
+    }
+
+    let counts;
+    try {
+      counts = aheadBehind(repoRoot, branch, baseBranch);
+    } catch (error) {
+      summary.failed += 1;
+      summary.details.push(`[fail] ${branch}: unable to compute ahead/behind (${error.message}).`);
+      continue;
+    }
+
+    if (counts.ahead <= 0) {
+      summary.skipped += 1;
+      summary.details.push(`[skip] ${branch}: already merged into ${baseBranch}.`);
+      continue;
+    }
+
+    const branchWorktree = branchWorktrees.get(branch) || '';
+    if (branchWorktree && hasSignificantWorkingTreeChanges(branchWorktree)) {
+      summary.skipped += 1;
+      summary.details.push(`[skip] ${branch}: dirty worktree (${branchWorktree}).`);
+      continue;
+    }
+
+    summary.attempted += 1;
+    const finishArgs = [
+      finishScript,
+      '--branch',
+      branch,
+      '--base',
+      baseBranch,
+      '--via-pr',
+      '--cleanup',
+    ];
+    const finishResult = run('bash', finishArgs, { cwd: repoRoot });
+    const combinedOutput = [finishResult.stdout || '', finishResult.stderr || ''].join('\n').trim();
+
+    if (finishResult.status === 0) {
+      summary.completed += 1;
+      summary.details.push(`[done] ${branch}: auto-finish completed.`);
+      continue;
+    }
+
+    summary.failed += 1;
+    const tail = combinedOutput ? ` ${combinedOutput.split('\n').slice(-2).join(' | ')}` : '';
+    summary.details.push(`[fail] ${branch}: auto-finish failed.${tail}`);
+  }
+
+  return summary;
 }
 
 function ensureSetupProtectedBranches(repoRoot, dryRun) {
@@ -2902,6 +3123,11 @@ function doctor(rawArgs) {
   assertProtectedMainWriteAllowed(options, 'doctor');
   const fixPayload = runFixInternal(options);
   const scanResult = runScanInternal({ target: options.target, json: false });
+  const currentBaseBranch = currentBranchName(scanResult.repoRoot);
+  const autoFinishSummary = autoFinishReadyAgentBranches(scanResult.repoRoot, {
+    baseBranch: currentBaseBranch,
+    dryRun: options.dryRun,
+  });
   const safe = scanResult.errors === 0 && scanResult.warnings === 0;
   const musafe = safe;
 
@@ -2923,6 +3149,7 @@ function doctor(rawArgs) {
             warnings: scanResult.warnings,
             findings: scanResult.findings,
           },
+          autoFinish: autoFinishSummary,
         },
         null,
         2,
@@ -2934,6 +3161,16 @@ function doctor(rawArgs) {
 
   printOperations('Doctor/fix', fixPayload, options.dryRun);
   printScanResult(scanResult, false);
+  if (autoFinishSummary.enabled) {
+    console.log(
+      `[${TOOL_NAME}] Auto-finish sweep (base=${currentBaseBranch}): attempted=${autoFinishSummary.attempted}, completed=${autoFinishSummary.completed}, skipped=${autoFinishSummary.skipped}, failed=${autoFinishSummary.failed}`,
+    );
+    for (const detail of autoFinishSummary.details) {
+      console.log(`[${TOOL_NAME}]   ${detail}`);
+    }
+  } else if (autoFinishSummary.details.length > 0) {
+    console.log(`[${TOOL_NAME}] ${autoFinishSummary.details[0]}`);
+  }
   if (safe) {
     console.log(`[${TOOL_NAME}] ✅ Repo is fully safe.`);
   } else {
@@ -3123,7 +3360,22 @@ function setup(rawArgs) {
   }
 
   const scanResult = runScanInternal({ target: options.target, json: false });
+  const currentBaseBranch = currentBranchName(scanResult.repoRoot);
+  const autoFinishSummary = autoFinishReadyAgentBranches(scanResult.repoRoot, {
+    baseBranch: currentBaseBranch,
+    dryRun: options.dryRun,
+  });
   printScanResult(scanResult, false);
+  if (autoFinishSummary.enabled) {
+    console.log(
+      `[${TOOL_NAME}] Auto-finish sweep (base=${currentBaseBranch}): attempted=${autoFinishSummary.attempted}, completed=${autoFinishSummary.completed}, skipped=${autoFinishSummary.skipped}, failed=${autoFinishSummary.failed}`,
+    );
+    for (const detail of autoFinishSummary.details) {
+      console.log(`[${TOOL_NAME}]   ${detail}`);
+    }
+  } else if (autoFinishSummary.details.length > 0) {
+    console.log(`[${TOOL_NAME}] ${autoFinishSummary.details[0]}`);
+  }
 
   if (scanResult.errors === 0 && scanResult.warnings === 0) {
     console.log(`[${TOOL_NAME}] ✅ Setup complete.`);

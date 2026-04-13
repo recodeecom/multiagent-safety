@@ -699,6 +699,86 @@ exit 1
   assert.match(combinedOutput, /Merge pending review\/check policy/);
 });
 
+test('doctor auto-finishes clean pending agent branches against the current local base branch', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd(
+    'bash',
+    ['scripts/agent-branch-start.sh', 'doctor-ready-finish', 'planner', 'main'],
+    repoDir,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const readyBranch = extractCreatedBranch(result.stdout);
+  const readyWorktree = extractCreatedWorktree(result.stdout);
+
+  fs.writeFileSync(path.join(readyWorktree, 'doctor-ready-finish.txt'), 'ready for finish\n', 'utf8');
+  result = runCmd('git', ['add', 'doctor-ready-finish.txt'], readyWorktree);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '--no-verify', '-m', 'doctor ready branch change'], readyWorktree);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const ghLogPath = path.join(repoDir, '.doctor-auto-finish-gh.log');
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+LOG_PATH="${ghLogPath}"
+echo "$*" >> "$LOG_PATH"
+if [[ "$1" == "--version" ]]; then
+  echo "gh version 2.0.0"
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/doctor-auto-finish-ready"
+    exit 0
+  fi
+  if [[ " $* " == *" --json state,mergedAt,url "* ]]; then
+    printf "OPEN\\t\\t%s\\n" "https://example.test/pr/doctor-auto-finish-ready"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  result = runNodeWithEnv(['doctor', '--target', repoDir], repoDir, {
+    MUSAFETY_GH_BIN: fakeGhPath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const combinedOutput = `${result.stdout}\n${result.stderr}`;
+  assert.match(combinedOutput, /Auto-finish sweep \(base=main\): attempted=1, completed=1, skipped=\d+, failed=0/);
+  assert.match(combinedOutput, /\[done\] agent\/planner\/.*doctor-ready-finish.*: auto-finish completed\./);
+
+  const ghCalls = fs.readFileSync(ghLogPath, 'utf8');
+  assert.match(ghCalls, /pr create/);
+  assert.match(ghCalls, /pr merge/);
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${readyBranch}`], repoDir);
+  assert.notEqual(result.status, 0, 'doctor auto-finish should remove local ready branch');
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', readyBranch], repoDir);
+  assert.equal(result.stdout.trim(), '', 'doctor auto-finish should remove remote ready branch');
+});
+
 test('setup pre-commit blocks codex session commits on non-agent branches by default', () => {
   const repoDir = initRepo();
 
