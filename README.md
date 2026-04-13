@@ -69,6 +69,7 @@ gx cleanup --branch "$(git rev-parse --abbrev-ref HEAD)"
 ```
 
 If you use `scripts/codex-agent.sh`, the finish flow is auto-run after the Codex session exits.
+It auto-commits sandbox changes, retries once after syncing if the branch moved behind base during the run, then pushes/opens PR merge flow against the current base branch.
 
 ## Visual workflow
 
@@ -143,6 +144,7 @@ Note: the monitor dispatches Codex through explicit `--task/--agent/--base` flag
 - `gx setup` checks GitHub CLI (`gh`) and prints install guidance if missing.
 - Interactive self-update prompt defaults to **No** (`[y/N]`).
 - In initialized repos, `setup`/`install`/`fix` block protected-base writes unless explicitly overridden.
+- `gx setup` and `gx doctor` auto-finish clean pending `agent/*` branches (push + PR merge cleanup) against the current local base branch.
 - Direct commits/pushes to protected branches are blocked by default (including VS Code Source Control).
 - Optional repo override for manual VS Code protected-branch writes: `git config multiagent.allowVscodeProtectedBranchWrites true`.
 - Codex/agent sessions stay blocked on protected branches and must use `agent/*` branch + PR workflow.

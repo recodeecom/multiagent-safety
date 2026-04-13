@@ -58,3 +58,19 @@ test('security workflows are present and use pinned GitHub Actions SHAs', () => 
     }
   }
 });
+
+test('critical runtime helper scripts stay in sync with templates', () => {
+  const pairs = [
+    ['templates/scripts/codex-agent.sh', 'scripts/codex-agent.sh'],
+  ];
+
+  for (const [templatePath, runtimePath] of pairs) {
+    const template = fs.readFileSync(path.join(repoRoot, templatePath), 'utf8');
+    const runtime = fs.readFileSync(path.join(repoRoot, runtimePath), 'utf8');
+    assert.equal(
+      runtime,
+      template,
+      `${runtimePath} diverged from ${templatePath}; run gx setup/doctor parity repair`,
+    );
+  }
+});
