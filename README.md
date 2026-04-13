@@ -97,6 +97,9 @@ gx status
 # setup and repair
 gx setup
 gx doctor
+# setup + repair another repo without switching your current repo checkout
+gx setup --target /path/to/repo
+gx doctor --target /path/to/repo
 
 # protected branch management
 gx protect list
@@ -147,6 +150,7 @@ Note: the monitor dispatches Codex through explicit `--task/--agent/--base` flag
 - Optional repo override for manual VS Code protected-branch writes: `git config multiagent.allowVscodeProtectedBranchWrites true`.
 - Codex/agent sessions stay blocked on protected branches and must use `agent/*` branch + PR workflow.
 - On protected `main`, `gx doctor` auto-runs in a sandbox agent branch/worktree.
+- In-place agent branching is disabled; `scripts/agent-branch-start.sh` always creates a separate worktree to keep your visible local/base branch unchanged.
 - `scripts/agent-branch-start.sh` hydrates `scripts/codex-agent.sh` into new sandbox worktrees when missing, so auto-finish launcher flow stays available.
 
 ## Configure protected branches
