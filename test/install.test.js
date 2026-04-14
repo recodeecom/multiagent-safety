@@ -296,7 +296,10 @@ test('setup provisions workflow files and repo config', () => {
 
   const agentsContent = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
   assert.equal(agentsContent.includes('<!-- multiagent-safety:START -->'), true);
-  assert.match(agentsContent, /For every new task, if an assigned agent sub-branch\/worktree is already open, continue in that sub-branch/);
+  assert.match(
+    agentsContent,
+    /For every new task, including follow-up work in the same chat\/session, if an assigned agent sub-branch\/worktree is already open, continue in that sub-branch/,
+  );
 
   const gitignoreContent = fs.readFileSync(path.join(repoDir, '.gitignore'), 'utf8');
   assert.match(gitignoreContent, /# multiagent-safety:START/);
@@ -344,7 +347,7 @@ Trailing project notes after managed block.
   assert.match(nextAgents, /Trailing project notes after managed block\./);
   assert.match(
     nextAgents,
-    /For every new task, if an assigned agent sub-branch\/worktree is already open, continue in that sub-branch/,
+    /For every new task, including follow-up work in the same chat\/session, if an assigned agent sub-branch\/worktree is already open, continue in that sub-branch/,
   );
   assert.match(
     nextAgents,
