@@ -1386,6 +1386,48 @@ test('agents command starts review+cleanup bots for the target repo and stops th
   assert.equal(fs.existsSync(statePath), false, 'agents stop should remove state file');
 });
 
+test('agents cleanup bot defaults to a 60-minute idle threshold', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  const scriptsDir = path.join(repoDir, 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+
+  const reviewScriptPath = path.join(scriptsDir, 'review-bot-watch.sh');
+  fs.writeFileSync(
+    reviewScriptPath,
+    '#!/usr/bin/env bash\n' +
+      'set -euo pipefail\n' +
+      'while true; do sleep 60; done\n',
+    'utf8',
+  );
+  fs.chmodSync(reviewScriptPath, 0o755);
+
+  const pruneScriptPath = path.join(scriptsDir, 'agent-worktree-prune.sh');
+  fs.writeFileSync(
+    pruneScriptPath,
+    '#!/usr/bin/env bash\n' +
+      'set -euo pipefail\n' +
+      'exit 0\n',
+    'utf8',
+  );
+  fs.chmodSync(pruneScriptPath, 0o755);
+
+  let result = runNode(['agents', 'start', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const statePath = path.join(repoDir, '.omx', 'state', 'agents-bots.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(state.cleanup.idleMinutes, 60);
+  assert.equal(state.cleanup.includePrMerged, true);
+  assert.equal(isPidAlive(state.review.pid), true, 'review bot pid should be alive after start');
+  assert.equal(isPidAlive(state.cleanup.pid), true, 'cleanup bot pid should be alive after start');
+
+  result = runNode(['agents', 'stop', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(waitForPidExit(state.review.pid), true, 'review bot pid should exit after stop');
+  assert.equal(waitForPidExit(state.cleanup.pid), true, 'cleanup bot pid should exit after stop');
+});
+
 test('finish command auto-commits dirty agent worktree and runs PR finish flow for the branch', () => {
   const repoDir = initRepoOnBranch('main');
   seedCommit(repoDir);
@@ -3380,7 +3422,7 @@ test('cleanup command can remove squash-merged agent branches via merged PR dete
   assert.equal(fs.existsSync(worktreePath), false, 'cleanup should remove merged PR worktree');
 });
 
-test('cleanup command watch mode defaults to 10-minute idle threshold and supports one-cycle execution', () => {
+test('cleanup command watch mode defaults to 60-minute idle threshold and supports one-cycle execution', () => {
   const repoDir = initRepo();
   const scriptsDir = path.join(repoDir, 'scripts');
   fs.mkdirSync(scriptsDir, { recursive: true });
@@ -3399,7 +3441,7 @@ test('cleanup command watch mode defaults to 10-minute idle threshold and suppor
   const result = runNode(['cleanup', '--target', repoDir, '--watch', '--once', '--interval', '15'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const passedArgs = fs.readFileSync(markerArgs, 'utf8').trim();
-  assert.match(passedArgs, /--idle-minutes 10/);
+  assert.match(passedArgs, /--idle-minutes 60/);
   assert.match(passedArgs, /--only-dirty-worktrees/);
 });
 

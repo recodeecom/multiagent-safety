@@ -35,6 +35,7 @@ const GIT_SYNC_STRATEGY_KEY = 'multiagent.sync.strategy';
 const DEFAULT_PROTECTED_BRANCHES = ['dev', 'main', 'master'];
 const DEFAULT_BASE_BRANCH = 'dev';
 const DEFAULT_SYNC_STRATEGY = 'rebase';
+const DEFAULT_SHADOW_CLEANUP_IDLE_MINUTES = 60;
 
 const TEMPLATE_ROOT = path.resolve(__dirname, '..', 'templates');
 
@@ -185,7 +186,7 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['copy-commands', 'Print setup checklist as executable commands only'],
   ['protect', 'Manage protected branches (list/add/remove/set/reset)'],
   ['sync', 'Check or sync agent branches with origin/<base>'],
-  ['cleanup', 'Cleanup agent branches/worktrees (supports idle watch mode)'],
+  ['cleanup', 'Cleanup agent branches/worktrees (watch mode defaults to 60-minute idle threshold)'],
   ['agents', 'Start/stop repo-scoped review + cleanup bots'],
   ['install', 'Install templates/locks/hooks without running full setup (supports --no-gitignore)'],
   ['fix', 'Repair broken or missing guardrail files/config (supports --no-gitignore)'],
@@ -1645,7 +1646,7 @@ function parseAgentsArgs(rawArgs) {
     subcommand,
     reviewIntervalSeconds: 30,
     cleanupIntervalSeconds: 60,
-    idleMinutes: 10,
+    idleMinutes: DEFAULT_SHADOW_CLEANUP_IDLE_MINUTES,
   };
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -2498,7 +2499,7 @@ function parseCleanupArgs(rawArgs) {
   }
 
   if (options.watch && options.idleMinutes === 0) {
-    options.idleMinutes = 10;
+    options.idleMinutes = DEFAULT_SHADOW_CLEANUP_IDLE_MINUTES;
   }
 
   return options;
@@ -3979,6 +3980,7 @@ function agents(rawArgs) {
         String(options.cleanupIntervalSeconds),
         '--idle-minutes',
         String(options.idleMinutes),
+        '--include-pr-merged',
       ],
       cwd: repoRoot,
       logPath: cleanupLogPath,
@@ -3998,6 +4000,7 @@ function agents(rawArgs) {
         pid: cleanupPid,
         intervalSeconds: options.cleanupIntervalSeconds,
         idleMinutes: options.idleMinutes,
+        includePrMerged: true,
         script: path.resolve(__filename),
         logPath: cleanupLogPath,
       },
