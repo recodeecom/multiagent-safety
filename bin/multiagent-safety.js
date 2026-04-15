@@ -49,6 +49,7 @@ const TEMPLATE_FILES = [
   'scripts/openspec/init-plan-workspace.sh',
   'githooks/pre-commit',
   'githooks/pre-push',
+  'githooks/post-merge',
   'codex/skills/guardex/SKILL.md',
   'codex/skills/guardex-merge-skills-to-dev/SKILL.md',
   'claude/commands/guardex.md',
@@ -63,6 +64,7 @@ const REQUIRED_WORKFLOW_FILES = [
   'scripts/agent-file-locks.py',
   'scripts/install-agent-git-hooks.sh',
   '.githooks/pre-commit',
+  '.githooks/post-merge',
   '.omx/state/agent-file-locks.json',
 ];
 
@@ -87,12 +89,14 @@ const EXECUTABLE_RELATIVE_PATHS = new Set([
   'scripts/openspec/init-plan-workspace.sh',
   '.githooks/pre-commit',
   '.githooks/pre-push',
+  '.githooks/post-merge',
 ]);
 
 const CRITICAL_GUARDRAIL_PATHS = new Set([
   'AGENTS.md',
   '.githooks/pre-commit',
   '.githooks/pre-push',
+  '.githooks/post-merge',
   'scripts/agent-branch-start.sh',
   'scripts/agent-branch-finish.sh',
   'scripts/agent-worktree-prune.sh',
@@ -118,6 +122,7 @@ const MANAGED_GITIGNORE_PATHS = [
   'scripts/openspec/init-plan-workspace.sh',
   '.githooks/pre-commit',
   '.githooks/pre-push',
+  '.githooks/post-merge',
   'oh-my-codex/',
   '.codex/skills/guardex/SKILL.md',
   '.codex/skills/guardex-merge-skills-to-dev/SKILL.md',

@@ -273,6 +273,7 @@ test('setup provisions workflow files and repo config', () => {
     'scripts/openspec/init-plan-workspace.sh',
     '.githooks/pre-commit',
     '.githooks/pre-push',
+    '.githooks/post-merge',
     '.codex/skills/guardex/SKILL.md',
     '.codex/skills/guardex-merge-skills-to-dev/SKILL.md',
     '.claude/commands/guardex.md',
@@ -320,6 +321,7 @@ test('setup provisions workflow files and repo config', () => {
   assert.match(gitignoreContent, /scripts\/agent-file-locks\.py/);
   assert.match(gitignoreContent, /\.githooks\/pre-commit/);
   assert.match(gitignoreContent, /\.githooks\/pre-push/);
+  assert.match(gitignoreContent, /\.githooks\/post-merge/);
   assert.match(gitignoreContent, /\.omx\//);
   assert.match(gitignoreContent, /oh-my-codex\//);
   assert.match(gitignoreContent, /\.codex\/skills\/guardex\/SKILL\.md/);
@@ -1822,6 +1824,55 @@ test('pre-push blocks codex protected branch pushes even from VS Code Source Con
   );
   assert.equal(hookResult.status, 1, hookResult.stderr || hookResult.stdout);
   assert.match(hookResult.stderr, /\[guardex-preedit-guard\] Codex push detected toward protected branch\./);
+});
+
+test('post-merge auto-runs cleanup on base branch and skips non-base branches', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  const setupResult = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(setupResult.status, 0, setupResult.stderr || setupResult.stdout);
+
+  const markerPath = path.join(repoDir, '.post-merge-cleanup-args');
+  fs.writeFileSync(
+    path.join(repoDir, 'bin', 'multiagent-safety.js'),
+    '#!/usr/bin/env node\n' +
+      "const fs = require('node:fs');\n" +
+      "const marker = process.env.MUSAFETY_POST_MERGE_MARKER;\n" +
+      "if (marker) fs.appendFileSync(marker, process.argv.slice(2).join(' ') + '\\n', 'utf8');\n",
+    'utf8',
+  );
+
+  let result = runCmd('bash', ['.githooks/post-merge', '0'], repoDir, {
+    MUSAFETY_POST_MERGE_MARKER: markerPath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  let invocations = fs
+    .readFileSync(markerPath, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  assert.equal(invocations.length, 1);
+  assert.match(invocations[0], /^cleanup /);
+  assert.match(invocations[0], new RegExp(`--target ${escapeRegexLiteral(repoDir)}`));
+  assert.match(invocations[0], /--base dev/);
+  assert.match(invocations[0], /--keep-clean-worktrees/);
+
+  result = runCmd('git', ['checkout', '-b', 'feature/post-merge-skip'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('bash', ['.githooks/post-merge', '0'], repoDir, {
+    MUSAFETY_POST_MERGE_MARKER: markerPath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  invocations = fs
+    .readFileSync(markerPath, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  assert.equal(invocations.length, 1, 'post-merge should skip cleanup on non-base branch');
 });
 
 test('codex-agent launches codex inside a fresh sandbox worktree and keeps branch/worktree by default', () => {

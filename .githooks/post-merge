@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${MUSAFETY_DISABLE_POST_MERGE_CLEANUP:-0}" == "1" ]]; then
+  exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$repo_root" ]]; then
+  exit 0
+fi
+
+branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+  exit 0
+fi
+
+base_branch="${MUSAFETY_BASE_BRANCH:-$(git -C "$repo_root" config --get multiagent.baseBranch || true)}"
+if [[ -z "$base_branch" ]]; then
+  base_branch="dev"
+fi
+
+if [[ "$branch" != "$base_branch" ]]; then
+  exit 0
+fi
+
+cli_path="$repo_root/bin/multiagent-safety.js"
+if [[ ! -f "$cli_path" ]]; then
+  exit 0
+fi
+
+node_bin="${MUSAFETY_NODE_BIN:-node}"
+if ! command -v "$node_bin" >/dev/null 2>&1; then
+  exit 0
+fi
+
+"$node_bin" "$cli_path" cleanup \
+  --target "$repo_root" \
+  --base "$base_branch" \
+  --keep-clean-worktrees >/dev/null 2>&1 || true
+
+exit 0
