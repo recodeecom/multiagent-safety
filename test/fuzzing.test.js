@@ -28,19 +28,19 @@ const KNOWN_COMMON_FLAGS = new Set([
   '--no-gitignore',
 ]);
 
-function runNode(args, cwd) {
-  return cp.spawnSync('node', [cliPath, ...args], {
+function runNode(args, cwd, envOverrides = {}) {
+  return cp.spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
-    env: process.env,
+    env: { ...process.env, ...envOverrides },
   });
 }
 
-function runCmd(cmd, args, cwd) {
+function runCmd(cmd, args, cwd, envOverrides = {}) {
   return cp.spawnSync(cmd, args, {
     cwd,
     encoding: 'utf8',
-    env: process.env,
+    env: { ...process.env, ...envOverrides },
   });
 }
 
@@ -64,6 +64,42 @@ function initRepo() {
 
   return repoDir;
 }
+
+test(
+  'fuzz suite stays runnable when fast-check cannot be resolved',
+  { skip: process.env.MUSAFETY_FUZZING_OPTIONAL_DEP_SELFTEST === '1' ? 'self-test child process' : false },
+  () => {
+    const preloadDir = fs.mkdtempSync(path.join(os.tmpdir(), 'musafety-fuzz-preload-'));
+    const preloadPath = path.join(preloadDir, 'missing-fast-check.cjs');
+    fs.writeFileSync(
+      preloadPath,
+      `const Module = require('node:module');
+const originalLoad = Module._load;
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === 'fast-check') {
+    const error = new Error("Cannot find module 'fast-check'");
+    error.code = 'MODULE_NOT_FOUND';
+    throw error;
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
+`,
+      'utf8',
+    );
+
+    const result = runCmd(
+      process.execPath,
+      ['--require', preloadPath, '--test', __filename],
+      path.resolve(__dirname, '..'),
+      { MUSAFETY_FUZZING_OPTIONAL_DEP_SELFTEST: '1' },
+    );
+
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.match(output, /fast-check is not installed/);
+    assert.doesNotMatch(output, /Cannot find module 'fast-check'/);
+  },
+);
 
 test(
   'fuzz: status rejects unknown option patterns',
