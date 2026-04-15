@@ -226,10 +226,10 @@ const AI_SETUP_PROMPT = `Use this exact checklist to setup GuardeX (Guardian T-R
    bash scripts/codex-agent.sh "task" "agent-name"
    bash scripts/agent-branch-start.sh "task" "agent-name"
    python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
-   bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+   bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)" --base dev --via-pr --wait-for-merge
    - For every new user message/task, repeat the same cycle:
      start isolated agent branch/worktree -> claim file locks -> implement/verify ->
-     finish via PR/merge cleanup with scripts/agent-branch-finish.sh.
+     finish via PR/merge cleanup into dev with scripts/agent-branch-finish.sh.
    - Finished branches stay available by default for audit/follow-up.
      Remove them explicitly when done:
      gx cleanup --branch "$(git rev-parse --abbrev-ref HEAD)"
@@ -288,7 +288,7 @@ gx review --interval 30
 bash scripts/codex-agent.sh "task" "agent-name"
 bash scripts/agent-branch-start.sh "task" "agent-name"
 python3 scripts/agent-file-locks.py claim --branch "$(git rev-parse --abbrev-ref HEAD)" <file...>
-bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)"
+bash scripts/agent-branch-finish.sh --branch "$(git rev-parse --abbrev-ref HEAD)" --base dev --via-pr --wait-for-merge
 gx finish --all
 gx cleanup --branch "$(git rev-parse --abbrev-ref HEAD)"
 bash scripts/openspec/init-plan-workspace.sh "<plan-slug>"
@@ -2792,25 +2792,14 @@ function branchExists(repoRoot, branch) {
   return result.status === 0;
 }
 
-function resolveFinishBaseBranch(repoRoot, sourceBranch, explicitBase) {
+function resolveFinishBaseBranch(repoRoot, _sourceBranch, explicitBase) {
   if (explicitBase) {
     return explicitBase;
-  }
-
-  const branchSpecific = readGitConfig(repoRoot, `branch.${sourceBranch}.musafetyBase`);
-  if (branchSpecific) {
-    return branchSpecific;
   }
 
   const configured = readGitConfig(repoRoot, GIT_BASE_BRANCH_KEY);
   if (configured) {
     return configured;
-  }
-
-  const current = gitRun(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD'], { allowFailure: true });
-  const currentBranch = String(current.stdout || '').trim();
-  if (current.status === 0 && currentBranch && currentBranch !== 'HEAD' && !currentBranch.startsWith('agent/')) {
-    return currentBranch;
   }
 
   return DEFAULT_BASE_BRANCH;

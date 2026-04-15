@@ -163,28 +163,6 @@ if [[ "$BASE_BRANCH_EXPLICIT" -eq 0 ]]; then
 fi
 
 if [[ -z "$BASE_BRANCH" ]]; then
-  branch_stored_base="$(git -C "$repo_root" config --get "branch.${SOURCE_BRANCH}.musafetyBase" || true)"
-  if [[ -n "$branch_stored_base" ]]; then
-    BASE_BRANCH="$branch_stored_base"
-  fi
-fi
-
-if [[ -z "$BASE_BRANCH" ]]; then
-  source_upstream="$(git -C "$repo_root" for-each-ref --format='%(upstream:short)' "refs/heads/${SOURCE_BRANCH}" | head -n 1)"
-  source_upstream="${source_upstream:-}"
-  if [[ "$source_upstream" == */* ]]; then
-    BASE_BRANCH="${source_upstream#*/}"
-  fi
-fi
-
-if [[ -z "$BASE_BRANCH" ]]; then
-  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  if [[ -n "$current_branch" && "$current_branch" != "HEAD" && "$current_branch" != "$SOURCE_BRANCH" ]]; then
-    BASE_BRANCH="$current_branch"
-  fi
-fi
-
-if [[ -z "$BASE_BRANCH" ]]; then
   BASE_BRANCH="dev"
 fi
 

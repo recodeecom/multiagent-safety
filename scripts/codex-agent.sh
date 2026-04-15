@@ -192,13 +192,6 @@ resolve_start_base_branch() {
     return 0
   fi
 
-  local current_branch
-  current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]]; then
-    printf '%s' "$current_branch"
-    return 0
-  fi
-
   printf 'dev'
 }
 
@@ -338,22 +331,9 @@ has_origin_remote() {
 }
 
 resolve_worktree_base_branch() {
-  local wt="$1"
+  local _wt="$1"
   if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -n "$BASE_BRANCH" ]]; then
     printf '%s' "$BASE_BRANCH"
-    return 0
-  fi
-
-  local branch
-  branch="$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
-    return 0
-  fi
-
-  local stored_base
-  stored_base="$(git -C "$repo_root" config --get "branch.${branch}.musafetyBase" || true)"
-  if [[ -n "$stored_base" ]]; then
-    printf '%s' "$stored_base"
     return 0
   fi
 
@@ -361,7 +341,10 @@ resolve_worktree_base_branch() {
   configured_base="$(git -C "$repo_root" config --get multiagent.baseBranch || true)"
   if [[ -n "$configured_base" ]]; then
     printf '%s' "$configured_base"
+    return 0
   fi
+
+  printf 'dev'
 }
 
 sync_worktree_with_base() {
@@ -598,12 +581,18 @@ looks_like_conflict_failure() {
 run_finish_flow() {
   local wt="$1"
   local branch="$2"
+  local finish_base_branch=""
   local finish_output=""
   local -a finish_args
 
   finish_args=(--branch "$branch")
-  if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 ]]; then
-    finish_args+=(--base "$BASE_BRANCH")
+  if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -n "$BASE_BRANCH" ]]; then
+    finish_base_branch="$BASE_BRANCH"
+  else
+    finish_base_branch="$(resolve_worktree_base_branch "$wt")"
+  fi
+  if [[ -n "$finish_base_branch" ]]; then
+    finish_args+=(--base "$finish_base_branch")
   fi
   if [[ "$AUTO_CLEANUP" -eq 1 ]]; then
     finish_args+=(--cleanup)
@@ -613,9 +602,11 @@ run_finish_flow() {
   fi
 
   if has_origin_remote; then
-    if command -v gh >/dev/null 2>&1 || command -v "${MUSAFETY_GH_BIN:-gh}" >/dev/null 2>&1; then
-      finish_args+=(--via-pr)
+    if ! command -v "${MUSAFETY_GH_BIN:-gh}" >/dev/null 2>&1 && ! command -v gh >/dev/null 2>&1; then
+      echo "[codex-agent] Auto-finish requires GitHub CLI for PR flow; command not found: ${MUSAFETY_GH_BIN:-gh}" >&2
+      return 2
     fi
+    finish_args+=(--via-pr)
   else
     echo "[codex-agent] No origin remote detected; skipping auto-finish merge/PR pipeline." >&2
     return 2
@@ -631,7 +622,7 @@ run_finish_flow() {
   if [[ "$AUTO_REVIEW_ON_CONFLICT" -eq 1 ]] && looks_like_conflict_failure "$finish_output"; then
     echo "[codex-agent] Auto-finish hit conflicts. Launching Codex conflict-review pass in sandbox..." >&2
     local review_prompt
-    review_prompt="Resolve git conflicts for branch ${branch} against ${BASE_BRANCH:-base branch}, then commit the resolution in this sandbox worktree and exit."
+    review_prompt="Resolve git conflicts for branch ${branch} against ${finish_base_branch:-dev}, then commit the resolution in this sandbox worktree and exit."
 
     (
       cd "$wt"
@@ -735,7 +726,7 @@ else
     if [[ "$auto_finish_completed" -eq 1 ]]; then
       echo "[codex-agent] Branch kept intentionally. Cleanup on demand: gx cleanup --branch \"${worktree_branch}\""
     else
-      echo "[codex-agent] If finished, merge with: bash scripts/agent-branch-finish.sh --branch \"${worktree_branch}\" --via-pr"
+      echo "[codex-agent] If finished, merge with: bash scripts/agent-branch-finish.sh --branch \"${worktree_branch}\" --base dev --via-pr --wait-for-merge"
       echo "[codex-agent] Cleanup on demand: gx cleanup --branch \"${worktree_branch}\""
     fi
   fi

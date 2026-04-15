@@ -16,8 +16,8 @@
 - OMX completion policy: when a task is done, the agent must commit the task changes, push the agent branch, and create/update a PR for those changes (via `codex-agent` or `agent-branch-finish`).
 - Auto-finish now waits for required checks/merge and then cleans merged sandbox branch/worktree by default.
 - Use `--no-cleanup` only when you explicitly need to keep a merged sandbox for audit/debug follow-up.
-- If codex-agent auto-finish cannot complete, immediately run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --via-pr --wait-for-merge` and keep the branch open until checks/review pass.
-- If merge/rebase conflicts block auto-finish, run a conflict-resolution review pass in that sandbox branch, then rerun `agent-branch-finish.sh --via-pr` until merged.
+- If codex-agent auto-finish cannot complete, immediately run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --base dev --via-pr --wait-for-merge` and keep the branch open until checks/review pass.
+- If merge/rebase conflicts block auto-finish, run a conflict-resolution review pass in that sandbox branch, then rerun `agent-branch-finish.sh --base dev --via-pr --wait-for-merge` until merged.
 - Completion is not valid until these are true: commit exists on the agent branch, branch is pushed to `origin`, and PR/merge status is produced by `agent-branch-finish.sh` or `codex-agent`.
 - For every new task, including follow-up work in the same chat/session, if an assigned agent sub-branch/worktree is already open, continue in that sub-branch; otherwise create a fresh one from the current local base snapshot with `scripts/agent-branch-start.sh`.
 - Never implement directly on the local/base branch checkout; keep it unchanged and perform all edits in the agent sub-branch/worktree.
