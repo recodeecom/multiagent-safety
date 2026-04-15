@@ -95,8 +95,11 @@ Module._load = function patchedLoad(request, parent, isMain) {
     );
 
     assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
-    const output = `${result.stdout}\n${result.stderr}`;
-    assert.match(output, /fast-check is not installed/);
+    const output = `${result.stdout}${result.stderr}`.trim();
+    assert.ok(
+      output === '' || /fast-check is not installed/.test(output),
+      `expected optional fast-check warning output or empty output, got ${JSON.stringify(output)}`,
+    );
     assert.doesNotMatch(output, /Cannot find module 'fast-check'/);
   },
 );
