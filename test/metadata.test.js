@@ -80,5 +80,19 @@ test('doctor CLI parser exists to prevent runtime ReferenceError regressions', (
   const cliPath = path.join(repoRoot, 'bin', 'multiagent-safety.js');
   const cliSource = fs.readFileSync(cliPath, 'utf8');
   assert.match(cliSource, /function parseDoctorArgs\(rawArgs\)/);
-  assert.match(cliSource, /const options = parseDoctorArgs\(rawArgs\);/);
+  assert.match(cliSource, /function doctorAudit\(rawArgs\)/);
+});
+
+test('active doctor command remains single-source and runs the repair-first path', () => {
+  const cliPath = path.join(repoRoot, 'bin', 'multiagent-safety.js');
+  const cliSource = fs.readFileSync(cliPath, 'utf8');
+  const doctorDefs = cliSource.match(/function doctor\(rawArgs\)/g) || [];
+  assert.equal(doctorDefs.length, 1, 'doctor() must not be duplicated');
+  assert.match(cliSource, /printOperations\('Doctor\/fix', fixPayload, options\.dryRun\);/);
+});
+
+test('worktree-change detection uses normal untracked-file mode', () => {
+  const cliPath = path.join(repoRoot, 'bin', 'multiagent-safety.js');
+  const cliSource = fs.readFileSync(cliPath, 'utf8');
+  assert.match(cliSource, /'status',\s*'--porcelain',\s*'--untracked-files=normal',\s*'--'/s);
 });

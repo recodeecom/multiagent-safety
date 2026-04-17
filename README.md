@@ -375,6 +375,8 @@ npm pack --dry-run
 ### v5.0.16
 
 - Fixed `gx doctor` runtime crash (`parseDoctorArgs is not defined`) by restoring the doctor argument parser for `--target` and `--strict`.
+- Fixed `gx doctor` command routing so the repair-first doctor flow remains the active command path (duplicate legacy doctor definition no longer overrides it).
+- Updated worktree change detection to run `git status --porcelain --untracked-files=normal --` for consistent normal untracked-file behavior.
 - Added regression coverage that asserts the doctor parser function exists in `bin/multiagent-safety.js`.
 - Bumped package version from `5.0.15` to `5.0.16`.
 

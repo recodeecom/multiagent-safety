@@ -2117,7 +2117,14 @@ function mapWorktreePathsByBranch(repoRoot) {
 }
 
 function hasSignificantWorkingTreeChanges(worktreePath) {
-  const result = run('git', ['-C', worktreePath, 'status', '--porcelain']);
+  const result = run('git', [
+    '-C',
+    worktreePath,
+    'status',
+    '--porcelain',
+    '--untracked-files=normal',
+    '--',
+  ]);
   if (result.status !== 0) {
     return true;
   }
@@ -4659,7 +4666,7 @@ function initWorkspace(rawArgs) {
   }
 }
 
-function doctor(rawArgs) {
+function doctorAudit(rawArgs) {
   const options = parseDoctorArgs(rawArgs);
   const repoRoot = resolveRepoRoot(options.target);
   const failures = [];
