@@ -75,3 +75,10 @@ test('critical runtime helper scripts stay in sync with templates', () => {
     );
   }
 });
+
+test('doctor CLI parser exists to prevent runtime ReferenceError regressions', () => {
+  const cliPath = path.join(repoRoot, 'bin', 'multiagent-safety.js');
+  const cliSource = fs.readFileSync(cliPath, 'utf8');
+  assert.match(cliSource, /function parseDoctorArgs\(rawArgs\)/);
+  assert.match(cliSource, /const options = parseDoctorArgs\(rawArgs\);/);
+});

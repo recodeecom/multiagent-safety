@@ -927,6 +927,29 @@ function parseSetupArgs(rawArgs, defaults) {
   return parseCommonArgs(forwardedArgs, setupDefaults);
 }
 
+function parseDoctorArgs(rawArgs) {
+  const options = {
+    target: process.cwd(),
+    strict: false,
+  };
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
+    if (arg === '--target' || arg === '-t') {
+      options.target = requireValue(rawArgs, index, '--target');
+      index += 1;
+      continue;
+    }
+    if (arg === '--strict') {
+      options.strict = true;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg}`);
+  }
+
+  return options;
+}
+
 function normalizeWorkspacePath(relativePath) {
   return String(relativePath || '.').replace(/\\/g, '/');
 }

@@ -372,6 +372,12 @@ npm pack --dry-run
 
 ## Release notes
 
+### v5.0.16
+
+- Fixed `gx doctor` runtime crash (`parseDoctorArgs is not defined`) by restoring the doctor argument parser for `--target` and `--strict`.
+- Added regression coverage that asserts the doctor parser function exists in `bin/multiagent-safety.js`.
+- Bumped package version from `5.0.15` to `5.0.16`.
+
 ### v5.0.15
 
 - Added `gx setup --parent-workspace-view` to generate a parent-folder VS Code workspace (`../<repo>-branches.code-workspace`) that shows both the base repo and `.omx/agent-worktrees` in Source Control.
