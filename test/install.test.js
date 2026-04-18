@@ -1016,7 +1016,7 @@ OUT
     { env: { PATH: `${fakeBin}:${process.env.PATH || ''}` } },
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Created branch: agent\/planner\/zeus-edix-hu-restore-snapshot(?:-\d+)?/);
+  assert.match(result.stdout, /Created branch: agent\/planner\/zeus-edix-hu-restore-snapshot-[0-9]{6}(?:-\d+)?/);
 });
 
 test('setup agent-branch-start supports explicit snapshot override without codex-auth', () => {
@@ -1033,7 +1033,34 @@ test('setup agent-branch-start supports explicit snapshot override without codex
     { env: { MUSAFETY_CODEX_AUTH_SNAPSHOT: 'Prod Snapshot One' } },
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Created branch: agent\/bot\/prod-snapshot-one-ship-fix(?:-\d+)?/);
+  assert.match(result.stdout, /Created branch: agent\/bot\/prod-snapshot-one-ship-fix-[0-9]{6}(?:-\d+)?/);
+});
+
+test('setup agent-branch-start compacts long snapshot/task names for readable branch labels', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  seedCommit(repoDir);
+
+  result = runCmd(
+    'bash',
+    [
+      'scripts/agent-branch-start.sh',
+      'rust-layer-phase7-dashboard-read-name-columns-and-badges',
+      'codex-admin-recodee-com',
+      'dev',
+    ],
+    repoDir,
+    { env: { MUSAFETY_CODEX_AUTH_SNAPSHOT: 'Zeus Portasmosonmagyarovar Hu Snapshot' } },
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const createdBranch = extractCreatedBranch(result.stdout);
+  assert.match(createdBranch, /^agent\/codex-admin-recodee-com\/[a-z0-9-]+$/);
+  assert.ok(createdBranch.length <= 100, `branch should stay compact, got: ${createdBranch}`);
+  const branchLeaf = createdBranch.split('/').pop() || '';
+  assert.ok(branchLeaf.length <= 70, `branch leaf should stay compact, got: ${branchLeaf}`);
+  assert.match(branchLeaf, /^zeus-portasmosonma-rust-layer-phase7-dashboard-read-name-[0-9]{6}(?:-\d+)?$/);
 });
 
 test('setup agent-branch-start supports optional OpenSpec auto-bootstrap toggles', () => {

@@ -105,6 +105,68 @@ sanitize_slug() {
   printf '%s' "$slug"
 }
 
+sanitize_optional_slug() {
+  local raw="$1"
+  local fallback="${2:-snapshot}"
+  if [[ -z "$raw" ]]; then
+    printf ''
+    return 0
+  fi
+  sanitize_slug "$raw" "$fallback"
+}
+
+normalize_positive_int() {
+  local raw="$1"
+  local fallback="$2"
+  if [[ "$raw" =~ ^[0-9]+$ ]] && [[ "$raw" -gt 0 ]]; then
+    printf '%s' "$raw"
+    return 0
+  fi
+  printf '%s' "$fallback"
+}
+
+shorten_slug() {
+  local slug="$1"
+  local raw_max="$2"
+  local max_len
+  max_len="$(normalize_positive_int "$raw_max" "32")"
+  if [[ "${#slug}" -le "$max_len" ]]; then
+    printf '%s' "$slug"
+    return 0
+  fi
+  local shortened="${slug:0:max_len}"
+  shortened="$(printf '%s' "$shortened" | sed -E 's/-+$//')"
+  if [[ -z "$shortened" ]]; then
+    shortened="${slug:0:max_len}"
+  fi
+  printf '%s' "$shortened"
+}
+
+checksum_slug_suffix() {
+  local raw="$1"
+  local checksum
+  checksum="$(printf '%s' "$raw" | cksum | awk '{print $1}')"
+  printf '%s' "${checksum:0:6}"
+}
+
+compose_branch_descriptor() {
+  local snapshot_slug="$1"
+  local task_slug="$2"
+  local snapshot_max task_max task_part snapshot_part checksum_input checksum_part
+  snapshot_max="$(normalize_positive_int "${MUSAFETY_BRANCH_SNAPSHOT_SLUG_MAX:-18}" "18")"
+  task_max="$(normalize_positive_int "${MUSAFETY_BRANCH_TASK_SLUG_MAX:-36}" "36")"
+  task_part="$(shorten_slug "$task_slug" "$task_max")"
+  if [[ -n "$snapshot_slug" ]]; then
+    snapshot_part="$(shorten_slug "$snapshot_slug" "$snapshot_max")"
+    checksum_input="${snapshot_slug}--${task_slug}"
+    checksum_part="$(checksum_slug_suffix "$checksum_input")"
+    printf '%s-%s-%s' "$snapshot_part" "$task_part" "$checksum_part"
+    return 0
+  fi
+  checksum_part="$(checksum_slug_suffix "$task_slug")"
+  printf '%s-%s' "$task_part" "$checksum_part"
+}
+
 normalize_bool() {
   local raw="${1:-}"
   local fallback="${2:-0}"
@@ -896,15 +958,13 @@ else
 fi
 
 task_slug="$(sanitize_slug "$TASK_NAME" "task")"
-agent_slug="$(sanitize_slug "$AGENT_NAME" "agent")"
+agent_slug_raw="$(sanitize_slug "$AGENT_NAME" "agent")"
+agent_slug="$(shorten_slug "$agent_slug_raw" "${MUSAFETY_BRANCH_AGENT_SLUG_MAX:-24}")"
 snapshot_name="$(resolve_active_codex_snapshot_name)"
-snapshot_slug="$(sanitize_slug "$snapshot_name" "")"
+snapshot_slug="$(sanitize_optional_slug "$snapshot_name" "snapshot")"
+branch_descriptor="$(compose_branch_descriptor "$snapshot_slug" "$task_slug")"
 timestamp="$(date +%Y%m%d-%H%M%S)"
-if [[ -n "$snapshot_slug" ]]; then
-  branch_name_base="agent/${agent_slug}/${snapshot_slug}-${task_slug}"
-else
-  branch_name_base="agent/${agent_slug}/${task_slug}"
-fi
+branch_name_base="agent/${agent_slug}/${branch_descriptor}"
 
 branch_name="$branch_name_base"
 worktree_root="${repo_root}/${WORKTREE_ROOT_REL}"
