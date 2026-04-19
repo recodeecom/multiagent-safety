@@ -1,8 +1,10 @@
 # AGENTS
 
-# ExecPlans
+This document is the agent contract for this repo. It applies identically to Codex, Claude Code, and any other agentic CLI working here. `CLAUDE.md` is a symlink to this file — do not edit them independently.
 
-When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.
+## ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as described in `.agent/PLANS.md`) from design to implementation.
 
 ## Environment
 
@@ -29,6 +31,12 @@ The `/project-conventions` skill is auto-activated on code edits (PreToolUse gua
 
 - Prefer committing and pushing completed work by default unless the user explicitly asks to keep it local.
 - Do not commit ephemeral local runtime artifacts (for example `.dev-ports.json` and `apps/logs/*.log`).
+- Treat local OMX/Codex session state files as agent-ignored (as if they were in `.gitignore`) even when they appear in working tree status.
+- Never stage or commit:
+  - `.agents/settings.local.json`
+  - `.omc/project-memory.json`
+  - `.omc/state/**`
+  - `.omx/state/**`
 
 ## CLI Session Detection Lock (Dashboard / Accounts)
 
@@ -95,76 +103,112 @@ Required verification before claiming Rust runtime changes are complete:
   - `cargo test -p codex-lb-runtime --no-run`
 - If route/auth behavior changed, add/adjust Rust runtime tests in `rust/codex-lb-runtime/src/main.rs` test module.
 
+## Claude Code Workflow
+
+Claude Code sessions use the same agent-worktree + OpenSpec flow as Codex; there is no separate `claude-agent.sh` wrapper — Claude calls the generic scripts directly.
+
+### Tiering (token-aware scaffolding)
+
+`agent-branch-start.sh` and `agent-branch-finish.sh` accept `--tier {T0|T1|T2|T3}` to size the OpenSpec scaffolding to the change's blast radius. Default is `T3` (full scaffolding; current behavior). The tier is recorded in the bootstrap manifest so `finish` picks it up automatically.
+
+| Tier | Use for | Scaffolding on `start` | Gates on `finish` |
+|------|---------|------------------------|--------------------|
+| `T0` | typos, dep bumps, format-only, comment-only | none (no `openspec/changes/` or `openspec/plan/` files) | tasks gate skipped |
+| `T1` | ≤5 files, 1 capability, no API/schema change | `openspec/changes/<slug>/notes.md` + `.openspec.yaml` only | tasks gate skipped |
+| `T2` | behavior change, API/schema, multi-module | full change workspace (`proposal.md`, `tasks.md`, `specs/.../spec.md`); no plan workspace | full gates |
+| `T3` | cross-cutting, multi-agent, plan-driven | full change workspace + plan workspace with role `tasks.md` files | full gates |
+
+Examples:
+
+```bash
+# T0 (typo / trivial): fastest path, no OpenSpec artifacts
+bash scripts/agent-branch-start.sh --tier T0 "fix-typo-in-readme" "claude-name"
+
+# T1 (small fix): notes-only scaffold, commit message is the spec of record
+bash scripts/agent-branch-start.sh --tier T1 "tighten-retry-backoff" "claude-name"
+
+# T2 (default for real behavior changes): full change spec, no plan workspace
+bash scripts/agent-branch-start.sh --tier T2 "add-oauth-endpoint" "claude-name"
+
+# T3 (current default if --tier is omitted): plan workspace + full OpenSpec
+bash scripts/agent-branch-start.sh "refactor-payment-pipeline" "claude-name"
+```
+
+`finish` reads the tier from the manifest automatically; passing `--tier` on finish is only needed to override (e.g., upgrading to a fuller gate).
+
+1. Start a sandbox worktree:
+
+   ```bash
+   bash scripts/agent-branch-start.sh [--tier T0|T1|T2|T3] "<task>" "claude-<name>"
+   ```
+
+   Creates `agent/claude-<name>/<slug>` under `.omx/agent-worktrees/`, scaffolds the OpenSpec change + plan workspaces (sized by tier), and records the bootstrap manifest. Missing `codex-auth` silently falls back to an empty snapshot slug (expected for Claude sessions).
+
+2. Work inside the sandbox only:
+
+   ```bash
+   cd .omx/agent-worktrees/agent__claude-<name>__<slug>
+   python3 scripts/agent-file-locks.py claim --branch "agent/claude-<name>/<slug>" <file...>
+   # implement + commit inside this worktree
+   ```
+
+   Do not edit the primary `dev` checkout; multiagent-safety rules apply unchanged.
+
+3. Finish via PR + cleanup:
+
+   ```bash
+   bash scripts/agent-branch-finish.sh \
+     --branch "agent/claude-<name>/<slug>" \
+     --base dev --via-pr --wait-for-merge --cleanup
+   ```
+
+   Runs the OpenSpec tasks gate, merge-quality gate, and worktree prune — identical to the Codex path.
+
+Notes:
+
+- `rust/codex-lb-runtime/src/main.rs` stays integrator-only; non-integrator Claude branches must not edit it (see [Rust Runtime Proxy Lock](#rust-runtime-proxy-lock-rustcodex-lb-runtimesrcmainrs)).
+- Slash commands `/opsx:*` in `.claude/commands/opsx/` drive the OpenSpec artifact flow.
+- `.claude/settings.json` already wires the `skill_activation` / `skill_guard` hooks, so project-conventions enforcement runs automatically on edits.
+- `skill_guard` blocks most Bash commands while the shell is on `dev`; run the start/claim/finish commands from within the worktree, or prefix the invocation with `ALLOW_BASH_ON_NON_AGENT_BRANCH=1` when calling from the primary checkout.
+
 ## Multi-Agent Execution Contract (Default)
 
 Use this contract whenever multiple agents are active in parallel.
 
-0. Session plan comment + read gate (required)
+The marker-managed `multiagent-safety` section below is the canonical lifecycle contract for branch/worktree startup, completion chain (`commit -> push -> create/update PR -> merged`), and PR/merge/cleanup evidence.
 
-- Before editing, each agent must post a short session comment/handoff note that includes:
-  - plan/change name (or checkpoint id),
-  - owned files/scope,
-  - intended action.
-- Before deleting/replacing code, each agent must read the latest session comments/handoffs first and confirm the target code is in their owned scope.
-- If ownership is unclear or overlaps, stop that edit, post a blocker comment, and let the leader/integrator reassign scope.
-- For git isolation, each agent must start on a dedicated branch/worktree via `scripts/agent-branch-start.sh "<task-or-plan>" "<agent-name>"`.
+Apply these repo-specific supplements in addition to that canonical contract:
+
+1. Local base safety
 - Local `dev` is protected: never edit, stage, or commit task changes directly on `dev`.
 - If currently checked out on `dev`, create the agent branch/worktree first and only then begin edits.
-- Creating or attaching an agent worktree must never switch the primary local checkout branch. Keep the caller checkout on its original branch (typically `dev`) and do all branch switches only inside the agent worktree path.
-- Each agent must claim file ownership before edits:
-  - `python3 scripts/agent-file-locks.py claim --branch "<agent-branch>" <file...>`
-- If `main.rs` is in scope, claim branch lock first:
-  - `python3 scripts/main_rs_lock.py claim --owner "<agent-name>" --branch "<agent-branch>"`
+- Creating or attaching an agent worktree must never switch the primary local checkout branch.
+- `agent-branch-start` and `agent-branch-finish` must fast-forward local `dev` from `origin/dev` before branch creation/merge.
+
+2. Ownership and lock discipline
+- Claim owned files before edits: `python3 scripts/agent-file-locks.py claim --branch "<agent-branch>" <file...>`.
+- If `main.rs` is in scope, claim lock first: `python3 scripts/main_rs_lock.py claim --owner "<agent-name>" --branch "<agent-branch>"`.
 - Non-integrator branches must not edit `main.rs` unless explicit emergency override is approved.
-- Agent completion must use `scripts/agent-branch-finish.sh` (preflight conflict check, merge into `dev`, push, delete agent branch).
-- Mandatory completion chain for any `agent/*` branch: `commit -> push -> create/update PR -> merged`.
-- Local commit-only completion is prohibited on `agent/*` branches.
-- `agent-branch-start` and `agent-branch-finish` must fast-forward local `dev` from `origin/dev` before branch creation/merge, so `dev` always pulls latest remote changes first.
-- Pre-commit guard blocks `agent/*` commits when staged files are unclaimed or claimed by another branch.
-- Pre-commit guard blocks `agent/*` commits that stage `main.rs` without a valid main-rs lock for that same branch.
+- Pre-commit blocks `agent/*` commits with unclaimed files or missing valid `main.rs` lock.
 
-1. Explicit ownership before edits
+3. Shared behavior protection
+- Do not delete, replace, or simplify critical paths (auth/session/proxy/API wiring) without explicit request or approved checkpoint plus regression coverage.
+- Preserve parallel safety: never revert unrelated changes and report handoff conflicts.
 
-- Assign each agent clear file/module ownership.
-- Do not edit files outside your assigned scope unless the leader reassigns ownership.
-
-2. No destructive rewrites of shared behavior
-
-- Do not delete, replace, or “simplify away” critical paths (auth/session, proxy routes, production API wiring) without:
-  - explicit user request or approved plan checkpoint, and
-  - updated regression tests proving intended behavior.
-
-3. Preserve parallel safety
-
-- Assume other agents are editing nearby code concurrently.
-- Never revert unrelated changes authored by others.
-- If another change conflicts with your approach, adapt and report the conflict in handoff.
-
-4. Verify before completion
-
-- Run required local checks for the area you changed.
-- For Rust runtime changes, minimum gate:
+4. Rust runtime verification gate
+- For Rust runtime edits, run:
   - `bun run verify:rust-runtime-guardrails`
   - `cargo check -p codex-lb-runtime`
   - `cargo test -p codex-lb-runtime --no-run`
-- Do not mark work complete without command output evidence.
+- Do not claim completion without command output evidence.
 
-5. Required handoff format (every agent)
-
-- Files changed
-- Behavior touched
-- Verification commands + results
-- Risks / follow-ups
-
-6. Integration-first finalization
-
-- Use one integrator pass before final completion to confirm:
-  - no critical behavior was removed unintentionally,
-  - ownership boundaries were respected,
-  - session plan comments/handoffs were followed,
-  - verification gates passed.
+5. Integrator finalization gate
+- Final handoff must include files changed, behavior touched, verification commands/results, and risks/follow-ups.
+- Integrator confirms no critical behavior loss, respected ownership boundaries, and verification gates passed.
 
 ## Versioning Rule
+
+- If a change publishes or bumps a package version, the same change must also update the release notes / changelog entries. See [Documentation & Release Notes](#documentation--release-notes) for where to record change notes.
 
 ## Workflow (OpenSpec-first)
 
@@ -237,37 +281,18 @@ Prompting cue (use when writing docs):
 
 ## Plan Workspace Contract (`openspec/plan`)
 
-Use `openspec/plan/` as the durable pre-implementation planning layer.
+Use `openspec/plan/README.md` as the operational runbook and `openspec/plan/PLANS.md` as the planner narrative-writing contract.
 
-Planner narrative plans must follow `openspec/plan/PLANS.md`.
+Default quick flow:
+1. Create/maintain `openspec/plan/<plan-slug>/`.
+2. Keep role `tasks.md` files current (`planner`, `architect`, `critic`, `executor`, `writer`, `verifier`).
+3. Keep checklist headings visible: `## 1. Spec`, `## 2. Tests`, `## 3. Implementation`, `## 4. Checkpoints`.
+4. Update checkboxes continuously while work progresses.
+5. Execute from approved `planner/plan.md` with role ownership.
+6. Verify with evidence before archive/finish.
 
-Required shape for each plan:
-
-```text
-openspec/plan/<plan-slug>/
-  summary.md
-  checkpoints.md
-  planner/plan.md
-  planner/tasks.md
-  architect/tasks.md
-  critic/tasks.md
-  executor/tasks.md
-  writer/tasks.md
-  verifier/tasks.md
-```
-
-Role folders may additionally include `README.md`, notes, and evidence artifacts.
-
-When operating in ralplan/team-style planning flows:
-
-1. Create/maintain the plan workspace at `openspec/plan/<plan-slug>/`.
-2. Ensure every participating role has a `tasks.md`.
-3. Keep checklist sections visible in each `tasks.md`:
-   - `## 1. Spec`
-   - `## 2. Tests`
-   - `## 3. Implementation`
-   - `## 4. Checkpoints`
-4. Update checkboxes during execution so status remains human-readable in OpenSpec style.
+Helper sub-branch exception:
+- When a helper branch targets another `agent/*` owner branch, implementation is allowed in helper lanes, but OpenSpec change/spec/tasks artifacts stay owned by the owner branch.
 
 Scaffold command:
 
@@ -291,6 +316,8 @@ scripts/openspec/init-plan-workspace.sh <plan-slug>
 - Agent completion defaults to `scripts/codex-agent.sh`, which auto-finishes the branch (auto-commit changed files, push/create PR, attempt merge, and pull the local base branch after merge).
 - Auto-finish now waits for required checks/merge and then cleans merged sandbox branch/worktree by default.
 - Cleanup for merged `agent/*` branches is mandatory; `agent-branch-finish` must not report completion while local/remote refs or sandbox worktree cleanup is still pending.
+- Cleanup automation must be branch-scoped: do not prune other agents' current worktrees during finish; only the source branch sandbox may be auto-removed.
+- Other agent worktrees may be pruned only when they are explicitly targeted or have no active local changes.
 - If codex-agent auto-finish cannot complete, immediately run `scripts/agent-branch-finish.sh --branch "<agent-branch>" --via-pr --wait-for-merge` and keep the branch open until checks/review pass.
 - If merge/rebase conflicts block auto-finish, run a conflict-resolution review pass in that sandbox branch, then rerun `agent-branch-finish.sh --via-pr` until merged.
 - Completion is not valid until these are true: commit exists on the agent branch, branch is pushed to `origin`, and PR/merge status is produced by `agent-branch-finish.sh` or `codex-agent`.
@@ -331,6 +358,8 @@ Joined helper branches that merge into another `agent/*` branch are documentatio
 
 Checkpoint discipline (required): update the active change `tasks.md` during work, checkpoint-by-checkpoint, and keep checkbox state synchronized with current progress.
 
+**Definition of Done (applies to every active change):** the change is complete only when every checkbox below is checked AND the agent branch reaches `MERGED` state on `origin` with the PR URL + state recorded in the completion handoff. If verification halts (test failure, conflict, ambiguous result), append a `BLOCKED:` line under the cleanup section explaining the blocker and **STOP** — do not silently skip the cleanup pipeline. Surfacing a blocker is preferred over a half-finished completion.
+
 ## 1. Specification
 
 - [ ] 1.1 Finalize proposal scope and acceptance criteria for the active change.
@@ -354,11 +383,11 @@ Checkpoint discipline (required): update the active change `tasks.md` during wor
 - [ ] 4.3 Owner Codex must acknowledge joined outputs (accept/revise/reject) before moving to cleanup.
 - [ ] 4.4 If no Codex joined, mark this section `N/A` and continue.
 
-## 5. Cleanup
+## 5. Cleanup (mandatory; run before claiming completion)
 
-- [ ] 5.1 Commit the changes to the agent worktree branch.
-- [ ] 5.2 Merge the agent branch into the current local base branch (for example `dev`).
-- [ ] 5.3 After successful merge, clean up the merged agent worktree branch on both `origin` and local.
+- [ ] 5.1 Run the cleanup pipeline: `bash scripts/agent-branch-finish.sh --branch <agent-branch> --base dev --via-pr --wait-for-merge --cleanup`. This handles commit → push → PR create → merge wait → worktree prune in one invocation.
+- [ ] 5.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
+- [ ] 5.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
 
 For change specs that need explicit baseline requirement wording, use this pattern:
 
