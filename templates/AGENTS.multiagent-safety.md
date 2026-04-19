@@ -41,12 +41,41 @@
 - Run required local checks for the area you changed.
 - Do not mark work complete without command output evidence.
 
-4. Required handoff format (every agent)
+4. Required handoff format (every agent, every lane: Claude, Codex, OMX, integrator)
 
-- Files changed
-- Behavior touched
-- Verification commands + results
-- Risks / follow-ups
+Post the completion handoff in the session transcript using **this exact shape** (copy the template verbatim). It applies identically to Codex-agent runs and Claude-agent runs. A handoff that omits the PR line or the cleanup line is **not** a completion.
+
+````markdown
+## Done — <short title>
+
+### Merge state
+- PR: <url> (state: **MERGED** | **OPEN**)
+- Base branch: <base>
+- Commit(s) on <base> after merge: <sha> <subject>
+
+### What landed
+- <area 1>: <one-line behavior change>
+- <area 2>: <one-line behavior change>
+- …
+
+### Verification
+- <cmd 1> → <result>
+- <cmd 2> → <result>
+- <cmd 3> → <result>
+
+### Cleanup
+- `git worktree list` shows no `<agent-worktree-path>` entry ✓
+- `git branch -a` shows no surviving `<agent-branch>` (local or remote) ✓
+- OpenSpec change marked archived (or N/A for T0/T1) ✓
+
+### Risks / follow-ups
+- <risk or follow-up>, or "none".
+````
+
+Rules for using the template:
+- Every bullet in **Merge state**, **Verification**, and **Cleanup** must be present. Drop a line only by replacing it with `N/A — <why>`.
+- If the cleanup pipeline didn't run, the handoff must include a `BLOCKED:` line under **Cleanup** explaining the blocker and **STOP**. Do not silently skip cleanup.
+- A handoff without a PR URL is not a valid completion — close the gap before posting.
 
 ## OpenSpec Multi-Codex Change Management (owner + joined Codexes)
 
@@ -83,9 +112,13 @@ Checkpoint discipline (required): update the active change `tasks.md` during wor
 
 ## 5. Cleanup (mandatory; run before claiming completion)
 
+**This section is not optional. Codex and Claude lanes skip cleanup most often when the agent exits mid-run (crash, budget, kill). If you are the next agent to touch the repo and you see a stalled `agent/*` worktree, you own its cleanup — do not wait for the original author.**
+
 - [ ] 5.1 Run the cleanup pipeline: `bash scripts/agent-branch-finish.sh --branch <agent-branch> --base dev --via-pr --wait-for-merge --cleanup`. This handles commit → push → PR create → merge wait → worktree prune in one invocation.
 - [ ] 5.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
 - [ ] 5.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
+- [ ] 5.4 If the finish script reports "cleanup is still incomplete" because the shell is still inside the sandbox dir, `cd` to the repo root and run `git worktree remove -f <sandbox-path>`. Re-verify 5.3 after.
+- [ ] 5.5 Codex-agent-specific: if `codex-agent.sh` was killed before it could auto-finish, recover via `bash scripts/agent-autofinish-watch.sh --once --auto-merge` (or `--daemon` for continuous sweep). Never declare the task done while an `agent/*` worktree is still dirty with unmerged commits.
 
 For change specs that need explicit baseline requirement wording, use this pattern:
 
