@@ -372,6 +372,14 @@ npm pack --dry-run
 
 ## Release notes
 
+### v6.0.1
+
+- Preserve existing repo-owned `AGENTS.md` marker content during `gx setup` / `gx doctor` by default; only rewrite marker blocks when `--force` is explicitly used.
+- Preserve existing `agent:*` package scripts during setup/doctor repairs by default so repo-local command customizations are not silently replaced.
+- Forward `--force` through sandboxed doctor execution so intentional canonical template/script rewrites still work end-to-end.
+- Added regression tests for both preservation behaviors (`setup` + `doctor`).
+- Bumped package version from `6.0.0` to `6.0.1` for the next npm publish.
+
 ### v6.0.0
 
 - **Breaking** — removed the legacy `musafety` bin alias and all `MUSAFETY_*` environment variables. Callers must migrate to the `guardex` / `gx` bins and the `GUARDEX_*` env-var surface.
