@@ -1128,7 +1128,9 @@ test('setup agent-branch-start rejects in-place flags to keep local checkout unc
   assert.match(result.stderr, /In-place branch mode is disabled/);
 });
 
-test('setup agent-branch-start includes active codex snapshot slug in branch name', () => {
+test('setup agent-branch-start drops codex snapshot slug from branch name (v7.0.3)', () => {
+  // v7.0.3 naming refactor: branches are `agent/<role>/<task>-<YYYY-MM-DD>-<HH-MM>`.
+  // Codex account name (e.g. "Zeus Edix Hu") no longer leaks into branch/worktree paths.
   const repoDir = initRepo();
 
   let result = runNode(['setup', '--target', repoDir], repoDir);
@@ -1149,13 +1151,23 @@ OUT
     'bash',
     ['scripts/agent-branch-start.sh', 'restore-snapshot', 'planner', 'dev'],
     repoDir,
-    { env: { PATH: `${fakeBin}:${process.env.PATH || ''}` } },
+    {
+      env: {
+        PATH: `${fakeBin}:${process.env.PATH || ''}`,
+        GUARDEX_AGENT_TYPE: 'planner',
+      },
+    },
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Created branch: agent\/planner\/zeus-edix-hu-restore-snapshot-[0-9]{6}(?:-\d+)?/);
+  assert.match(
+    result.stdout,
+    /Created branch: agent\/planner\/restore-snapshot-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}/,
+  );
+  assert.doesNotMatch(result.stdout, /zeus-edix-hu/);
 });
 
-test('setup agent-branch-start supports explicit snapshot override without codex-auth', () => {
+test('setup agent-branch-start ignores GUARDEX_CODEX_AUTH_SNAPSHOT for branch naming (v7.0.3)', () => {
+  // v7.0.3 naming refactor: snapshot env vars are no longer embedded in branch names.
   const repoDir = initRepo();
 
   let result = runNode(['setup', '--target', repoDir], repoDir);
@@ -1166,13 +1178,19 @@ test('setup agent-branch-start supports explicit snapshot override without codex
     'bash',
     ['scripts/agent-branch-start.sh', 'ship-fix', 'bot', 'dev'],
     repoDir,
-    { env: { GUARDEX_CODEX_AUTH_SNAPSHOT: 'Prod Snapshot One' } },
+    { env: { GUARDEX_CODEX_AUTH_SNAPSHOT: 'Prod Snapshot One', CLAUDECODE: '0' } },
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Created branch: agent\/bot\/prod-snapshot-one-ship-fix-[0-9]{6}(?:-\d+)?/);
+  // 'bot' has no claude/codex substring and no CLAUDECODE sentinel → role falls back to 'codex'.
+  assert.match(
+    result.stdout,
+    /Created branch: agent\/codex\/ship-fix-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}/,
+  );
+  assert.doesNotMatch(result.stdout, /prod-snapshot-one/);
 });
 
-test('setup agent-branch-start compacts long snapshot/task names for readable branch labels', () => {
+test('setup agent-branch-start keeps role-datetime branch labels compact (v7.0.3)', () => {
+  // v7.0.3 naming refactor: role is normalized to {claude,codex,<explicit>}, no snapshot/checksum.
   const repoDir = initRepo();
 
   let result = runNode(['setup', '--target', repoDir], repoDir);
@@ -1192,11 +1210,13 @@ test('setup agent-branch-start compacts long snapshot/task names for readable br
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const createdBranch = extractCreatedBranch(result.stdout);
-  assert.match(createdBranch, /^agent\/codex-admin-recodee-com\/[a-z0-9-]+$/);
-  assert.ok(createdBranch.length <= 100, `branch should stay compact, got: ${createdBranch}`);
+  // 'codex-admin-recodee-com' normalizes to 'codex' via substring match.
+  assert.match(createdBranch, /^agent\/codex\/[a-z0-9-]+-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}$/);
+  assert.ok(createdBranch.length <= 110, `branch should stay compact, got: ${createdBranch}`);
   const branchLeaf = createdBranch.split('/').pop() || '';
-  assert.ok(branchLeaf.length <= 70, `branch leaf should stay compact, got: ${branchLeaf}`);
-  assert.match(branchLeaf, /^zeus-portasmosonma-rust-layer-phase7-dashboard-read-name-[0-9]{6}(?:-\d+)?$/);
+  assert.ok(branchLeaf.length <= 90, `branch leaf should stay compact, got: ${branchLeaf}`);
+  // Snapshot name and account email fragments must not leak into the leaf.
+  assert.doesNotMatch(branchLeaf, /zeus|portasmosonma|admin-recodee/);
 });
 
 test('setup agent-branch-start supports optional OpenSpec auto-bootstrap toggles', () => {

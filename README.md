@@ -373,6 +373,23 @@ npm pack --dry-run
 
 ## Release notes
 
+### v7.0.3
+
+- **Branch/worktree naming refactor.** `agent-branch-start.sh` now produces `agent/<role>/<task>-<YYYY-MM-DD>-<HH-MM>` instead of `agent/<role+account-email>/<snapshot-slug>-<task>-<cksum6>`. Codex account names (e.g. `Zeus Edix Hu`) and 6-hex checksums no longer leak into branch or worktree paths.
+- **Role normalization.** `AGENT_NAME` is collapsed to `{claude, codex, <explicit>}` via (in order) the `GUARDEX_AGENT_TYPE` env override, a substring match against `claude`/`codex`, the `CLAUDECODE=1` sentinel, or a fallback to `codex`. Other roles (`integrator`, `executor`, etc.) pass through when set via `GUARDEX_AGENT_TYPE`.
+- **New `--print-name-only` flag** on `agent-branch-start.sh` for deterministic tests; honours `GUARDEX_BRANCH_TIMESTAMP` for reproducible output.
+- **`--tier` flag accepted silently** for CLAUDE.md compatibility (scaffold sizing not wired through yet).
+- Tests `install.test.js` covering the old snapshot-slug format were rewritten to assert the new role-datetime shape.
+
+### v7.0.2
+
+- **Fix: `__source-probe-*` worktree leak on conflict exit.** `agent-branch-finish.sh` was registering its `cleanup()` trap *after* the sync-guard rebase block, so when that rebase hit conflicts and the script exited, the throwaway probe worktree was never removed. `gx doctor` sweeps against stalled branches accumulated one new probe per run.
+- The cleanup trap is now installed immediately after probe creation, and aborts any in-progress `rebase`/`merge` before `worktree remove --force` so conflict-stuck probes are cleaned up reliably.
+
+### v7.0.1
+
+- Maintenance release.
+
 ### v7.0.0
 
 - **Breaking (soft).** Consolidated 17 commands into 12 visible commands with flag-based subcommands. Five removed names (`init`, `install`, `fix`, `scan`, `copy-prompt`, `copy-commands`, `print-agents-snippet`, `review`) still work but print a one-line deprecation notice on stderr and will be removed in v8. See the migration table in "Copy-paste: common commands" above.
