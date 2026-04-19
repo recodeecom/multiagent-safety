@@ -194,6 +194,20 @@ is_clean_worktree() {
 source_worktree="$(get_worktree_for_branch "$SOURCE_BRANCH")"
 created_source_probe=0
 source_probe_path=""
+integration_worktree=""
+
+cleanup() {
+  if [[ -n "$integration_worktree" && -d "$integration_worktree" ]]; then
+    git -C "$repo_root" worktree remove "$integration_worktree" --force >/dev/null 2>&1 || true
+  fi
+  if [[ "$created_source_probe" -eq 1 && -n "$source_probe_path" && -d "$source_probe_path" ]]; then
+    # Abort any in-progress git op so `worktree remove --force` succeeds on conflict-stuck probes.
+    git -C "$source_probe_path" rebase --abort >/dev/null 2>&1 || true
+    git -C "$source_probe_path" merge --abort >/dev/null 2>&1 || true
+    git -C "$repo_root" worktree remove "$source_probe_path" --force >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
 
 if [[ -z "$source_worktree" ]]; then
   source_probe_path="${agent_worktree_root}/__source-probe-${SOURCE_BRANCH//\//__}-$(date +%Y%m%d-%H%M%S)"
@@ -260,16 +274,6 @@ mkdir -p "$(dirname "$integration_worktree")"
 
 git -C "$repo_root" worktree add "$integration_worktree" "$start_ref" >/dev/null
 git -C "$integration_worktree" checkout -b "$integration_branch" >/dev/null
-
-cleanup() {
-  if [[ -d "$integration_worktree" ]]; then
-    git -C "$repo_root" worktree remove "$integration_worktree" --force >/dev/null 2>&1 || true
-  fi
-  if [[ "$created_source_probe" -eq 1 && -n "$source_probe_path" && -d "$source_probe_path" ]]; then
-    git -C "$repo_root" worktree remove "$source_probe_path" --force >/dev/null 2>&1 || true
-  fi
-}
-trap cleanup EXIT
 
 if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
   git -C "$source_worktree" fetch origin "$BASE_BRANCH" --quiet
