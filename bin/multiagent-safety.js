@@ -693,7 +693,8 @@ function writeLockState(repoRoot, payload, dryRun) {
   fs.writeFileSync(lockPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
 }
 
-function ensurePackageScripts(repoRoot, dryRun) {
+function ensurePackageScripts(repoRoot, dryRun, options = {}) {
+  const force = Boolean(options.force);
   const packagePath = path.join(repoRoot, 'package.json');
   if (!fs.existsSync(packagePath)) {
     return { status: 'skipped', file: 'package.json', note: 'package.json not found' };
@@ -706,30 +707,15 @@ function ensurePackageScripts(repoRoot, dryRun) {
     throw new Error(`Unable to parse package.json in target repo: ${error.message}`);
   }
 
-  const wantedScripts = {
-    'agent:codex': 'bash ./scripts/codex-agent.sh',
-    'agent:review:watch': 'bash ./scripts/review-bot-watch.sh',
-    'agent:branch:start': 'bash ./scripts/agent-branch-start.sh',
-    'agent:branch:finish': 'bash ./scripts/agent-branch-finish.sh',
-    'agent:finish': `${SHORT_TOOL_NAME} finish --all`,
-    'agent:cleanup': `${SHORT_TOOL_NAME} cleanup`,
-    'agent:hooks:install': 'bash ./scripts/install-agent-git-hooks.sh',
-    'agent:locks:claim': 'python3 ./scripts/agent-file-locks.py claim',
-    'agent:locks:allow-delete': 'python3 ./scripts/agent-file-locks.py allow-delete',
-    'agent:locks:release': 'python3 ./scripts/agent-file-locks.py release',
-    'agent:locks:status': 'python3 ./scripts/agent-file-locks.py status',
-    'agent:plan:init': 'bash ./scripts/openspec/init-plan-workspace.sh',
-    'agent:change:init': 'bash ./scripts/openspec/init-change-workspace.sh',
-    'agent:protect:list': `${SHORT_TOOL_NAME} protect list`,
-    'agent:branch:sync': `${SHORT_TOOL_NAME} sync`,
-    'agent:branch:sync:check': `${SHORT_TOOL_NAME} sync --check`,
-    'agent:safety:setup': `${SHORT_TOOL_NAME} setup`,
-    'agent:safety:scan': `${SHORT_TOOL_NAME} scan`,
-    'agent:safety:fix': `${SHORT_TOOL_NAME} fix`,
-    'agent:safety:doctor': `${SHORT_TOOL_NAME} doctor`,
-  };
+  const existingScripts = pkg.scripts && typeof pkg.scripts === 'object'
+    ? pkg.scripts
+    : {};
+  const hasExistingAgentScripts = Object.keys(existingScripts).some((key) => key.startsWith('agent:'));
+  if (hasExistingAgentScripts && !force) {
+    return { status: 'unchanged', file: 'package.json', note: 'preserved existing agent:* scripts' };
+  }
 
-  pkg.scripts = pkg.scripts || {};
+  pkg.scripts = existingScripts;
   let changed = false;
   for (const [key, value] of Object.entries(REQUIRED_PACKAGE_SCRIPTS)) {
     if (pkg.scripts[key] !== value) {
@@ -749,7 +735,8 @@ function ensurePackageScripts(repoRoot, dryRun) {
   return { status: 'updated', file: 'package.json' };
 }
 
-function ensureAgentsSnippet(repoRoot, dryRun) {
+function ensureAgentsSnippet(repoRoot, dryRun, options = {}) {
+  const force = Boolean(options.force);
   const agentsPath = path.join(repoRoot, 'AGENTS.md');
   const snippet = fs.readFileSync(path.join(TEMPLATE_ROOT, 'AGENTS.multiagent-safety.md'), 'utf8').trimEnd();
   const managedRegex = new RegExp(
@@ -766,6 +753,9 @@ function ensureAgentsSnippet(repoRoot, dryRun) {
 
   const existing = fs.readFileSync(agentsPath, 'utf8');
   if (managedRegex.test(existing)) {
+    if (!force) {
+      return { status: 'unchanged', file: 'AGENTS.md', note: 'preserved existing guardex-managed block' };
+    }
     const next = existing.replace(managedRegex, snippet);
     if (next === existing) {
       return { status: 'unchanged', file: 'AGENTS.md' };
@@ -1076,6 +1066,7 @@ function resolveSandboxTarget(repoRoot, worktreePath, targetPath) {
 function buildSandboxDoctorArgs(options, sandboxTarget) {
   const args = ['doctor', '--target', sandboxTarget];
   if (options.dryRun) args.push('--dry-run');
+  if (options.force) args.push('--force');
   if (options.skipAgents) args.push('--skip-agents');
   if (options.skipPackageJson) args.push('--skip-package-json');
   if (options.skipGitignore) args.push('--no-gitignore');
@@ -3512,11 +3503,11 @@ function runInstallInternal(options) {
   }
 
   if (!options.skipPackageJson) {
-    operations.push(ensurePackageScripts(repoRoot, Boolean(options.dryRun)));
+    operations.push(ensurePackageScripts(repoRoot, Boolean(options.dryRun), { force: Boolean(options.force) }));
   }
 
   if (!options.skipAgents) {
-    operations.push(ensureAgentsSnippet(repoRoot, Boolean(options.dryRun)));
+    operations.push(ensureAgentsSnippet(repoRoot, Boolean(options.dryRun), { force: Boolean(options.force) }));
   }
 
   const hookResult = configureHooks(repoRoot, Boolean(options.dryRun));
@@ -3566,11 +3557,11 @@ function runFixInternal(options) {
   }
 
   if (!options.skipPackageJson) {
-    operations.push(ensurePackageScripts(repoRoot, Boolean(options.dryRun)));
+    operations.push(ensurePackageScripts(repoRoot, Boolean(options.dryRun), { force: Boolean(options.force) }));
   }
 
   if (!options.skipAgents) {
-    operations.push(ensureAgentsSnippet(repoRoot, Boolean(options.dryRun)));
+    operations.push(ensureAgentsSnippet(repoRoot, Boolean(options.dryRun), { force: Boolean(options.force) }));
   }
 
   const hookResult = configureHooks(repoRoot, Boolean(options.dryRun));
@@ -4448,6 +4439,7 @@ function setup(rawArgs) {
   const fixPayload = runFixInternal({
     target: options.target,
     dryRun: options.dryRun,
+    force: options.force,
     dropStaleLocks: true,
     skipAgents: options.skipAgents,
     skipPackageJson: options.skipPackageJson,

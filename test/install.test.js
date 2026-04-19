@@ -356,6 +356,62 @@ test('setup provisions workflow files and repo config', () => {
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
 });
 
+test('setup and doctor preserve existing AGENTS managed block by default', () => {
+  const repoDir = initRepo();
+  const customAgents = [
+    '# AGENTS',
+    '',
+    '<!-- multiagent-safety:START -->',
+    '## Multi-Agent Execution Contract (GX)',
+    '- custom cleanup rule must stay untouched',
+    '<!-- multiagent-safety:END -->',
+    '',
+    '## Repo-specific notes',
+    '- keep this content',
+    '',
+  ].join('\n');
+  fs.writeFileSync(path.join(repoDir, 'AGENTS.md'), customAgents, 'utf8');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  let currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
+  assert.equal(currentAgents, customAgents, 'setup should preserve existing managed block');
+  assert.match(result.stdout, /preserved existing guardex-managed block/);
+
+  result = runNode(['doctor', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
+  assert.equal(currentAgents, customAgents, 'doctor should preserve existing managed block');
+  assert.match(result.stdout, /preserved existing guardex-managed block/);
+});
+
+test('setup and doctor preserve existing agent scripts in package.json by default', () => {
+  const repoDir = initRepo();
+  const packagePath = path.join(repoDir, 'package.json');
+  const customPackage = {
+    name: path.basename(repoDir),
+    private: true,
+    scripts: {
+      'agent:branch:start': 'bash ./scripts/custom-branch-start.sh',
+      'agent:cleanup': 'gx cleanup',
+      test: 'node --test',
+    },
+  };
+  fs.writeFileSync(packagePath, JSON.stringify(customPackage, null, 2) + '\n', 'utf8');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  let currentPackage = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  assert.deepEqual(currentPackage.scripts, customPackage.scripts, 'setup should preserve existing agent scripts');
+  assert.match(result.stdout, /preserved existing agent:\* scripts/);
+
+  result = runNode(['doctor', '--target', repoDir], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  currentPackage = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  assert.deepEqual(currentPackage.scripts, customPackage.scripts, 'doctor should preserve existing agent scripts');
+  assert.match(result.stdout, /preserved existing agent:\* scripts/);
+});
+
 test('setup --parent-workspace-view creates one-level-up VS Code workspace for repo + agent worktrees', () => {
   const repoDir = initRepo();
   const parentDir = path.dirname(repoDir);
