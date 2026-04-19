@@ -29,7 +29,9 @@ deploy/helm/*/charts/
 
 # Node
 node_modules/
+node_modules
 frontend/node_modules/
+frontend/.next/
 frontend/dist/
 frontend/coverage/
 
