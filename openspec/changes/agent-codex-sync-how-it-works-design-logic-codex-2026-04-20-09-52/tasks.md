@@ -13,3 +13,9 @@
 - [x] 3.1 Run targeted project verification commands.
 - [x] 3.2 Run `openspec validate agent-codex-sync-how-it-works-design-logic-codex-2026-04-20-09-52 --type change --strict`.
 - [x] 3.3 Run `openspec validate --specs`.
+
+## 4. Cleanup
+
+- [x] 4.1 Commit the changes to the agent worktree branch.
+- [ ] 4.2 Merge the agent branch into the current local base branch (for example `main`).
+- [ ] 4.3 After successful merge, clean up the merged agent worktree branch on both `origin` and local.
