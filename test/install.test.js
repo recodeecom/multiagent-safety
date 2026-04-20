@@ -385,33 +385,63 @@ test('setup provisions workflow files and repo config', () => {
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
 });
 
-test('setup and doctor preserve existing AGENTS managed block by default', () => {
+test('setup refreshes existing managed AGENTS block by default', () => {
   const repoDir = initRepo();
-  const customAgents = [
+  const legacyAgents = [
     '# AGENTS',
     '',
+    'Project-specific guidance before managed block.',
+    '',
     '<!-- multiagent-safety:START -->',
-    '## Multi-Agent Execution Contract (GX)',
-    '- custom cleanup rule must stay untouched',
+    '## Multi-Agent Execution Contract (multiagent-safety)',
+    '- legacy managed clause',
     '<!-- multiagent-safety:END -->',
     '',
     '## Repo-specific notes',
     '- keep this content',
     '',
   ].join('\n');
-  fs.writeFileSync(path.join(repoDir, 'AGENTS.md'), customAgents, 'utf8');
+  fs.writeFileSync(path.join(repoDir, 'AGENTS.md'), legacyAgents, 'utf8');
+
+  const result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
+  assert.match(currentAgents, /Project-specific guidance before managed block\./);
+  assert.match(currentAgents, /## Repo-specific notes/);
+  assert.match(currentAgents, /explicit final completion\/cleanup section/);
+  assert.match(currentAgents, /PR URL \+ final `MERGED` evidence/);
+  assert.doesNotMatch(currentAgents, /legacy managed clause/);
+  assert.match(result.stdout, /refreshed guardex-managed block/);
+});
+
+test('doctor refreshes existing managed AGENTS block by default', () => {
+  const repoDir = initRepo();
+  const legacyAgents = `# AGENTS
+
+Project-specific guidance before managed block.
+
+<!-- multiagent-safety:START -->
+## Multi-Agent Execution Contract (multiagent-safety)
+- legacy managed clause
+<!-- multiagent-safety:END -->
+
+Trailing project notes after managed block.
+`;
 
   let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  let currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
-  assert.equal(currentAgents, customAgents, 'setup should preserve existing managed block');
-  assert.match(result.stdout, /preserved existing guardex-managed block/);
+
+  fs.writeFileSync(path.join(repoDir, 'AGENTS.md'), legacyAgents, 'utf8');
 
   result = runNode(['doctor', '--target', repoDir], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
-  assert.equal(currentAgents, customAgents, 'doctor should preserve existing managed block');
-  assert.match(result.stdout, /preserved existing guardex-managed block/);
+  const currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
+  assert.match(currentAgents, /Project-specific guidance before managed block\./);
+  assert.match(currentAgents, /Trailing project notes after managed block\./);
+  assert.match(currentAgents, /explicit final completion\/cleanup section/);
+  assert.match(currentAgents, /PR URL \+ final `MERGED` evidence/);
+  assert.doesNotMatch(currentAgents, /legacy managed clause/);
+  assert.match(result.stdout, /refreshed guardex-managed block/);
 });
 
 test('repo hook settings reference real local hook directories', () => {
@@ -553,6 +583,8 @@ Trailing project notes after managed block.
     nextAgents,
     /Never implement directly on the local\/base branch checkout; keep it unchanged and perform all edits in the agent sub-branch\/worktree\./,
   );
+  assert.match(nextAgents, /explicit final completion\/cleanup section/);
+  assert.match(nextAgents, /PR URL \+ final `MERGED` evidence/);
   assert.doesNotMatch(nextAgents, /legacy managed clause/);
 });
 
@@ -3462,6 +3494,12 @@ test('OpenSpec change workspace scaffold creates proposal/tasks/spec defaults', 
   assert.equal(fs.existsSync(path.join(changeDir, 'proposal.md')), true, 'proposal.md missing');
   assert.equal(fs.existsSync(path.join(changeDir, 'tasks.md')), true, 'tasks.md missing');
   assert.equal(fs.existsSync(path.join(changeDir, 'specs', capabilitySlug, 'spec.md')), true, 'spec.md missing');
+
+  const tasksContent = fs.readFileSync(path.join(changeDir, 'tasks.md'), 'utf8');
+  assert.match(tasksContent, /## 4\. Completion/);
+  assert.match(tasksContent, /gx finish --via-pr --wait-for-merge --cleanup/);
+  assert.match(tasksContent, /Record PR URL \+ final `MERGED` state in the completion handoff\./);
+  assert.match(tasksContent, /Confirm sandbox cleanup/);
 });
 
 test('validate blocks unapproved deletions until allow-delete is set', () => {

@@ -754,7 +754,6 @@ function ensurePackageScripts(repoRoot, dryRun, options = {}) {
 }
 
 function ensureAgentsSnippet(repoRoot, dryRun, options = {}) {
-  const force = Boolean(options.force);
   const agentsPath = path.join(repoRoot, 'AGENTS.md');
   const snippet = fs.readFileSync(path.join(TEMPLATE_ROOT, 'AGENTS.multiagent-safety.md'), 'utf8').trimEnd();
   const managedRegex = new RegExp(
@@ -771,9 +770,6 @@ function ensureAgentsSnippet(repoRoot, dryRun, options = {}) {
 
   const existing = fs.readFileSync(agentsPath, 'utf8');
   if (managedRegex.test(existing)) {
-    if (!force) {
-      return { status: 'unchanged', file: 'AGENTS.md', note: 'preserved existing guardex-managed block' };
-    }
     const next = existing.replace(managedRegex, snippet);
     if (next === existing) {
       return { status: 'unchanged', file: 'AGENTS.md' };

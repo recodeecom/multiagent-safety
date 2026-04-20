@@ -13,7 +13,7 @@
 
 **Reporting.** Every completion handoff includes: files changed, behavior touched, verification commands + results, risks/follow-ups.
 
-**OpenSpec (when change-driven).** Keep `openspec/changes/<slug>/tasks.md` checkboxes current during work, not batched at the end. Verify specs with `openspec validate --specs` before archive. Don't archive unverified.
+**OpenSpec (when change-driven).** Keep `openspec/changes/<slug>/tasks.md` checkboxes current during work, not batched at the end. Task scaffolds and manual task edits must include an explicit final completion/cleanup section that ends with PR merge + sandbox cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `scripts/agent-branch-finish.sh ... --cleanup`) and records PR URL + final `MERGED` evidence. Verify specs with `openspec validate --specs` before archive. Don't archive unverified.
 
 **Version bumps.** If a change bumps a published version, the same PR updates release notes/changelog.
 <!-- multiagent-safety:END -->

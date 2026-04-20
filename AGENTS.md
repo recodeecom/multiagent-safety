@@ -171,8 +171,9 @@ This repo uses **OpenSpec as the primary workflow and SSOT** for change-driven d
 3. Keep artifacts editable throughout implementation (proposal/spec/design/tasks are living docs, not rigid phase gates).
 4. Implement from `tasks.md`; keep code and specs in sync (update `spec.md` as behavior changes).
 5. Keep `tasks.md` checkpoint status updated continuously during execution; mark items as soon as they complete (do not batch-update at the end).
-6. Validate specs locally: `openspec validate --specs`.
-7. Verify before archiving (`/opsx:verify <change>` when applicable); never archive unverified changes.
+6. Default `tasks.md` scaffolds and manual task edits must include a final completion/cleanup section that ends with PR merge + sandbox cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `scripts/agent-branch-finish.sh ... --cleanup`) and captures PR URL + final `MERGED` handoff evidence.
+7. Validate specs locally: `openspec validate --specs`.
+8. Verify before archiving (`/opsx:verify <change>` when applicable); never archive unverified changes.
 
 ### OpenSpec tooling freshness (required)
 
@@ -256,7 +257,7 @@ scripts/openspec/init-plan-workspace.sh <plan-slug>
 
 **Reporting.** Every completion handoff includes: files changed, behavior touched, verification commands + results, risks/follow-ups.
 
-**OpenSpec (when change-driven).** Keep `openspec/changes/<slug>/tasks.md` checkboxes current during work, not batched at the end. Verify specs with `openspec validate --specs` before archive. Don't archive unverified.
+**OpenSpec (when change-driven).** Keep `openspec/changes/<slug>/tasks.md` checkboxes current during work, not batched at the end. Task scaffolds and manual task edits must include an explicit final completion/cleanup section that ends with PR merge + sandbox cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `scripts/agent-branch-finish.sh ... --cleanup`) and records PR URL + final `MERGED` evidence. Verify specs with `openspec validate --specs` before archive. Don't archive unverified.
 
 **Version bumps.** If a change bumps a published version, the same PR updates release notes/changelog.
 <!-- multiagent-safety:END -->
