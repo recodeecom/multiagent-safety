@@ -9,6 +9,11 @@ GuardeX is a safety layer for parallel Codex/agent work in git repos.
 > [!WARNING]
 > Not affiliated with OpenAI or Codex. Not an official tool.
 
+## Frontend Repo
+
+- Standalone frontend repository: https://github.com/Webu-PRO/guardex-frontend
+- This repository tracks/mirrors the frontend under `frontend/` as documented below.
+
 ## The problem (what was going wrong)
 
 Multiple Codex agents worked on the same files at the same time.
