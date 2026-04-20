@@ -100,9 +100,9 @@ gx finish --all
 
 ![gx lock and delete guard screenshot](https://raw.githubusercontent.com/recodeee/guardex/main/docs/images/workflow-lock-guard.svg)
 
-### Real VS Code Source Control layout (exact screenshot)
+### VS Code Source Control layout (agent + OpenSpec files)
 
-![Real VS Code Source Control layout](https://raw.githubusercontent.com/recodeee/guardex/main/docs/images/workflow-vscode-source-control-exact.png)
+![VS Code Source Control layout with OpenSpec files](https://raw.githubusercontent.com/recodeee/guardex/main/docs/images/workflow-source-control.svg)
 
 ## Copy-paste: common commands
 
