@@ -3,6 +3,10 @@
 
 **Repo toggle.** Guardex is enabled by default. If the repo root `.env` sets `GUARDEX_ON=0`, `false`, `no`, or `off`, treat this entire Guardex contract as disabled for the repo and do not require Guardex worktrees, lock claims, completion flow, or OpenSpec workflow until `GUARDEX_ON` is re-enabled.
 
+**Repo toggle examples.** Add one of these lines to the repo-root `.env` file:
+`GUARDEX_ON=0` disables Guardex for that repo.
+`GUARDEX_ON=1` explicitly enables Guardex for that repo again.
+
 **Isolation.** Every task runs on a dedicated `agent/*` branch + worktree. Start with `scripts/agent-branch-start.sh "<task>" "<agent-name>"`. Treat the base branch (`main`/`dev`) as read-only while an agent branch is active. Never `git checkout <branch>` on a primary working tree (including nested repos); use `git worktree add` instead. The `.githooks/post-checkout` hook auto-reverts primary-branch switches during agent sessions — bypass only with `GUARDEX_ALLOW_PRIMARY_BRANCH_SWITCH=1`.
 
 **Ownership.** Before editing, claim files: `scripts/agent-file-locks.py claim --branch "<agent-branch>" <file...>`. Before deleting, confirm the path is in your claim. Don't edit outside your scope unless reassigned.

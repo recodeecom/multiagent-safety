@@ -435,6 +435,9 @@ test('setup refreshes existing managed AGENTS block by default', () => {
   const currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
   assert.match(currentAgents, /Project-specific guidance before managed block\./);
   assert.match(currentAgents, /## Repo-specific notes/);
+  assert.match(currentAgents, /Guardex is enabled by default/);
+  assert.match(currentAgents, /GUARDEX_ON=0/);
+  assert.match(currentAgents, /GUARDEX_ON=1/);
   assert.match(currentAgents, /explicit final completion\/cleanup section/);
   assert.match(currentAgents, /PR URL \+ final `MERGED` evidence/);
   assert.doesNotMatch(currentAgents, /legacy managed clause/);
@@ -465,6 +468,9 @@ Trailing project notes after managed block.
   const currentAgents = fs.readFileSync(path.join(repoDir, 'AGENTS.md'), 'utf8');
   assert.match(currentAgents, /Project-specific guidance before managed block\./);
   assert.match(currentAgents, /Trailing project notes after managed block\./);
+  assert.match(currentAgents, /Guardex is enabled by default/);
+  assert.match(currentAgents, /GUARDEX_ON=0/);
+  assert.match(currentAgents, /GUARDEX_ON=1/);
   assert.match(currentAgents, /explicit final completion\/cleanup section/);
   assert.match(currentAgents, /PR URL \+ final `MERGED` evidence/);
   assert.doesNotMatch(currentAgents, /legacy managed clause/);
