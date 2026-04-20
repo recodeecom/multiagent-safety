@@ -2504,50 +2504,49 @@ export default function Home() {
     <main className="how-it-works-page">
       <header className="top">
         <div className="lft">
-          <div className="brand-block">
-            <div className="mark" aria-hidden>
-              R
-            </div>
-            <div>
-              <div className="title">How it works</div>
-              <div className="sub">Watch an agent run — from prompt to merged PR</div>
-            </div>
-          </div>
-
-          <div className="brand-divider" aria-hidden />
-
-          <div className="brand-block guardex-brand">
-            <div className="mark guardex-mark" aria-hidden>
-              <svg
-                viewBox="0 0 48 48"
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2.4}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M6 28c2-8 8-14 16-15 4-.5 8 0 11 2l4-3 1 6-3 2c2 3 2 7 1 11-1 4-4 7-8 9l-2 4-5-2-6 2-2-4c-4-2-6-6-7-12z" />
-                <circle cx="30" cy="22" r="1.6" fill="currentColor" />
-                <path d="M14 34l-2 6" />
-                <path d="M22 38l-1 6" />
-                <path d="M30 36l2 5" />
-              </svg>
-            </div>
-            <div>
-              <div className="title">GuardeX</div>
-              <div className="sub">
-                the Guardian T-Rex for your repo ·{' '}
-                <a
-                  href="https://guardextutorial.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+          <div className="corner-stack">
+            <div className="brand-block guardex-brand">
+              <div className="mark guardex-mark" aria-hidden>
+                <svg
+                  viewBox="0 0 48 48"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.4}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
                 >
-                  guardextutorial.com
-                </a>
+                  <path d="M6 28c2-8 8-14 16-15 4-.5 8 0 11 2l4-3 1 6-3 2c2 3 2 7 1 11-1 4-4 7-8 9l-2 4-5-2-6 2-2-4c-4-2-6-6-7-12z" />
+                  <circle cx="30" cy="22" r="1.6" fill="currentColor" />
+                  <path d="M14 34l-2 6" />
+                  <path d="M22 38l-1 6" />
+                  <path d="M30 36l2 5" />
+                </svg>
+              </div>
+              <div>
+                <div className="title">GuardeX</div>
+                <div className="sub">
+                  the Guardian T-Rex for your repo ·{' '}
+                  <a
+                    className="guardex-link"
+                    href="https://guardextutorial.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    guardextutorial.com
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div className="brand-block how-brand">
+              <div className="mark how-mark" aria-hidden>
+                R
+              </div>
+              <div>
+                <div className="title">How it works</div>
+                <div className="sub">Watch an agent run — from prompt to merged PR</div>
               </div>
             </div>
           </div>
