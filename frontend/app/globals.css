@@ -91,6 +91,31 @@ button {
   margin: 0;
 }
 
+.brand-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.brand-chip {
+  background: rgba(61, 220, 151, 0.12);
+  border: 1px solid rgba(61, 220, 151, 0.3);
+  border-radius: 999px;
+  color: #b6ffd9;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.brand-chip.secondary {
+  background: rgba(122, 162, 255, 0.12);
+  border-color: rgba(122, 162, 255, 0.32);
+  color: #d0e0ff;
+}
+
 .mode-switches {
   background: rgba(24, 31, 45, 0.84);
   border: 1px solid var(--line);
@@ -159,6 +184,11 @@ button {
   justify-content: center;
   line-height: 1;
   width: 22px;
+}
+
+.icon-button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #d9e6fb;
 }
 
 .workspace {

@@ -1,6 +1,6 @@
 'use client'
 
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 type ModeKey = 'execute' | 'plan' | 'merge'
 
@@ -46,6 +46,9 @@ interface ModeConfig {
 }
 
 const MODE_ORDER: ModeKey[] = ['execute', 'plan', 'merge']
+const PRODUCT_LABEL = 'GuardeX'
+const AGENT_LABEL = 'Codex'
+const EDITOR_LABEL = 'guardex-agent-work-tree-managment — VS Code'
 
 const TUTORIAL: Record<ModeKey, ModeConfig> = {
   execute: {
@@ -901,49 +904,94 @@ export default function Home() {
     setAnimationSeed((seed) => seed + 1)
   }
 
-  const goToStep = (nextStep: number) => {
+  const goToStep = useCallback((nextStep: number) => {
     if (nextStep < 0 || nextStep > steps.length - 1) {
       return
     }
 
     setStepIndex(nextStep)
     setAnimationSeed((seed) => seed + 1)
-  }
+  }, [steps.length])
 
-  const goBack = () => {
+  const goBack = useCallback(() => {
     if (stepIndex === 0) {
       return
     }
 
     goToStep(stepIndex - 1)
-  }
+  }, [goToStep, stepIndex])
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setStepIndex(0)
     setAnimationSeed((seed) => seed + 1)
-  }
+  }, [])
 
-  const goNext = () => {
+  const goNext = useCallback(() => {
     if (stepIndex === steps.length - 1) {
       reset()
       return
     }
 
     goToStep(stepIndex + 1)
-  }
+  }, [goToStep, reset, stepIndex, steps.length])
+
+  const closeWalkthrough = useCallback(() => {
+    setMode('execute')
+    setStepIndex(0)
+    setAnimationSeed((seed) => seed + 1)
+  }, [])
+
+  useEffect(() => {
+    const handleKeydown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        goNext()
+        return
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        goBack()
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeWalkthrough()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeydown)
+    return () => {
+      window.removeEventListener('keydown', handleKeydown)
+    }
+  }, [closeWalkthrough, goBack, goNext])
 
   return (
     <main className="how-it-works-page">
       <header className="top-nav">
         <div className="brand">
           <div className="brand-mark" aria-hidden>
-            R
+            C
           </div>
           <div>
             <p className="brand-title">How it works</p>
             <p className="brand-subtitle">
-              Watch an agent run from prompt to merged PR
+              Same Codex workflow design and logic inside GuardeX
             </p>
+            <div className="brand-meta">
+              <span className="brand-chip">{PRODUCT_LABEL}</span>
+              <span className="brand-chip secondary">{AGENT_LABEL} flow</span>
+            </div>
           </div>
         </div>
 
@@ -973,6 +1021,7 @@ export default function Home() {
           <button
             aria-label="Close walkthrough"
             className="icon-button"
+            onClick={closeWalkthrough}
             type="button"
           >
             ×
@@ -982,7 +1031,7 @@ export default function Home() {
 
       <section className="workspace" aria-label="How it works workspace preview">
         <article className="chat-panel">
-          <span className="panel-tag">CHAT • RECODEE</span>
+          <span className="panel-tag">CHAT • CODEX</span>
 
           <div
             className="chat-thread"
@@ -1032,7 +1081,7 @@ export default function Home() {
 
         <article className="editor-shell">
           <div className="editor-topbar">
-            <span className="editor-project">recodee — VS Code</span>
+            <span className="editor-project">{EDITOR_LABEL}</span>
           </div>
           <div className="editor-body">
             <aside className="activity-rail" aria-label="Activity rail">
