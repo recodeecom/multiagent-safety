@@ -2525,7 +2525,8 @@ export default function Home() {
                   <path d="M30 36l2 5" />
                 </svg>
               </div>
-              <div>
+              <div className="brand-copy">
+                <div className="brand-eyebrow">guardian workflow</div>
                 <div className="title">GuardeX</div>
                 <div className="sub">
                   the Guardian T-Rex for your repo ·{' '}
@@ -2544,7 +2545,8 @@ export default function Home() {
               <div className="mark how-mark" aria-hidden>
                 R
               </div>
-              <div>
+              <div className="brand-copy">
+                <div className="brand-eyebrow">interactive walkthrough</div>
                 <div className="title">How it works</div>
                 <div className="sub">Watch an agent run — from prompt to merged PR</div>
               </div>
@@ -2595,6 +2597,7 @@ export default function Home() {
 
         <div className="rgt">
           <span className="step-count">
+            <span className="step-count-label">step</span>
             <span className="mono">{stepIndex + 1}</span> / <span className="mono">{steps.length}</span>
           </span>
           <button

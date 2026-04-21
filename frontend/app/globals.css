@@ -1,19 +1,24 @@
 :root {
-  --bg: #0A0D12;
-  --bg-elev: #10141B;
-  --surface: #151A23;
-  --surface-2: #1B212C;
-  --surface-3: #232A37;
-  --border: #242C3A;
-  --border-strong: #323B4D;
-  --text: #E6EAF2;
-  --text-dim: #9AA3B4;
-  --text-muted: #646D80;
+  --bg: #060A10;
+  --bg-elev: #0C121A;
+  --surface: #121924;
+  --surface-2: #182130;
+  --surface-3: #233043;
+  --border: rgba(122, 143, 177, 0.18);
+  --border-strong: rgba(148, 172, 208, 0.32);
+  --text: #EDF3FB;
+  --text-dim: #A5B1C5;
+  --text-muted: #71809A;
   --accent: #3DDC97;
   --accent-dim: #1F8A5C;
   --warn: #F5B544;
   --info: #7AA2FF;
   --purple: #C882FF;
+  --shell-shadow: 0 28px 64px rgba(0, 0, 0, 0.42);
+  --green-glow: rgba(61, 220, 151, 0.18);
+  --blue-glow: rgba(122, 162, 255, 0.18);
+  --font-ui: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', 'Fira Code', monospace;
   --vs-bg: #1E1E1E;
   --vs-panel: #252526;
   --vs-side: #181818;
@@ -37,14 +42,18 @@ body {
 }
 
 body {
-  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-  background: var(--bg);
+  font-family: var(--font-ui);
+  background:
+    radial-gradient(circle at top left, rgba(61, 220, 151, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 0%, rgba(122, 162, 255, 0.18), transparent 30%),
+    linear-gradient(180deg, #05080d 0%, #091019 42%, #0b111a 100%);
   color: var(--text);
   font-size: 13px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   height: 100vh;
   overflow: hidden;
+  letter-spacing: -0.01em;
 }
 
 button {
@@ -53,33 +62,72 @@ button {
 }
 
 .mono {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
 }
 
 .how-it-works-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.how-it-works-page::before,
+.how-it-works-page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.how-it-works-page::before {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 78%);
+  opacity: 0.22;
+}
+
+.how-it-works-page::after {
+  background:
+    radial-gradient(circle at 12% 18%, rgba(61, 220, 151, 0.14), transparent 22%),
+    radial-gradient(circle at 88% 16%, rgba(122, 162, 255, 0.12), transparent 22%);
+  filter: blur(20px);
+}
+
+.how-it-works-page > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* ===== TOP BAR ===== */
 .top {
-  height: 70px;
+  min-height: 82px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
-  gap: 10px;
+  margin: 16px 18px 0;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(16, 22, 32, 0.96) 0%, rgba(10, 15, 24, 0.92) 100%);
+  box-shadow: var(--shell-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .top .lft {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 14px;
   min-width: 0;
+  flex: 1 1 320px;
 }
 
 .brand-block {
@@ -87,17 +135,23 @@ button {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  position: relative;
+  border: 1px solid rgba(148, 172, 208, 0.14);
+  background: linear-gradient(180deg, rgba(20, 29, 41, 0.94), rgba(12, 18, 27, 0.9));
+  border-radius: 18px;
+  padding: 10px 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .corner-stack {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
   min-width: 0;
 }
 
 .corner-stack .brand-block {
-  gap: 8px;
+  gap: 10px;
 }
 
 .brand-divider {
@@ -118,23 +172,42 @@ button {
   font-weight: 700;
   font-size: 12px;
   flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 14px 30px rgba(0, 0, 0, 0.26);
 }
 
 .guardex-mark {
-  background: linear-gradient(135deg, #1F8A5C 0%, #0e4a33 100%);
+  background: linear-gradient(135deg, #1F8A5C 0%, #123d2b 100%);
   color: #9ce3b2;
   border: 1px solid rgba(61, 220, 151, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(31, 138, 92, 0.32);
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(31, 138, 92, 0.32),
+    0 18px 34px rgba(10, 56, 38, 0.36);
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
 }
 
 .how-mark {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  font-size: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  font-size: 11px;
+  background: linear-gradient(135deg, #7AA2FF 0%, #3B5FFF 100%);
+  color: #F7FBFF;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
+.brand-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(165, 177, 197, 0.72);
+  margin-bottom: 4px;
 }
 
 .guardex-link {
@@ -147,26 +220,47 @@ button {
   color: #9ce3b2;
 }
 
+.guardex-brand {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(61, 220, 151, 0.08),
+    0 20px 44px rgba(8, 25, 18, 0.32);
+}
+
+.guardex-brand::after {
+  content: '';
+  position: absolute;
+  inset: auto 12px 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(61, 220, 151, 0.55), transparent);
+}
+
 .guardex-brand .title {
   color: var(--text);
   letter-spacing: 0.01em;
-  font-size: 20px;
+  font-size: 22px;
+  font-weight: 700;
   line-height: 1;
 }
 
 .guardex-brand .sub {
-  color: var(--accent);
+  color: #85DFA8;
   font-style: italic;
-  font-size: 11px;
-  line-height: 1.15;
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+
+.how-brand {
+  background: linear-gradient(180deg, rgba(16, 21, 31, 0.9), rgba(10, 15, 22, 0.88));
 }
 
 .how-brand .title {
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .how-brand .sub {
-  font-size: 11px;
+  font-size: 11.5px;
 }
 
 .top .title {
@@ -181,10 +275,11 @@ button {
 
 .mode-seg {
   display: flex;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 3px;
+  background: rgba(11, 17, 25, 0.9);
+  border: 1px solid rgba(148, 172, 208, 0.12);
+  border-radius: 14px;
+  padding: 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .mode-seg button {
@@ -192,23 +287,27 @@ button {
   border: 0;
   color: var(--text-dim);
   font-size: 12px;
-  font-weight: 500;
-  padding: 6px 14px;
-  border-radius: 7px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   gap: 7px;
-  transition: background-color 180ms ease, color 180ms ease;
+  transition: background-color 180ms ease, color 180ms ease, transform 180ms ease;
 }
 
 .mode-seg button:hover {
   color: var(--text);
+  transform: translateY(-1px);
 }
 
 .mode-seg button.active {
-  background: var(--surface-3);
+  background:
+    linear-gradient(180deg, rgba(33, 44, 61, 0.95), rgba(24, 33, 48, 0.92));
   color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
+  box-shadow:
+    inset 0 0 0 1px rgba(148, 172, 208, 0.14),
+    0 10px 22px rgba(0, 0, 0, 0.18);
 }
 
 .mode-seg button .dotc {
@@ -227,22 +326,26 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px 6px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 9px 12px 9px 14px;
+  background: linear-gradient(180deg, rgba(16, 23, 33, 0.94), rgba(10, 15, 23, 0.92));
+  border: 1px solid rgba(148, 172, 208, 0.14);
+  border-radius: 14px;
   color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   position: relative;
-  transition: background-color 180ms ease, border-color 180ms ease;
+  transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
   max-width: 100%;
   white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 34px rgba(0, 0, 0, 0.24);
 }
 
 .install-pill:hover {
   border-color: var(--border-strong);
-  background: var(--surface-2);
+  background: linear-gradient(180deg, rgba(18, 27, 39, 0.96), rgba(11, 17, 27, 0.94));
+  transform: translateY(-1px);
 }
 
 .install-pill:focus-visible {
@@ -265,17 +368,18 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-dim);
-  transition: color 180ms ease, background-color 180ms ease;
+  transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
 }
 
 .install-pill:hover .copy-ind {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.1);
+  transform: scale(1.04);
 }
 
 .install-pill.copied .copy-ind {
@@ -300,6 +404,26 @@ button {
   gap: 10px;
   font-size: 12px;
   color: var(--text-dim);
+  margin-left: auto;
+}
+
+.step-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 172, 208, 0.14);
+  background: rgba(11, 17, 25, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.step-count-label {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
 }
 
 .step-count .mono {
@@ -310,34 +434,40 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 24px;
-  width: 24px;
-  border: 1px solid var(--border);
-  background: transparent;
-  border-radius: 6px;
+  height: 30px;
+  width: 30px;
+  border: 1px solid rgba(148, 172, 208, 0.14);
+  background: rgba(11, 17, 25, 0.86);
+  border-radius: 10px;
   color: var(--text-dim);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .close-btn:hover {
-  background: var(--surface-2);
+  background: rgba(23, 32, 45, 0.94);
   color: var(--text);
 }
 
 /* ===== MAIN TWO-PANE ===== */
 .main {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
   flex: 1;
   min-height: 0;
+  gap: 18px;
+  padding: 16px 18px 18px;
 }
 
 .pane {
   position: relative;
   overflow: hidden;
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 24px;
   min-height: 0;
+  box-shadow: var(--shell-shadow);
+  backdrop-filter: blur(12px);
 }
 
 .pane.right {
@@ -346,25 +476,28 @@ button {
 
 .pane-label {
   position: absolute;
-  top: 10px;
-  left: 14px;
+  top: 14px;
+  left: 16px;
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   font-weight: 600;
-  color: var(--text-muted);
-  background: rgba(10, 13, 18, 0.85);
-  backdrop-filter: blur(6px);
-  padding: 4px 8px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: rgba(9, 14, 22, 0.82);
+  backdrop-filter: blur(10px);
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 172, 208, 0.12);
   z-index: 10;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.18);
 }
 
 /* ===== CHAT PANE ===== */
 .chat-pane {
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(61, 220, 151, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(14, 21, 31, 0.98) 0%, rgba(8, 12, 19, 0.98) 100%);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -373,10 +506,10 @@ button {
 .chat-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 48px 28px 20px;
+  padding: 58px 28px 22px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .msg {
@@ -389,37 +522,39 @@ button {
 }
 
 .bub {
-  padding: 12px 14px;
-  border-radius: 12px;
-  font-size: 12.5px;
+  padding: 13px 15px;
+  border-radius: 18px;
+  font-size: 12.75px;
   max-width: 92%;
-  line-height: 1.55;
+  line-height: 1.6;
   margin: 0;
+  box-shadow: 0 18px 32px rgba(0, 0, 0, 0.18);
 }
 
 .bub.user {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(24, 33, 48, 0.98), rgba(17, 24, 35, 0.98));
+  border: 1px solid rgba(148, 172, 208, 0.14);
   max-width: 80%;
 }
 
 .bub.assistant {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(18, 25, 36, 0.98), rgba(12, 18, 27, 0.98));
+  border: 1px solid rgba(148, 172, 208, 0.14);
   width: 100%;
 }
 
 .bub.thinking {
-  background: transparent;
+  background: rgba(15, 20, 31, 0.62);
   border: 1px dashed var(--border-strong);
   color: var(--text-dim);
   width: 100%;
+  box-shadow: none;
 }
 
 .bub.thinking::before {
   content: '✦ thinking';
   display: block;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.08em;
   color: var(--purple);
@@ -428,17 +563,17 @@ button {
 }
 
 .bub.hint {
-  background: rgba(200, 130, 255, 0.08);
+  background: rgba(200, 130, 255, 0.1);
   border: 1px solid rgba(200, 130, 255, 0.30);
   color: var(--text);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   width: 100%;
 }
 
 .bub.plan-list {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(18, 25, 36, 0.98), rgba(12, 18, 27, 0.98));
+  border: 1px solid rgba(200, 130, 255, 0.24);
   border-left: 3px solid var(--purple);
   width: 100%;
 }
@@ -446,7 +581,7 @@ button {
 .bub.plan-list::before {
   content: '□ proposed phases';
   display: block;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.08em;
   color: var(--purple);
@@ -471,14 +606,14 @@ button {
 }
 
 .bub.conflict {
-  background: rgba(241, 76, 76, 0.08);
+  background: rgba(241, 76, 76, 0.1);
   border: 1px solid rgba(241, 76, 76, 0.35);
   color: var(--text);
   width: 100%;
 }
 
 .bub code {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   padding: 1px 5px;
   background: var(--surface-3);
@@ -496,31 +631,32 @@ button {
   padding: 1px 6px;
   border-radius: 4px;
   border: 1px solid var(--border-strong);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
 }
 
 /* Tool block */
 .tool-block {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(20, 27, 38, 0.98), rgba(14, 19, 28, 0.98));
+  border: 1px solid rgba(148, 172, 208, 0.15);
+  border-radius: 16px;
+  padding: 12px 14px;
   width: 100%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .tool-block .head {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 11.75px;
+  font-weight: 600;
   color: var(--text);
 }
 
 .tool-block .head .cnt {
   color: var(--text-muted);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-weight: 400;
   font-size: 11px;
 }
@@ -528,18 +664,18 @@ button {
 .tool-block .head .elapsed {
   margin-left: auto;
   color: var(--text-muted);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 10.5px;
 }
 
 .tool-list {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 172, 208, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  gap: 8px;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -565,11 +701,11 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 172, 208, 0.12);
   color: var(--text-dim);
   padding: 0;
   transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
@@ -617,13 +753,15 @@ button {
 
 /* ===== TUTORIAL CONTROLS ===== */
 .controls {
-  border-top: 1px solid var(--border);
-  padding: 14px 20px;
-  background: var(--bg-elev);
+  border-top: 1px solid rgba(148, 172, 208, 0.12);
+  padding: 16px 20px 18px;
+  background:
+    linear-gradient(180deg, rgba(13, 18, 27, 0.96), rgba(9, 14, 21, 0.98));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   flex-shrink: 0;
+  backdrop-filter: blur(16px);
 }
 
 .ctrl-top {
@@ -639,7 +777,7 @@ button {
 }
 
 .ctrl-step-num {
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   color: var(--text-muted);
   margin-right: 8px;
 }
@@ -674,6 +812,7 @@ button {
   color: var(--text-dim);
   line-height: 1.5;
   min-height: 36px;
+  max-width: 68ch;
 }
 
 .ctrl-btns {
@@ -683,10 +822,10 @@ button {
 
 .btn {
   flex: 1;
-  padding: 8px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(180deg, rgba(20, 27, 38, 0.98), rgba(14, 19, 28, 0.98));
+  border: 1px solid rgba(148, 172, 208, 0.14);
+  border-radius: 12px;
   color: var(--text);
   font-family: inherit;
   font-size: 12px;
@@ -700,18 +839,19 @@ button {
 
 .btn:hover:not(:disabled) {
   border-color: var(--border-strong);
-  background: var(--surface-2);
+  background: linear-gradient(180deg, rgba(24, 33, 48, 0.98), rgba(17, 24, 35, 0.98));
 }
 
 .btn.primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, #3DDC97 0%, #83F0BD 100%);
   color: #05110B;
-  border-color: var(--accent);
+  border-color: rgba(131, 240, 189, 0.9);
+  box-shadow: 0 16px 30px rgba(61, 220, 151, 0.24);
 }
 
 .btn.primary:hover {
-  background: #53e5a6;
-  border-color: #53e5a6;
+  background: linear-gradient(135deg, #52E3A5 0%, #92F3C7 100%);
+  border-color: #92F3C7;
 }
 
 .btn:disabled {
@@ -721,7 +861,7 @@ button {
 
 /* ===== VS CODE PANE ===== */
 .vs {
-  background: var(--vs-bg);
+  background: linear-gradient(180deg, #1F2228 0%, #17191f 100%);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -730,7 +870,7 @@ button {
 .vs-titlebar {
   height: 30px;
   flex-shrink: 0;
-  background: #323233;
+  background: linear-gradient(180deg, #34363A 0%, #2B2D30 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -760,10 +900,11 @@ button {
   grid-template-columns: 48px 280px 1fr;
   overflow: hidden;
   min-height: 0;
+  background: linear-gradient(180deg, rgba(32, 32, 32, 0.2), transparent);
 }
 
 .vs-activity {
-  background: var(--vs-side);
+  background: linear-gradient(180deg, #161719 0%, #111214 100%);
   display: flex;
   flex-direction: column;
   padding: 8px 0;
@@ -780,12 +921,13 @@ button {
   background: transparent;
   border: 0;
   position: relative;
-  transition: color 180ms ease, background-color 180ms ease;
+  transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
 }
 
 .ab:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
 }
 
 .ab.active {
@@ -798,8 +940,9 @@ button {
   left: 0;
   top: 8px;
   bottom: 8px;
-  width: 2px;
-  background: #fff;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fff, #73C991);
 }
 
 .ab .badge {
@@ -839,7 +982,7 @@ button {
 
 /* Source Control panel */
 .vs-sc {
-  background: var(--vs-panel);
+  background: linear-gradient(180deg, #252526 0%, #1E2023 100%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -847,7 +990,7 @@ button {
 }
 
 .vs-sc-head {
-  padding: 8px 14px 6px;
+  padding: 10px 14px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -896,23 +1039,27 @@ button {
 
 /* Worktree cards */
 .wt {
-  border-top: 1px solid var(--vs-border);
-  padding: 6px 0 10px;
+  border: 1px solid rgba(66, 70, 75, 0.9);
+  border-radius: 14px;
+  margin: 0 10px 10px;
+  padding: 8px 0 12px;
   opacity: 0.55;
   transition: opacity 0.3s ease, background 0.3s ease;
+  background: linear-gradient(180deg, rgba(32, 35, 39, 0.75), rgba(26, 28, 31, 0.72));
 }
 
 .wt.active {
   opacity: 1;
-  background: rgba(0, 122, 204, 0.04);
+  background: linear-gradient(180deg, rgba(0, 122, 204, 0.12), rgba(27, 30, 35, 0.86));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .wt.readonly {
-  background: rgba(200, 130, 255, 0.06);
+  background: linear-gradient(180deg, rgba(200, 130, 255, 0.12), rgba(28, 26, 33, 0.84));
 }
 
 .wt.merge {
-  background: rgba(245, 181, 68, 0.06);
+  background: linear-gradient(180deg, rgba(245, 181, 68, 0.12), rgba(32, 28, 22, 0.84));
 }
 
 .wt.just-added {
@@ -938,7 +1085,7 @@ button {
   height: 3px;
   background: var(--vs-border);
   border-radius: 2px;
-  margin: 6px 14px 4px;
+  margin: 6px 14px 6px;
   overflow: hidden;
   position: relative;
 }
@@ -960,7 +1107,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   background: rgba(61, 220, 151, 0.14);
   color: var(--accent);
@@ -982,7 +1129,7 @@ button {
   gap: 6px;
   font-size: 11.5px;
   color: var(--vs-text);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
 }
 
 .wt-head .ic {
@@ -1032,10 +1179,10 @@ button {
 
 .wt-message {
   margin: 6px 14px 4px;
-  padding: 5px 8px;
-  background: var(--vs-bg);
+  padding: 6px 8px;
+  background: rgba(18, 18, 18, 0.6);
   border: 1px solid var(--vs-border);
-  border-radius: 3px;
+  border-radius: 8px;
   font-size: 11px;
   color: var(--vs-dim);
 }
@@ -1046,12 +1193,12 @@ button {
 
 .wt-commit {
   margin: 6px 14px 6px;
-  padding: 5px 0;
+  padding: 7px 0;
   background: #0E639C;
   color: #fff;
   text-align: center;
   font-size: 11px;
-  border-radius: 2px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1131,7 +1278,7 @@ button {
   padding: 2px 4px;
   font-size: 11.5px;
   color: var(--vs-text);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   position: relative;
   background: transparent;
   border: 0;
@@ -1141,6 +1288,7 @@ button {
 
 .tree-node:hover {
   background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
 }
 
 .tree-node .carett {
@@ -1212,7 +1360,7 @@ button {
   height: 34px;
   flex-shrink: 0;
   display: flex;
-  background: #2D2D2D;
+  background: linear-gradient(180deg, #2D2D2D 0%, #282828 100%);
   border-bottom: 1px solid var(--vs-border);
   overflow-x: auto;
 }
@@ -1229,7 +1377,7 @@ button {
   border-top: 0;
   border-bottom: 0;
   border-left: 0;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   max-width: 260px;
   white-space: nowrap;
 }
@@ -1274,10 +1422,11 @@ button {
   flex: 1;
   overflow: auto;
   padding: 10px 0;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
   transition: background-color 0.3s ease;
+  background: linear-gradient(180deg, rgba(19, 19, 19, 0.16), transparent);
 }
 
 .vs-code.pulsed {
@@ -1363,14 +1512,14 @@ button {
 .vs-status {
   height: 22px;
   flex-shrink: 0;
-  background: var(--vs-blue);
+  background: linear-gradient(90deg, #007ACC 0%, #0E639C 54%, #147D74 100%);
   display: flex;
   align-items: center;
   padding: 0 10px;
   gap: 16px;
   font-size: 11px;
   color: #fff;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
 }
 
 .vs-status .item {
@@ -1445,27 +1594,23 @@ button {
   }
 
   .pane {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
   }
 
   .pane.right {
-    border-bottom: 0;
+    border-right: 1px solid var(--border);
   }
 }
 
 @media (max-width: 760px) {
   .top {
-    padding: 0 12px;
-    flex-wrap: wrap;
-    height: auto;
+    margin: 12px 12px 0;
+    padding: 12px;
     min-height: 52px;
-    padding-top: 6px;
-    padding-bottom: 6px;
   }
 
   .guardex-brand .title {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   .guardex-brand .sub {
@@ -1480,6 +1625,11 @@ button {
     font-size: 10px;
   }
 
+  .main {
+    gap: 12px;
+    padding: 12px;
+  }
+
   .mode-seg button {
     padding: 6px 10px;
   }
@@ -1490,6 +1640,14 @@ button {
 
   .chat-scroll {
     padding: 48px 14px 14px;
+  }
+
+  .controls {
+    padding: 14px;
+  }
+
+  .ctrl-btns {
+    flex-direction: column;
   }
 }
 
