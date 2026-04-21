@@ -27,7 +27,6 @@ CRITICAL_GUARDRAIL_PATHS = {
     'AGENTS.md',
     '.githooks/pre-commit',
     '.githooks/pre-push',
-    '.githooks/post-merge',
     'scripts/agent-branch-start.sh',
     'scripts/agent-branch-finish.sh',
     'scripts/agent-file-locks.py',
