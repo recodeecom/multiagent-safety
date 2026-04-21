@@ -3109,7 +3109,8 @@ test('codex-agent restores local branch and falls back to safe worktree start wh
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
   const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
   assert.match(combinedOutput, /Unsafe starter output/);
-  assert.match(combinedOutput, /\[agent-branch-start\] Created branch: agent\/codex\//);
+  assert.match(combinedOutput, /\[agent-branch-start\] Created branch: agent\/[^/]+\//);
+  assert.match(combinedOutput, /Origin remote does not provide a mergeable PR surface; skipping auto-finish merge\/PR pipeline/);
   const launchedBranch = extractCreatedBranch(combinedOutput);
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
