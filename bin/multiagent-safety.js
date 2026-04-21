@@ -90,8 +90,10 @@ const TEMPLATE_FILES = [
   'scripts/agent-branch-start.sh',
   'scripts/agent-branch-finish.sh',
   'scripts/agent-branch-merge.sh',
+  'scripts/agent-session-state.js',
   'scripts/codex-agent.sh',
   'scripts/guardex-docker-loader.sh',
+  'scripts/install-vscode-active-agents-extension.js',
   'scripts/review-bot-watch.sh',
   'scripts/agent-worktree-prune.sh',
   'scripts/agent-file-locks.py',
@@ -108,12 +110,17 @@ const TEMPLATE_FILES = [
   'claude/commands/gitguardex.md',
   'github/pull.yml.example',
   'github/workflows/cr.yml',
+  'vscode/guardex-active-agents/package.json',
+  'vscode/guardex-active-agents/extension.js',
+  'vscode/guardex-active-agents/session-schema.js',
+  'vscode/guardex-active-agents/README.md',
 ];
 
 const REQUIRED_WORKFLOW_FILES = [
   'scripts/agent-branch-start.sh',
   'scripts/agent-branch-finish.sh',
   'scripts/agent-branch-merge.sh',
+  'scripts/agent-session-state.js',
   'scripts/guardex-docker-loader.sh',
   'scripts/agent-worktree-prune.sh',
   'scripts/agent-file-locks.py',
@@ -153,8 +160,10 @@ const EXECUTABLE_RELATIVE_PATHS = new Set([
   'scripts/agent-branch-start.sh',
   'scripts/agent-branch-finish.sh',
   'scripts/agent-branch-merge.sh',
+  'scripts/agent-session-state.js',
   'scripts/codex-agent.sh',
   'scripts/guardex-docker-loader.sh',
+  'scripts/install-vscode-active-agents-extension.js',
   'scripts/review-bot-watch.sh',
   'scripts/agent-worktree-prune.sh',
   'scripts/agent-file-locks.py',
@@ -813,6 +822,9 @@ function toDestinationPath(relativeTemplatePath) {
   }
   if (relativeTemplatePath.startsWith('github/')) {
     return `.${relativeTemplatePath}`;
+  }
+  if (relativeTemplatePath.startsWith('vscode/')) {
+    return relativeTemplatePath;
   }
   throw new Error(`Unsupported template path: ${relativeTemplatePath}`);
 }

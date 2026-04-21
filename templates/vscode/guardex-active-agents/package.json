@@ -1,0 +1,56 @@
+{
+  "name": "gitguardex-active-agents",
+  "displayName": "GitGuardex Active Agents",
+  "description": "Shows live Guardex sandbox sessions inside VS Code Source Control.",
+  "publisher": "recodeee",
+  "version": "0.0.1",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "categories": [
+    "Source Control",
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.omx/state/active-sessions",
+    "onView:gitguardex.activeAgents"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitguardex.activeAgents.refresh",
+        "title": "Refresh Active Agents"
+      },
+      {
+        "command": "gitguardex.activeAgents.openWorktree",
+        "title": "Open Agent Worktree"
+      }
+    ],
+    "views": {
+      "scm": [
+        {
+          "id": "gitguardex.activeAgents",
+          "name": "Active Agents"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitguardex.activeAgents.refresh",
+          "when": "view == gitguardex.activeAgents",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gitguardex.activeAgents.openWorktree",
+          "when": "view == gitguardex.activeAgents && viewItem == gitguardex.session",
+          "group": "inline"
+        }
+      ]
+    }
+  }
+}

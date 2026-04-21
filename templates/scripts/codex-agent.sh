@@ -6,6 +6,7 @@ AGENT_NAME="${GUARDEX_AGENT_NAME:-agent}"
 BASE_BRANCH="${GUARDEX_BASE_BRANCH:-}"
 BASE_BRANCH_EXPLICIT=0
 CODEX_BIN="${GUARDEX_CODEX_BIN:-codex}"
+NODE_BIN="${GUARDEX_NODE_BIN:-node}"
 AUTO_FINISH_RAW="${GUARDEX_CODEX_AUTO_FINISH:-true}"
 AUTO_REVIEW_ON_CONFLICT_RAW="${GUARDEX_CODEX_AUTO_REVIEW_ON_CONFLICT:-true}"
 AUTO_CLEANUP_RAW="${GUARDEX_CODEX_AUTO_CLEANUP:-true}"
@@ -143,6 +144,7 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 repo_root="$(git rev-parse --show-toplevel)"
+active_session_state_script="${repo_root}/scripts/agent-session-state.js"
 
 guardex_env_helper="${repo_root}/scripts/guardex-env.sh"
 if [[ -f "$guardex_env_helper" ]]; then
@@ -444,6 +446,40 @@ fi
 
 has_origin_remote() {
   git -C "$repo_root" remote get-url origin >/dev/null 2>&1
+}
+
+run_active_session_state() {
+  local action="$1"
+  shift
+
+  if [[ ! -f "$active_session_state_script" ]]; then
+    return 0
+  fi
+  if ! command -v "$NODE_BIN" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  "$NODE_BIN" "$active_session_state_script" "$action" "$@" >/dev/null 2>&1 || true
+}
+
+record_active_session_state() {
+  local wt="$1"
+  local branch="$2"
+
+  run_active_session_state \
+    start \
+    --repo "$repo_root" \
+    --branch "$branch" \
+    --task "$TASK_NAME" \
+    --agent "$AGENT_NAME" \
+    --worktree "$wt" \
+    --pid "$$" \
+    --cli "$CODEX_BIN"
+}
+
+clear_active_session_state() {
+  local branch="$1"
+  run_active_session_state stop --repo "$repo_root" --branch "$branch"
 }
 
 origin_remote_supports_pr_finish() {
@@ -833,6 +869,19 @@ if ! ensure_openspec_plan_workspace "$worktree_path" "$worktree_branch"; then
   exit 1
 fi
 
+active_session_recorded=0
+cleanup_active_session_state_on_exit() {
+  set +e
+  if [[ "${active_session_recorded:-0}" -eq 1 && -n "${worktree_branch:-}" && "${worktree_branch:-}" != "HEAD" ]]; then
+    clear_active_session_state "$worktree_branch"
+    active_session_recorded=0
+  fi
+}
+
+record_active_session_state "$worktree_path" "$worktree_branch"
+active_session_recorded=1
+trap cleanup_active_session_state_on_exit EXIT INT TERM
+
 echo "[codex-agent] Launching ${CODEX_BIN} in sandbox: $worktree_path"
 cd "$worktree_path"
 set +e
@@ -841,6 +890,8 @@ codex_exit="$?"
 set -e
 
 cd "$repo_root"
+cleanup_active_session_state_on_exit
+trap - EXIT INT TERM
 final_exit="$codex_exit"
 auto_finish_completed=0
 
