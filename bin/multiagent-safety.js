@@ -3416,9 +3416,15 @@ function maybeSelfUpdateBeforeStatus() {
   }
 
   console.log(`[${TOOL_NAME}] ✅ Updated to latest published version.`);
+  restartIntoUpdatedGuardex(check.latest);
 }
 
 function readInstalledGuardexVersion() {
+  const installInfo = readInstalledGuardexInstallInfo();
+  return installInfo ? installInfo.version : null;
+}
+
+function readInstalledGuardexInstallInfo() {
   // Resolves the globally-installed package's on-disk version so we can
   // verify npm actually wrote new bytes. Uses `npm root -g` to locate the
   // global install root so we don't accidentally read the running source
@@ -3440,12 +3446,61 @@ function readInstalledGuardexVersion() {
     }
     const parsed = JSON.parse(fs.readFileSync(installedPkgPath, 'utf8'));
     if (parsed && typeof parsed.version === 'string') {
-      return parsed.version;
+      let binRelative = null;
+      if (typeof parsed.bin === 'string') {
+        binRelative = parsed.bin;
+      } else if (parsed.bin && typeof parsed.bin === 'object') {
+        const invokedName = path.basename(process.argv[1] || '');
+        binRelative =
+          parsed.bin[invokedName] ||
+          parsed.bin[SHORT_TOOL_NAME] ||
+          Object.values(parsed.bin).find((value) => typeof value === 'string') ||
+          null;
+      }
+      const packageRoot = path.dirname(installedPkgPath);
+      const binPath = binRelative ? path.join(packageRoot, binRelative) : null;
+      return {
+        version: parsed.version,
+        packageRoot,
+        binPath,
+      };
     }
   } catch (error) {
     return null;
   }
   return null;
+}
+
+function restartIntoUpdatedGuardex(expectedVersion) {
+  const installInfo = readInstalledGuardexInstallInfo();
+  if (!installInfo || installInfo.version !== expectedVersion || installInfo.version === packageJson.version) {
+    return;
+  }
+  if (!installInfo.binPath || !fs.existsSync(installInfo.binPath)) {
+    console.log(`[${TOOL_NAME}] Restart required to use ${installInfo.version}. Rerun ${SHORT_TOOL_NAME}.`);
+    return;
+  }
+
+  console.log(`[${TOOL_NAME}] Restarting into ${installInfo.version}…`);
+  const restartResult = cp.spawnSync(
+    process.execPath,
+    [installInfo.binPath, ...process.argv.slice(2)],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        GUARDEX_SKIP_UPDATE_CHECK: '1',
+      },
+      stdio: 'inherit',
+    },
+  );
+  if (restartResult.error) {
+    console.log(
+      `[${TOOL_NAME}] Restart into ${installInfo.version} failed. Rerun ${SHORT_TOOL_NAME}.`,
+    );
+    return;
+  }
+  process.exit(restartResult.status == null ? 0 : restartResult.status);
 }
 
 function checkForOpenSpecPackageUpdate() {

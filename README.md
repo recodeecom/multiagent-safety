@@ -490,6 +490,11 @@ npm pack --dry-run
 <details>
 <summary><strong>v7.x</strong></summary>
 
+### v7.0.12
+- Fixed the self-update handoff after `gx` installs a newer global package. When the on-disk install advances, GitGuardex now restarts into the installed CLI instead of continuing in the old process and printing the stale in-memory version.
+- This removes the confusing `Updated to latest published version` followed by `CLI: ...7.0.10` mismatch that happened when `7.0.11` finished installing during the same `gx` invocation.
+- Bumped `@imdeadpool/guardex` from `7.0.11` → `7.0.12`.
+
 ### v7.0.11
 - Fixed the npm release workflow trigger so publishes run from `release.published` or explicit manual dispatch, instead of double-firing on both the tag push and the release event.
 - This keeps the GitHub `npm` environment from collecting duplicate cancelled deploy cards for the same version and leaves one canonical release deployment to monitor.
