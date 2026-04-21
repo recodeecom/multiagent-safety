@@ -59,6 +59,14 @@ test('security workflows are present and use pinned GitHub Actions SHAs', () => 
   }
 });
 
+test('code review workflow does not gate startup on secrets context', () => {
+  const workflowPath = path.join(repoRoot, '.github', 'workflows', 'cr.yml');
+  const workflow = fs.readFileSync(workflowPath, 'utf8');
+  assert.doesNotMatch(workflow, /if:\s+\$\{\{\s*secrets\.OPENAI_API_KEY/);
+  assert.match(workflow, /OPENAI_API_KEY:\s+\$\{\{\s*secrets\.OPENAI_API_KEY\s*\}\}/);
+  assert.match(workflow, /if:\s+\$\{\{\s*env\.OPENAI_API_KEY != ''\s*\}\}/);
+});
+
 test('critical runtime helper scripts stay in sync with templates', () => {
   const pairs = [
     ['templates/scripts/codex-agent.sh', 'scripts/codex-agent.sh'],

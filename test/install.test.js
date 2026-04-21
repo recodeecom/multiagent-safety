@@ -338,6 +338,8 @@ test('setup provisions workflow files and repo config', () => {
   assert.match(crWorkflow, /pull_request:/);
   assert.match(crWorkflow, /OPENAI_API_KEY/);
   assert.match(crWorkflow, /anc95\/ChatGPT-CodeReview@1e3df152c1b85c12da580b206c91ad343460c584/);
+  assert.match(crWorkflow, /if:\s+\$\{\{\s*env\.OPENAI_API_KEY != ''\s*\}\}/);
+  assert.doesNotMatch(crWorkflow, /if:\s+\$\{\{\s*secrets\.OPENAI_API_KEY/);
 
   const packageJson = JSON.parse(fs.readFileSync(path.join(repoDir, 'package.json'), 'utf8'));
   assert.equal(packageJson.scripts['agent:codex'], 'bash ./scripts/codex-agent.sh');
