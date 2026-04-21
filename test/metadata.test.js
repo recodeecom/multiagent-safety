@@ -6,6 +6,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const packageJsonPath = path.join(repoRoot, 'package.json');
 const readmePath = path.join(repoRoot, 'README.md');
+const aboutDescriptionPath = path.join(repoRoot, 'about_description.txt');
 
 function escapeRegexLiteral(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -66,6 +67,22 @@ test('README documents gx release as README-driven GitHub release writer', () =>
   assert.match(readme, /gx release\s+# create\/update the current GitHub release from README notes/);
   assert.match(readme, /`gx release` is the maintainer path for package releases\./);
   assert.match(readme, /finds the last published GitHub release, and writes one grouped GitHub release body/);
+});
+
+test('README keeps canonical About copy and problem-solution visuals aligned', () => {
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  const aboutDescription = fs.readFileSync(aboutDescriptionPath, 'utf8').trim();
+
+  assert.match(
+    readme,
+    /## The problem\s+!\[Parallel agents colliding in the same files\]\(https:\/\/raw\.githubusercontent\.com\/recodeee\/gitguardex\/main\/docs\/images\/problem-agent-collision\.svg\)/s,
+  );
+  assert.match(
+    readme,
+    /### Solution\s+!\[Agent branch\/worktree start protocol\]\(https:\/\/raw\.githubusercontent\.com\/recodeee\/gitguardex\/main\/docs\/images\/workflow-branch-start\.svg\)/s,
+  );
+  assert.match(readme, /\[about_description\.txt\]\(\.\/about_description\.txt\)/);
+  assert.match(readme, new RegExp(escapeRegexLiteral(aboutDescription)));
 });
 
 test('security workflows are present and use pinned GitHub Actions SHAs', () => {
