@@ -510,6 +510,31 @@ resolve_worktree_base_branch() {
   printf 'dev'
 }
 
+print_takeover_prompt() {
+  local wt="$1"
+  local branch="$2"
+  local base_branch change_slug change_artifact finish_cmd
+
+  base_branch="$(resolve_worktree_base_branch "$wt")"
+  if [[ -z "$base_branch" ]]; then
+    base_branch="dev"
+  fi
+
+  change_slug="$(resolve_openspec_change_slug "$branch")"
+  change_artifact="openspec/changes/${change_slug}/tasks.md"
+  if [[ ! -f "${wt}/${change_artifact}" ]]; then
+    change_artifact="openspec/changes/${change_slug}/notes.md"
+  fi
+  if [[ ! -f "${wt}/${change_artifact}" ]]; then
+    change_artifact="openspec/changes/${change_slug}/"
+  fi
+
+  finish_cmd="bash scripts/agent-branch-finish.sh --branch \"${branch}\" --base ${base_branch} --via-pr --wait-for-merge --cleanup"
+
+  echo "[codex-agent] Takeover sandbox: ${wt}"
+  echo "[codex-agent] Takeover prompt: Continue \`${change_slug}\` on branch \`${branch}\`. Work inside \`${wt}\`, review \`${change_artifact}\`, continue from the current state instead of creating a new sandbox, and when the work is done run \`${finish_cmd}\`."
+}
+
 sync_worktree_with_base() {
   local wt="$1"
   if ! has_origin_remote; then
@@ -952,6 +977,7 @@ else
     if [[ "$auto_finish_completed" -eq 1 ]]; then
       echo "[codex-agent] Branch kept intentionally. Cleanup on demand: gx cleanup --branch \"${worktree_branch}\""
     else
+      print_takeover_prompt "$worktree_path" "$worktree_branch"
       echo "[codex-agent] If finished, merge with: bash scripts/agent-branch-finish.sh --branch \"${worktree_branch}\" --base dev --via-pr --wait-for-merge"
       echo "[codex-agent] Cleanup on demand: gx cleanup --branch \"${worktree_branch}\""
     fi

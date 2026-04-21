@@ -3498,6 +3498,63 @@ exit 1
   assert.match(launchedArgs, /--model gpt-5\.4-mini/);
 });
 
+test('codex-agent prints a takeover prompt when the sandbox is kept after an incomplete run', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const fakeCodexBin = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-fake-codex-takeover-'));
+  const fakeCodexPath = path.join(fakeCodexBin, 'codex');
+  fs.writeFileSync(
+    fakeCodexPath,
+    '#!/usr/bin/env bash\n' +
+      'pwd > "${GUARDEX_TEST_CODEX_CWD}"\n' +
+      'echo "partial" > codex-partial.txt\n' +
+      'exit 42\n',
+    'utf8',
+  );
+  fs.chmodSync(fakeCodexPath, 0o755);
+
+  const cwdMarker = path.join(repoDir, '.codex-agent-cwd-takeover');
+  const launch = runCmd(
+    'bash',
+    ['scripts/codex-agent.sh', 'usage-limit-task', 'planner', 'dev'],
+    repoDir,
+    {
+      PATH: `${fakeCodexBin}:${process.env.PATH}`,
+      GUARDEX_TEST_CODEX_CWD: cwdMarker,
+    },
+  );
+  assert.equal(launch.status, 42, launch.stderr || launch.stdout);
+
+  const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
+  const launchedBranch = extractCreatedBranch(launch.stdout);
+  const changeSlug = launchedBranch.replace(/\//g, '-');
+  assert.match(combinedOutput, /\[codex-agent\] Sandbox worktree kept:/);
+  assert.match(combinedOutput, new RegExp(`\\[codex-agent\\] Takeover sandbox: ${escapeRegexLiteral(fs.readFileSync(cwdMarker, 'utf8').trim())}`));
+  assert.match(
+    combinedOutput,
+    new RegExp(`\\[codex-agent\\] Takeover prompt: Continue \`${escapeRegexLiteral(changeSlug)}\` on branch \`${escapeRegexLiteral(launchedBranch)}\``),
+  );
+  assert.match(combinedOutput, /continue from the current state instead of creating a new sandbox/);
+  assert.match(
+    combinedOutput,
+    new RegExp(`openspec/changes/${escapeRegexLiteral(changeSlug)}/tasks\\.md`),
+  );
+  assert.match(
+    combinedOutput,
+    new RegExp(`agent-branch-finish\\.sh --branch "${escapeRegexLiteral(launchedBranch)}" --base dev --via-pr --wait-for-merge --cleanup`),
+  );
+});
+
 test('codex-agent keeps the sandbox when base branch advances without a mergeable remote context', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
@@ -4176,6 +4233,9 @@ test('OpenSpec change workspace scaffold creates proposal/tasks/spec defaults', 
   const tasksContent = fs.readFileSync(path.join(changeDir, 'tasks.md'), 'utf8');
   assert.match(tasksContent, /## Definition of Done/);
   assert.match(tasksContent, /append a `BLOCKED:` line under section 4/);
+  assert.match(tasksContent, /## Handoff/);
+  assert.match(tasksContent, /Handoff: change=`change-workspace-smoke`/);
+  assert.match(tasksContent, /Copy prompt: Continue `change-workspace-smoke` on branch `agent\/<your-name>\/<branch-slug>`/);
   assert.match(tasksContent, /## 4\. Cleanup \(mandatory; run before claiming completion\)/);
   assert.match(tasksContent, /Run the cleanup pipeline:/);
   assert.match(tasksContent, /Record the PR URL and final merge state \(`MERGED`\)/);
@@ -4187,6 +4247,8 @@ test('OpenSpec change workspace scaffold supports minimal T1 notes mode', () => 
 
   const setupResult = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
   assert.equal(setupResult.status, 0, setupResult.stderr || setupResult.stdout);
+  let result = runCmd('git', ['config', 'multiagent.baseBranch', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const changeSlug = 'change-workspace-minimal';
   const capabilitySlug = 'runtime-migration';
@@ -4209,6 +4271,10 @@ test('OpenSpec change workspace scaffold supports minimal T1 notes mode', () => 
   assert.match(notesContent, /minimal \/ T1/);
   assert.match(notesContent, new RegExp(agentBranch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(notesContent, /Commit message is the spec of record/);
+  assert.match(notesContent, /## Handoff/);
+  assert.match(notesContent, /Handoff: change=`change-workspace-minimal`/);
+  assert.match(notesContent, /Copy prompt: Continue `change-workspace-minimal` on branch `agent\/codex\/minimal-change`/);
+  assert.match(notesContent, /--base main --via-pr --wait-for-merge --cleanup/);
   assert.match(notesContent, /Record PR URL \+ `MERGED` state/);
 });
 
