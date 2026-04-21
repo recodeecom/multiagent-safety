@@ -655,6 +655,8 @@ test('setup refreshes existing managed AGENTS block by default', () => {
   assert.match(currentAgents, /Guardex is enabled by default/);
   assert.match(currentAgents, /GUARDEX_ON=0/);
   assert.match(currentAgents, /GUARDEX_ON=1/);
+  assert.match(currentAgents, /Small tasks stay in direct caveman-only mode\./);
+  assert.match(currentAgents, /Promote to OMX orchestration only when the task is medium\/large/);
   assert.match(currentAgents, /explicit final completion\/cleanup section/);
   assert.match(currentAgents, /PR URL \+ final `MERGED` evidence/);
   assert.doesNotMatch(currentAgents, /legacy managed clause/);
@@ -688,6 +690,8 @@ Trailing project notes after managed block.
   assert.match(currentAgents, /Guardex is enabled by default/);
   assert.match(currentAgents, /GUARDEX_ON=0/);
   assert.match(currentAgents, /GUARDEX_ON=1/);
+  assert.match(currentAgents, /Small tasks stay in direct caveman-only mode\./);
+  assert.match(currentAgents, /Promote to OMX orchestration only when the task is medium\/large/);
   assert.match(currentAgents, /explicit final completion\/cleanup section/);
   assert.match(currentAgents, /PR URL \+ final `MERGED` evidence/);
   assert.doesNotMatch(currentAgents, /legacy managed clause/);
@@ -902,6 +906,8 @@ Trailing project notes after managed block.
     nextAgents,
     /Never implement directly on the local\/base branch checkout; keep it unchanged and perform all edits in the agent sub-branch\/worktree\./,
   );
+  assert.match(nextAgents, /Small tasks stay in direct caveman-only mode\./);
+  assert.match(nextAgents, /Promote to OMX orchestration only when the task is medium\/large/);
   assert.match(nextAgents, /explicit final completion\/cleanup section/);
   assert.match(nextAgents, /PR URL \+ final `MERGED` evidence/);
   assert.doesNotMatch(nextAgents, /legacy managed clause/);
