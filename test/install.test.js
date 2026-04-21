@@ -3329,8 +3329,8 @@ exit 1
   );
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
   const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
-  assert.match(combinedOutput, /\[codex-agent\] Auto-committed sandbox changes on 'agent\/codex\/autocommit-retry-task-/);
-  assert.match(combinedOutput, /\[codex-agent\] Auto-finish skipped for 'agent\/codex\/autocommit-retry-task-/);
+  assert.match(combinedOutput, /\[codex-agent\] Auto-committed sandbox changes on 'agent\/planner\/autocommit-retry-task-/);
+  assert.match(combinedOutput, /\[codex-agent\] Auto-finish skipped for 'agent\/planner\/autocommit-retry-task-/);
   assert.equal(fs.existsSync(path.join(originAdvanceClone, 'base-advance.txt')), true, 'test should still advance the base branch during codex execution');
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
