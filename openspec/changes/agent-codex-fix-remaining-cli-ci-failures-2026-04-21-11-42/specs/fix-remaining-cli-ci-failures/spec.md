@@ -1,28 +1,19 @@
 ## ADDED Requirements
 
-### Requirement: branch finish honors stored agent base metadata
-Guardex SHALL use the stored `branch.<agent-branch>.guardexBase` value when finishing an agent branch unless the caller explicitly overrides `--base`.
+### Requirement: codex-agent skips PR auto-finish for local/file remotes
+Guardex SHALL keep `codex-agent` sandbox branches local when the repo only has a local/file-backed `origin` that cannot support a mergeable PR flow.
 
-#### Scenario: finish runs in a main-only repo
-- **GIVEN** an agent branch created from `main`
-- **AND** Guardex stored `branch.<agent-branch>.guardexBase=main`
-- **WHEN** `scripts/agent-branch-finish.sh --branch <agent-branch>` runs without an explicit `--base`
-- **THEN** Guardex SHALL finish against `main`
-- **AND** it SHALL NOT fall back to `dev`.
+#### Scenario: fallback sandbox on a local bare origin
+- **GIVEN** `scripts/codex-agent.sh` falls back to a direct worktree start
+- **AND** the repo `origin` remote resolves to a local path or `file://` URL
+- **WHEN** the task run exits successfully
+- **THEN** Guardex SHALL skip the PR auto-finish merge/wait path
+- **AND** it SHALL keep the sandbox branch/worktree for manual follow-up instead of waiting on merge.
 
-### Requirement: branch start prints the resolved finish base
-Guardex SHALL print the actual resolved base branch in the suggested finish command emitted by `agent-branch-start`.
+### Requirement: fallback regression accepts the actual owner slug
+Focused codex-agent regression coverage SHALL match the branch owner slug emitted by the runtime instead of hardcoding one historical agent family.
 
-#### Scenario: protected base is main
-- **GIVEN** an agent branch created from `main`
-- **WHEN** `scripts/agent-branch-start.sh` prints next steps
-- **THEN** the suggested finish command SHALL include `--base main`
-- **AND** it SHALL match the stored `guardexBase` metadata.
-
-### Requirement: CI regression tests track current Guardex CLI output
-Focused CI coverage SHALL match the current Guardex naming and reporting contract for doctor/setup/self-update/codex-agent flows.
-
-#### Scenario: current naming contract is exercised
-- **WHEN** the doctor and codex-agent regression tests run
-- **THEN** they SHALL expect current `agent/codex/...` branch names and `agent__codex__...` worktree paths
-- **AND** they SHALL match the current `gitguardex` output strings rather than deprecated `guardex` or older role-specific naming.
+#### Scenario: fallback branch is created
+- **WHEN** the fallback codex-agent regression runs
+- **THEN** it SHALL accept the emitted `agent/<owner>/...` branch prefix
+- **AND** it SHALL still verify the local-remote auto-finish skip message and kept-sandbox behavior.

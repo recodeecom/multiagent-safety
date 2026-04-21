@@ -1,21 +1,18 @@
 ## Why
 
-- `main` still fails the `CI` workflow after `7.0.14` because several unit tests no longer match the current Guardex CLI/output contract.
-- One runtime path is also still wrong: `agent-branch-finish.sh` ignores `branch.<agent>.guardexBase` and falls back to `dev`, which breaks `main`-only finish flows.
+- `origin/main` already absorbed the earlier branch-start/finish and doctor parity fixes, but one `codex-agent` fallback regression still remains.
+- When `codex-agent` falls back to a direct worktree start in repos whose `origin` is only a local/file remote, it still tries the PR auto-finish path and waits on a merge surface that does not exist.
 
 ## What Changes
 
-- Make `agent-branch-finish.sh` and its install template prefer stored `guardexBase` branch metadata before falling back to repo defaults.
-- Make `agent-branch-start.sh` and its install template print the resolved base branch in the suggested finish command instead of hardcoding `dev`.
-- Update focused test expectations to the current Guardex naming and status/output contract (`agent/codex/...`, `scripts/*`, current self-update entrypoint behavior, and current doctor reporting text).
+- Make `scripts/codex-agent.sh` and its install template skip PR auto-finish when the repo only has a local/file-backed `origin`, keeping the sandbox branch/worktree instead of entering `--wait-for-merge`.
+- Keep the fallback regression coverage aligned with the actual branch-owner slug emitted by the runtime instead of hardcoding `agent/codex/...`.
 
 ## Impact
 
 - Affected runtime surfaces:
-  - `scripts/agent-branch-start.sh`
-  - `scripts/agent-branch-finish.sh`
-  - matching template scripts
+  - `scripts/codex-agent.sh`
+  - `templates/scripts/codex-agent.sh`
 - Affected regression coverage:
   - `test/install.test.js`
-  - `test/metadata.test.js`
-- Risk is narrow and limited to branch-finish base resolution plus CLI/test expectation parity.
+- Risk is narrow and limited to local-remote `codex-agent` auto-finish detection plus fallback test expectation parity.

@@ -372,6 +372,17 @@ has_origin_remote() {
   git -C "$repo_root" remote get-url origin >/dev/null 2>&1
 }
 
+origin_remote_supports_pr_finish() {
+  local origin_url
+  origin_url="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+  case "$origin_url" in
+    ''|/*|./*|../*|file://*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 resolve_worktree_base_branch() {
   local _wt="$1"
   if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -n "$BASE_BRANCH" ]]; then
@@ -685,7 +696,12 @@ run_finish_flow() {
       echo "[codex-agent] Auto-finish requires GitHub CLI for PR flow; command not found: ${GUARDEX_GH_BIN:-gh}" >&2
       return 2
     fi
-    finish_args+=(--via-pr)
+    if origin_remote_supports_pr_finish; then
+      finish_args+=(--via-pr)
+    else
+      echo "[codex-agent] Origin remote does not provide a mergeable PR surface; skipping auto-finish merge/PR pipeline." >&2
+      return 2
+    fi
   else
     echo "[codex-agent] No origin remote detected; skipping auto-finish merge/PR pipeline." >&2
     return 2
