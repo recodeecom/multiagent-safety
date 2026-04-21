@@ -1,4 +1,4 @@
-# GuardeX branch sync feature spec (pre-implementation)
+# GitGuardex branch sync feature spec (pre-implementation)
 
 Status: draft
 Scope: CLI UX + behavior spec + test matrix for keeping `agent/*` branches synced with `origin/dev` safely.

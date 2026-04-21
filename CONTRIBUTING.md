@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for contributing to `GuardeX`.
+Thanks for contributing to `GitGuardex`.
 
 ## Development setup
 

@@ -116,7 +116,7 @@ if [[ "$should_require_codex_agent_branch" == "1" && "${GUARDEX_ALLOW_CODEX_ON_N
 
       cat >&2 <<'MSG'
 [guardex-preedit-guard] Codex edit/commit detected on a protected branch.
-GuardeX requires Codex work to run from an isolated agent/* branch.
+GitGuardex requires Codex work to run from an isolated agent/* branch.
 Start the sub-branch/worktree with:
   bash scripts/codex-agent.sh "<task-or-plan>" "<agent-name>"
 Or manually:

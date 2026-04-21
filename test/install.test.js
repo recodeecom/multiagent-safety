@@ -191,7 +191,7 @@ function seedReleasePackageManifest(repoDir, overrides = {}) {
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   const mergedPackageJson = {
     ...packageJson,
-    name: packageJson.name || '@imdeadpool/guardex',
+    name: packageJson.name || '@imdeadpool/gitguardex',
     version: cliVersion,
     repository: {
       type: 'git',
@@ -2447,7 +2447,7 @@ if [[ "$1" == "list" ]]; then
   echo '{"dependencies":{"oh-my-codex":{},"@fission-ai/openspec":{}}}'
   exit 0
 fi
-if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/guardex@latest" ]]; then
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/gitguardex@latest" ]]; then
   echo "updated" > "${markerPath}"
   exit 0
 fi
@@ -2472,11 +2472,11 @@ exit 1
 test('self-update verifies on-disk version after @latest install and retries with pinned version when stale', () => {
   const repoDir = initRepo();
   const fakeGlobalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-fake-global-root-'));
-  const installedPkgDir = path.join(fakeGlobalRoot, '@imdeadpool', 'guardex');
+  const installedPkgDir = path.join(fakeGlobalRoot, '@imdeadpool', 'gitguardex');
   fs.mkdirSync(installedPkgDir, { recursive: true });
   fs.writeFileSync(
     path.join(installedPkgDir, 'package.json'),
-    JSON.stringify({ name: '@imdeadpool/guardex', version: cliVersion }),
+    JSON.stringify({ name: '@imdeadpool/gitguardex', version: cliVersion }),
     'utf8',
   );
   const markerLatest = path.join(repoDir, '.npm-at-latest-called');
@@ -2494,15 +2494,15 @@ if [[ "$1" == "root" && "$2" == "-g" ]]; then
   echo "${fakeGlobalRoot}"
   exit 0
 fi
-if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/guardex@latest" ]]; then
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/gitguardex@latest" ]]; then
   touch "${markerLatest}"
   # Simulate the npm quirk: report success without rewriting the on-disk package.json.
   exit 0
 fi
-if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/guardex@9.9.9" ]]; then
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/gitguardex@9.9.9" ]]; then
   touch "${markerPinned}"
   # Pinned retry actually advances the on-disk version.
-  printf '%s' '{"name":"@imdeadpool/guardex","version":"9.9.9"}' > "${installedPkgDir}/package.json"
+  printf '%s' '{"name":"@imdeadpool/gitguardex","version":"9.9.9"}' > "${installedPkgDir}/package.json"
   exit 0
 fi
 echo "unexpected npm args: $*" >&2
@@ -2527,14 +2527,14 @@ exit 1
 test('self-update restarts into the installed CLI after a successful on-disk upgrade', () => {
   const repoDir = initRepo();
   const fakeGlobalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-fake-global-root-'));
-  const installedPkgDir = path.join(fakeGlobalRoot, '@imdeadpool', 'guardex');
+  const installedPkgDir = path.join(fakeGlobalRoot, '@imdeadpool', 'gitguardex');
   const installedBinDir = path.join(installedPkgDir, 'bin');
   const reexecMarker = path.join(repoDir, '.self-update-reexec-called');
   fs.mkdirSync(installedBinDir, { recursive: true });
   fs.writeFileSync(
     path.join(installedPkgDir, 'package.json'),
     JSON.stringify({
-      name: '@imdeadpool/guardex',
+      name: '@imdeadpool/gitguardex',
       version: '9.9.9',
       bin: { gx: 'bin/multiagent-safety.js' },
     }),
@@ -2562,7 +2562,7 @@ if [[ "$1" == "root" && "$2" == "-g" ]]; then
   echo "${fakeGlobalRoot}"
   exit 0
 fi
-if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/guardex@latest" ]]; then
+if [[ "$1" == "i" && "$2" == "-g" && "$3" == "@imdeadpool/gitguardex@latest" ]]; then
   exit 0
 fi
 echo "unexpected npm args: $*" >&2
@@ -2651,7 +2651,7 @@ test('status --json returns cli, services, and repo summary', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const parsed = JSON.parse(result.stdout);
-  assert.equal(parsed.cli.name, '@imdeadpool/guardex');
+  assert.equal(parsed.cli.name, '@imdeadpool/gitguardex');
   assert.equal(typeof parsed.cli.version, 'string');
   assert.equal(Array.isArray(parsed.services), true);
   const claudeService = parsed.services.find((service) => service.name === 'oh-my-claudecode');
@@ -4535,7 +4535,7 @@ test('prompt outputs AI setup instructions', () => {
   const repoDir = initRepo();
   const result = runNode(['prompt'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /npm i -g @imdeadpool\/guardex/);
+  assert.match(result.stdout, /npm i -g @imdeadpool\/gitguardex/);
   assert.match(result.stdout, /GitGuardex \(gx\) setup checklist/);
   assert.match(result.stdout, /gx setup/);
   assert.match(result.stdout, /gx doctor/);
@@ -4552,7 +4552,7 @@ test('prompt --exec outputs command-only checklist', () => {
   const repoDir = initRepo();
   const result = runNode(['prompt', '--exec'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /^npm i -g @imdeadpool\/guardex/m);
+  assert.match(result.stdout, /^npm i -g @imdeadpool\/gitguardex/m);
   assert.match(result.stdout, /^gh --version/m);
   assert.match(result.stdout, /^gx setup$/m);
   assert.match(result.stdout, /^gx doctor$/m);
@@ -4575,7 +4575,7 @@ test('deprecated copy-commands alias still works and warns', () => {
   const repoDir = initRepo();
   const result = runNode(['copy-commands'], repoDir);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /^npm i -g @imdeadpool\/guardex/m);
+  assert.match(result.stdout, /^npm i -g @imdeadpool\/gitguardex/m);
   assert.match(result.stderr, /'copy-commands' is deprecated/);
   assert.match(result.stderr, /gx prompt --exec/);
 });

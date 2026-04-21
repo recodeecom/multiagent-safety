@@ -16,11 +16,11 @@
 <text x="24" y="80" class="m">
 <tspan fill="#7ee787" font-weight="600">❯</tspan>
 <tspan fill="#c9d1d9" dx="8">npm i -g </tspan>
-<tspan fill="#ffa657">@imdeadpool/guardex</tspan>
+<tspan fill="#ffa657">@imdeadpool/gitguardex</tspan>
 </text>
 <text x="24" y="108" class="mm" fill="#58a6ff">added 47 packages in 3.2s</text>
 <text x="24" y="128" class="mm" fill="#7d8590">
-<tspan>+ @imdeadpool/guardex@</tspan>
+<tspan>+ @imdeadpool/gitguardex@</tspan>
 <tspan fill="#d2a8ff">7.0.16</tspan>
 </text>
 <text x="24" y="172" class="m">

@@ -9,13 +9,13 @@
   </g>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="34" fill="#F9FAFB">
-    <text x="36" y="126">[guardex] CLI: guardex/0.4.7 linux-x64 node-v22.22.0</text>
-    <text x="36" y="170">[guardex] Global services:</text>
+    <text x="36" y="126">[gitguardex] CLI: gitguardex/0.4.7 linux-x64 node-v22.22.0</text>
+    <text x="36" y="170">[gitguardex] Global services:</text>
     <text x="72" y="214">- ● oh-my-codex: active</text>
     <text x="72" y="258">- ● @fission-ai/openspec: active</text>
-    <text x="36" y="302">[guardex] Repo safety service: ● active.</text>
-    <text x="36" y="346">[guardex] Repo: /home/deadpool/YOUREPO</text>
-    <text x="36" y="390">[guardex] Branch: ksskkfb02</text>
+    <text x="36" y="302">[gitguardex] Repo safety service: ● active.</text>
+    <text x="36" y="346">[gitguardex] Repo: /home/deadpool/YOUREPO</text>
+    <text x="36" y="390">[gitguardex] Branch: ksskkfb02</text>
     <text x="36" y="434" fill="#06B6D4">guardex-tools logs:</text>
 
     <text x="72" y="478">├─ USAGE</text>

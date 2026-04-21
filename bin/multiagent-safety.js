@@ -11,6 +11,7 @@ const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 const TOOL_NAME = 'gitguardex';
 const SHORT_TOOL_NAME = 'gx';
 const LEGACY_NAMES = ['guardex', 'multiagent-safety'];
+const GLOBAL_INSTALL_COMMAND = `npm i -g ${packageJson.name}`;
 const OPENSPEC_PACKAGE = '@fission-ai/openspec';
 const OMC_PACKAGE = 'oh-my-claude-sisyphus';
 const OMC_REPO_URL = 'https://github.com/Yeachan-Heo/oh-my-claudecode';
@@ -281,7 +282,7 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['prompt', 'Print AI setup checklist (--exec, --snippet)'],
   ['report', 'Security/safety reports (e.g. OpenSSF scorecard)'],
   ['help', 'Show this help output'],
-  ['version', 'Print GuardeX version'],
+  ['version', 'Print GitGuardex version'],
 ];
 const DEPRECATED_COMMAND_ALIASES = new Map([
   ['init', { target: 'setup', hint: 'gx setup' }],
@@ -315,7 +316,7 @@ function defaultAgentWorktreeRelativeDir(env = process.env) {
 
 const AI_SETUP_PROMPT = `GitGuardex (gx) setup checklist for Codex/Claude in this repo.
 
-1) Install:    npm i -g @imdeadpool/guardex && gh --version
+1) Install:    ${GLOBAL_INSTALL_COMMAND} && gh --version
 2) Bootstrap:  gx setup
 3) Repair:     gx doctor
 4) Task loop:  bash scripts/codex-agent.sh "<task>" "<agent>"
@@ -330,7 +331,7 @@ const AI_SETUP_PROMPT = `GitGuardex (gx) setup checklist for Codex/Claude in thi
 12) Fork sync:  install https://github.com/apps/pull + cp .github/pull.yml.example .github/pull.yml
 `;
 
-const AI_SETUP_COMMANDS = `npm i -g @imdeadpool/guardex
+const AI_SETUP_COMMANDS = `${GLOBAL_INSTALL_COMMAND}
 gh --version
 gx setup
 gx doctor
@@ -2517,7 +2518,7 @@ function runDoctorInSandbox(options, blocked) {
         if (finishResult.stderr) process.stderr.write(finishResult.stderr);
       } else if (finishResult.status === 'failed') {
         console.log(`[${TOOL_NAME}] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
-        console.log(`[guardex] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
+        console.log(`[${TOOL_NAME}] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
         if (finishResult.stdout) process.stdout.write(finishResult.stdout);
         if (finishResult.stderr) process.stderr.write(finishResult.stderr);
       } else {

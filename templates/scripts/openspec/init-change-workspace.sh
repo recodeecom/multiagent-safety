@@ -60,8 +60,8 @@ Describe the change in a sentence or two. Commit message is the spec of record.
 - [ ] Confirm sandbox worktree is gone (\`git worktree list\`, \`git branch -a\`).
 NOTESEOF
   fi
-  echo "[guardex] OpenSpec change workspace (minimal) ready: ${CHANGE_DIR}"
-  echo "[guardex] Notes-only scaffold: ${CHANGE_DIR}/notes.md"
+  echo "[gitguardex] OpenSpec change workspace (minimal) ready: ${CHANGE_DIR}"
+  echo "[gitguardex] Notes-only scaffold: ${CHANGE_DIR}/notes.md"
   exit 0
 fi
 
@@ -129,5 +129,5 @@ The system SHALL enforce ${CAPABILITY_SLUG} behavior as defined by this change.
 SPECEOF
 fi
 
-echo "[guardex] OpenSpec change workspace ready: ${CHANGE_DIR}"
-echo "[guardex] OpenSpec change spec scaffold: ${SPEC_DIR}/spec.md"
+echo "[gitguardex] OpenSpec change workspace ready: ${CHANGE_DIR}"
+echo "[gitguardex] OpenSpec change spec scaffold: ${SPEC_DIR}/spec.md"

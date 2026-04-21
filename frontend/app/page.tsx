@@ -126,7 +126,7 @@ interface ModeGuide {
 }
 
 const MODE_ORDER: ModeKey[] = ['execute', 'plan', 'merge', 'installation']
-const INSTALL_COMMAND = 'npm i -g @imdeadpool/guardex'
+const INSTALL_COMMAND = 'npm i -g @imdeadpool/gitguardex'
 const PRODUCT_LABEL = 'Recodee'
 const EDITOR_LABEL = 'recodee — VS Code'
 
@@ -1669,8 +1669,9 @@ const INSTALL_STEPS: TutorialStep[] = [
     label: 'Install the CLI globally',
     description: (
       <>
-        GuardeX ships as a single npm package. Install once and you get the <code>gx</code>,{' '}
-        <code>guardex</code>, and <code>multiagent-safety</code> binaries on your PATH.
+        GitGuardex ships as a single npm package. Install once and you get the <code>gx</code>,{' '}
+        <code>gitguardex</code>, <code>guardex</code> (legacy), and <code>multiagent-safety</code>{' '}
+        binaries on your PATH.
       </>
     ),
     messages: [
@@ -1696,7 +1697,7 @@ const INSTALL_STEPS: TutorialStep[] = [
         sub: '· global install',
         elapsed: '3.8s',
         rows: [
-          { kind: 'shell', label: 'bash:', value: 'npm i -g @imdeadpool/guardex' },
+          { kind: 'shell', label: 'bash:', value: 'npm i -g @imdeadpool/gitguardex' },
         ],
       },
     ],
@@ -1711,11 +1712,11 @@ const INSTALL_STEPS: TutorialStep[] = [
     ],
     worktrees: [],
     codeLines: [
-      { parts: [c('$ npm i -g @imdeadpool/guardex', 'c')] },
+      { parts: [c('$ npm i -g @imdeadpool/gitguardex', 'c')] },
       { parts: [c('added 1 package in 3.8s')] },
       { parts: [c('')] },
       { parts: [c('$ gx --version')] },
-      { parts: [c('guardex 7.0.6', 'f')] },
+      { parts: [c('gitguardex 7.0.16', 'f')] },
     ],
     statusBranch: 'dev',
   },
@@ -1724,7 +1725,7 @@ const INSTALL_STEPS: TutorialStep[] = [
     label: 'Audit the repo with gx doctor',
     description: (
       <>
-        <code>gx doctor</code> scans for the guardrails GuardeX needs: git hooks, file-lock
+        <code>gx doctor</code> scans for the guardrails GitGuardex needs: git hooks, file-lock
         scripts, OpenSpec workspace, and ignore patterns. It reports what&rsquo;s missing and offers
         to repair.
       </>
@@ -1759,7 +1760,7 @@ const INSTALL_STEPS: TutorialStep[] = [
     worktrees: [],
     codeLines: [
       { parts: [c('$ gx doctor', 'c')] },
-      { parts: [c('[guardex] Doctor/fix: ', 'n'), c('/home/you/your-repo', 's')] },
+      { parts: [c('[gitguardex] Doctor/fix: ', 'n'), c('/home/you/your-repo', 's')] },
       { parts: [c('  - unchanged    .omx')] },
       { parts: [c('  - unchanged    .omx/state')] },
       { parts: [c('  - unchanged    .omx/logs')] },
@@ -1778,12 +1779,12 @@ const INSTALL_STEPS: TutorialStep[] = [
       { parts: [c('  - unchanged    .githooks/post-checkout')] },
       { parts: [c('  - unchanged    .gitignore')] },
       { parts: [c('  - hooksPath    set core.hooksPath=.githooks')] },
-      { parts: [c('[guardex] Scan target: ', 'n'), c('/home/you/your-repo', 's')] },
-      { parts: [c('[guardex] Branch: ', 'n'), c('dev', 'f')] },
-      { parts: [c('[guardex] '), c('✅ No safety issues detected.', 'f')] },
+      { parts: [c('[gitguardex] Scan target: ', 'n'), c('/home/you/your-repo', 's')] },
+      { parts: [c('[gitguardex] Branch: ', 'n'), c('dev', 'f')] },
+      { parts: [c('[gitguardex] '), c('✅ No safety issues detected.', 'f')] },
       {
         parts: [
-          c('[guardex] Auto-finish sweep (base=dev): ', 'n'),
+          c('[gitguardex] Auto-finish sweep (base=dev): ', 'n'),
           c('attempted=5', 'f'),
           c(', completed=0, skipped=15, failed=5'),
         ],
@@ -1791,7 +1792,7 @@ const INSTALL_STEPS: TutorialStep[] = [
       { parts: [c('  [skip] agent/claude-16-11/… already merged into dev.', 'c')] },
       { parts: [c('  [skip] agent/codex-20-20/… already merged into dev.', 'c')] },
       { parts: [c('  [fail] agent/…/rebase-in-progress → resolve conflicts.', 'c')] },
-      { parts: [c('[guardex] '), c('✅ Repo is fully safe.', 'f')] },
+      { parts: [c('[gitguardex] '), c('✅ Repo is fully safe.', 'f')] },
     ],
     statusBranch: 'dev',
   },
@@ -1838,7 +1839,7 @@ const INSTALL_STEPS: TutorialStep[] = [
       { parts: [c('scaffolding OpenSpec → openspec/'), c(' ✓', 'f')] },
       { parts: [c('protecting main, dev branches'), c(' ✓', 'f')] },
       { parts: [c('')] },
-      { parts: [c('GuardeX ready. Start your first agent with `gx start`.', 'p')] },
+      { parts: [c('GitGuardex ready. Start your first agent with `gx start`.', 'p')] },
     ],
     statusBranch: 'dev',
   },
@@ -1934,7 +1935,7 @@ const INSTALL_STEPS: TutorialStep[] = [
         kind: 'assistant',
         content: (
           <>
-            Work done. Firing the full finish chain — GuardeX will commit, push, PR, wait for merge,
+            Work done. Firing the full finish chain — GitGuardex will commit, push, PR, wait for merge,
             and clean the sandbox.
           </>
         ),
@@ -2026,7 +2027,7 @@ const MODE_GUIDES: Record<ModeKey, ModeGuide> = {
   },
   merge: {
     eyebrow: 'Conflict recovery lane',
-    title: 'Show how GuardeX merges without trashing either branch',
+    title: 'Show how GitGuardex merges without trashing either branch',
     summary:
       'Merge mode visualizes the recovery path when two PRs collide. A dedicated merge lane appears, reads both intents, writes a semantic resolution, and proves it with tests.',
     highlights: [
@@ -2146,7 +2147,7 @@ const getTakeawayCopy = (mode: ModeKey, step: TutorialStep): string => {
     if (step.worktrees.length === 1) {
       return 'Once the sandbox exists, every visible file mutation becomes reviewable and reversible.'
     }
-    return 'The execute demo starts by proving that GuardeX does not skip straight to writing code.'
+    return 'The execute demo starts by proving that GitGuardex does not skip straight to writing code.'
   }
 
   if (mode === 'plan') {
@@ -2740,7 +2741,7 @@ export default function Home() {
               </div>
               <div className="brand-copy">
                 <div className="brand-eyebrow">guardian workflow</div>
-                <div className="title">GuardeX</div>
+                <div className="title">GitGuardex</div>
                 <div className="sub">
                   the Guardian T-Rex for your repo ·{' '}
                   <a

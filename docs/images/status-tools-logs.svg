@@ -15,15 +15,15 @@
   <text x="126" y="57" fill="#9CA3AF" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="20">gx status</text>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace" font-size="22" fill="#E5E7EB">
-    <text x="48" y="106">[guardex] CLI: @imdeadpool/guardex/5.0.2 linux-x64 node-v22.22.0</text>
-    <text x="48" y="140">[guardex] Global services:</text>
+    <text x="48" y="106">[gitguardex] CLI: @imdeadpool/gitguardex/5.0.2 linux-x64 node-v22.22.0</text>
+    <text x="48" y="140">[gitguardex] Global services:</text>
     <text x="72" y="174">- ● oh-my-codex: active</text>
     <text x="72" y="208">- ● @fission-ai/openspec: active</text>
     <text x="72" y="242">- ● @imdeadpool/codex-account-switcher: active</text>
-    <text x="48" y="276">[guardex] Repo safety service: ● active.</text>
-    <text x="48" y="310">[guardex] Repo: /path/to/your/repo</text>
-    <text x="48" y="344">[guardex] Branch: agent/your-branch</text>
-    <text x="48" y="378">guardex-tools logs:</text>
+    <text x="48" y="276">[gitguardex] Repo safety service: ● active.</text>
+    <text x="48" y="310">[gitguardex] Repo: /path/to/your/repo</text>
+    <text x="48" y="344">[gitguardex] Branch: agent/your-branch</text>
+    <text x="48" y="378">gitguardex-tools logs:</text>
 
     <text x="72" y="412" fill="#93C5FD">├─ USAGE</text>
     <text x="72" y="446" fill="#93C5FD">│</text>
@@ -31,7 +31,7 @@
 
     <text x="72" y="480" fill="#93C5FD">├─ COMMANDS</text>
     <text x="72" y="514" fill="#93C5FD">│</text>
-    <text x="100" y="514">status                Show GuardeX CLI + service health without modifying files</text>
+    <text x="100" y="514">status                Show GitGuardex CLI + service health without modifying files</text>
     <text x="72" y="548" fill="#93C5FD">│</text>
     <text x="100" y="548">setup                 Install + repair guardrails in a git repo (supports --no-gitignore)</text>
     <text x="72" y="582" fill="#93C5FD">│</text>

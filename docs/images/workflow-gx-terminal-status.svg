@@ -16,7 +16,7 @@
   </g>
 
   <g font-family="DejaVu Sans Mono, Liberation Mono, monospace" font-size="24" fill="#F8FAFC">
-    <text x="28" y="142">[gitguardex] CLI: @imdeadpool/guardex/7.0.16 linux-x64 node-v22.22.0</text>
+    <text x="28" y="142">[gitguardex] CLI: @imdeadpool/gitguardex/7.0.16 linux-x64 node-v22.22.0</text>
     <text x="28" y="182">[gitguardex] Global services:</text>
 
     <text x="56" y="222">-</text>
@@ -68,13 +68,13 @@
     <text x="84" y="1260">prompt   Print AI setup checklist (--exec, --snippet)</text>
     <text x="84" y="1300">report   Security/safety reports (e.g. OpenSSF scorecard)</text>
     <text x="84" y="1340">help     Show this help output</text>
-    <text x="84" y="1380">version  Print Guardex version</text>
+    <text x="84" y="1380">version  Print GitGuardex version</text>
 
     <text x="52" y="1436">└─ AGENT BOT</text>
     <text x="84" y="1476">agents  Start/stop review + cleanup bots for this repo</text>
 
     <text x="52" y="1532">└─ REPO TOGGLE</text>
-    <text x="84" y="1572">Set repo-root .env: GUARDEX_ON=0 disables Guardex, GUARDEX_ON=1 enables it again</text>
+    <text x="84" y="1572">Set repo-root .env: GUARDEX_ON=0 disables GitGuardex, GUARDEX_ON=1 enables it again</text>
     <text x="52" y="1616">└─ Try 'gitguardex doctor' for one-step repair + verification.</text>
   </g>
 </svg>
