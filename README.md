@@ -20,6 +20,8 @@ I was running ~30 Codex agents in parallel and hit a wall: they kept working on 
 
 GitGuardex exists to stop that loop. Every agent gets its own worktree, claims the files it's touching, and can't clobber files another agent has claimed. Your local branch stays clean; agents stay in their lanes.
 
+### Solution
+
 ```mermaid
 flowchart LR
     A[Agent A adds assertions in a shared test] --> S[Several agents touch the same files]
@@ -33,6 +35,8 @@ flowchart LR
     H --> I[Regression risk and flaky fixes grow]
     I --> S
 ```
+
+### Dashboard
 
 ![Multi-agent dashboard example](https://raw.githubusercontent.com/recodeee/gitguardex/main/docs/images/dashboard-multi-agent.png)
 
