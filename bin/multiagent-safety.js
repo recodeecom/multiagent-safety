@@ -64,7 +64,7 @@ const REQUIRED_SYSTEM_TOOLS = [
   },
 ];
 const MAINTAINER_RELEASE_REPO = path.resolve(
-  process.env.GUARDEX_RELEASE_REPO || '/tmp/multiagent-safety',
+  process.env.GUARDEX_RELEASE_REPO || path.resolve(__dirname, '..'),
 );
 const NPM_BIN = process.env.GUARDEX_NPM_BIN || 'npm';
 const OPENSPEC_BIN = process.env.GUARDEX_OPENSPEC_BIN || 'openspec';
@@ -252,6 +252,7 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['sync', 'Sync agent branches with origin/<base>'],
   ['finish', 'Commit + PR + merge completed agent branches (--all, --branch)'],
   ['cleanup', 'Prune merged/stale agent branches and worktrees'],
+  ['release', 'Create or update the current GitHub release with README-generated notes'],
   ['agents', 'Start/stop repo-scoped review + cleanup bots'],
   ['prompt', 'Print AI setup checklist (--exec, --snippet)'],
   ['report', 'Security/safety reports (e.g. OpenSSF scorecard)'],
@@ -2587,6 +2588,19 @@ function inferGithubRepoFromOrigin(repoRoot) {
   return `github.com/${slug}`;
 }
 
+function inferGithubRepoSlug(rawValue) {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/github\.com[:/](.+?)(?:\.git)?$/i);
+  if (!match) return '';
+  const slug = String(match[1] || '')
+    .replace(/^\/+/, '')
+    .replace(/^github\.com\//i, '')
+    .trim();
+  if (!slug || !slug.includes('/')) return '';
+  return slug;
+}
+
 function resolveScorecardRepo(repoRoot, explicitRepo) {
   if (explicitRepo) {
     return explicitRepo.trim();
@@ -3941,6 +3955,17 @@ function parseVersionString(version) {
   ];
 }
 
+function compareParsedVersions(left, right) {
+  if (!left || !right) return 0;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const leftValue = left[index] || 0;
+    const rightValue = right[index] || 0;
+    if (leftValue > rightValue) return 1;
+    if (leftValue < rightValue) return -1;
+  }
+  return 0;
+}
+
 function isNewerVersion(latest, current) {
   const latestParts = parseVersionString(latest);
   const currentParts = parseVersionString(current);
@@ -3949,11 +3974,7 @@ function isNewerVersion(latest, current) {
     return String(latest || '').trim() !== String(current || '').trim();
   }
 
-  for (let index = 0; index < latestParts.length; index += 1) {
-    if (latestParts[index] > currentParts[index]) return true;
-    if (latestParts[index] < currentParts[index]) return false;
-  }
-  return false;
+  return compareParsedVersions(latestParts, currentParts) > 0;
 }
 
 function parseNpmVersionOutput(stdout) {
@@ -5835,6 +5856,156 @@ function ensureCleanWorkingTree(repoRoot) {
   }
 }
 
+function readReleaseRepoPackageJson(repoRoot) {
+  const manifestPath = path.join(repoRoot, 'package.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Release blocked: package.json missing in ${repoRoot}`);
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Release blocked: unable to parse package.json in ${repoRoot}: ${error.message}`);
+  }
+}
+
+function resolveReleaseGithubRepo(repoRoot) {
+  const releasePackageJson = readReleaseRepoPackageJson(repoRoot);
+  const fromManifest = inferGithubRepoSlug(
+    releasePackageJson.repository &&
+      (releasePackageJson.repository.url || releasePackageJson.repository),
+  );
+  if (fromManifest) {
+    return fromManifest;
+  }
+
+  const fromOrigin = inferGithubRepoSlug(readGitConfig(repoRoot, 'remote.origin.url'));
+  if (fromOrigin) {
+    return fromOrigin;
+  }
+
+  throw new Error(
+    'Release blocked: unable to resolve GitHub repo from package.json repository URL or origin remote.',
+  );
+}
+
+function readRepoReadme(repoRoot) {
+  const readmePath = path.join(repoRoot, 'README.md');
+  if (!fs.existsSync(readmePath)) {
+    throw new Error(`Release blocked: README.md missing in ${repoRoot}`);
+  }
+  return fs.readFileSync(readmePath, 'utf8');
+}
+
+function parseReadmeReleaseEntries(readmeContent) {
+  const releaseNotesIndex = String(readmeContent || '').indexOf('## Release notes');
+  if (releaseNotesIndex < 0) {
+    throw new Error('Release blocked: README.md is missing the "## Release notes" section');
+  }
+
+  const releaseNotesContent = String(readmeContent || '').slice(releaseNotesIndex);
+  const entries = [];
+  const lines = releaseNotesContent.split(/\r?\n/);
+  let currentTag = '';
+  let currentLines = [];
+
+  function flushEntry() {
+    if (!currentTag) {
+      return;
+    }
+    const body = currentLines.join('\n').trim();
+    if (body) {
+      entries.push({ tag: currentTag, body, version: parseVersionString(currentTag) });
+    }
+    currentTag = '';
+    currentLines = [];
+  }
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^###\s+(v\d+\.\d+\.\d+)\s*$/);
+    if (headingMatch) {
+      flushEntry();
+      currentTag = headingMatch[1];
+      continue;
+    }
+
+    if (!currentTag) {
+      continue;
+    }
+
+    if (/^<\/details>\s*$/.test(line) || /^##\s+/.test(line)) {
+      flushEntry();
+      continue;
+    }
+
+    currentLines.push(line);
+  }
+
+  flushEntry();
+
+  if (entries.length === 0) {
+    throw new Error('Release blocked: README.md did not yield any versioned release-note sections');
+  }
+
+  return entries;
+}
+
+function resolvePreviousPublishedReleaseTag(repoSlug, currentTag) {
+  const result = run(GH_BIN, ['release', 'list', '--repo', repoSlug, '--limit', '20'], {
+    timeout: 20_000,
+  });
+  if (result.error) {
+    throw new Error(`Release blocked: unable to run '${GH_BIN} release list': ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const details = (result.stderr || result.stdout || '').trim();
+    throw new Error(`Release blocked: unable to list GitHub releases.${details ? `\n${details}` : ''}`);
+  }
+
+  const tags = String(result.stdout || '')
+    .split('\n')
+    .map((line) => line.split('\t')[0].trim())
+    .filter(Boolean);
+
+  return tags.find((tag) => tag !== currentTag) || '';
+}
+
+function selectReleaseEntriesForWindow(entries, currentTag, previousTag) {
+  const currentVersion = parseVersionString(currentTag);
+  if (!currentVersion) {
+    throw new Error(`Release blocked: invalid current version tag '${currentTag}'`);
+  }
+  const previousVersion = previousTag ? parseVersionString(previousTag) : null;
+
+  const selected = entries.filter((entry) => {
+    if (!entry.version) return false;
+    if (compareParsedVersions(entry.version, currentVersion) > 0) return false;
+    if (!previousVersion) return entry.tag === currentTag;
+    return compareParsedVersions(entry.version, previousVersion) > 0;
+  });
+
+  if (!selected.some((entry) => entry.tag === currentTag)) {
+    throw new Error(`Release blocked: README.md is missing release notes for ${currentTag}`);
+  }
+
+  return selected;
+}
+
+function renderGeneratedReleaseNotes(entries, currentTag, previousTag) {
+  const intro = previousTag ? `Changes since ${previousTag}.` : `Changes in ${currentTag}.`;
+  const sections = entries
+    .map((entry) => `### ${entry.tag}\n${entry.body}`)
+    .join('\n\n');
+  return `GitGuardex ${currentTag}\n\n${intro}\n\n${sections}`;
+}
+
+function buildReleaseNotesFromReadme(repoRoot, currentTag, previousTag) {
+  const readme = readRepoReadme(repoRoot);
+  const entries = parseReadmeReleaseEntries(readme);
+  const selected = selectReleaseEntriesForWindow(entries, currentTag, previousTag);
+  return renderGeneratedReleaseNotes(selected, currentTag, previousTag);
+}
+
 function release(rawArgs) {
   if (rawArgs.length > 0) {
     throw new Error(`Unknown option: ${rawArgs[0]}`);
@@ -5850,13 +6021,74 @@ function release(rawArgs) {
   ensureMainBranch(repoRoot);
   ensureCleanWorkingTree(repoRoot);
 
-  console.log(`[${TOOL_NAME}] Releasing ${packageJson.name}@${packageJson.version} from ${repoRoot}`);
-  const publishResult = run(NPM_BIN, ['publish'], { cwd: repoRoot, stdio: 'inherit' });
-  if (publishResult.status !== 0) {
-    throw new Error('npm publish failed');
+  if (!isCommandAvailable(GH_BIN)) {
+    throw new Error(`Release blocked: '${GH_BIN}' is not available`);
   }
 
-  console.log(`[${TOOL_NAME}] ✅ Publish complete.`);
+  const ghAuthStatus = run(GH_BIN, ['auth', 'status'], { timeout: 20_000 });
+  if (ghAuthStatus.error) {
+    throw new Error(`Release blocked: unable to run '${GH_BIN} auth status': ${ghAuthStatus.error.message}`);
+  }
+  if (ghAuthStatus.status !== 0) {
+    const details = (ghAuthStatus.stderr || ghAuthStatus.stdout || '').trim();
+    throw new Error(`Release blocked: '${GH_BIN}' auth is unavailable.${details ? `\n${details}` : ''}`);
+  }
+
+  const releasePackageJson = readReleaseRepoPackageJson(repoRoot);
+  const repoSlug = resolveReleaseGithubRepo(repoRoot);
+  const currentTag = `v${releasePackageJson.version}`;
+  const previousTag = resolvePreviousPublishedReleaseTag(repoSlug, currentTag);
+  const notes = buildReleaseNotesFromReadme(repoRoot, currentTag, previousTag);
+  const headCommit = gitRun(repoRoot, ['rev-parse', 'HEAD']).stdout.trim();
+
+  const existingRelease = run(GH_BIN, ['release', 'view', currentTag, '--repo', repoSlug], {
+    timeout: 20_000,
+  });
+  if (existingRelease.error) {
+    throw new Error(`Release blocked: unable to run '${GH_BIN} release view': ${existingRelease.error.message}`);
+  }
+
+  const releaseArgs =
+    existingRelease.status === 0
+      ? ['release', 'edit', currentTag, '--repo', repoSlug, '--title', currentTag, '--notes', notes]
+      : [
+          'release',
+          'create',
+          currentTag,
+          '--repo',
+          repoSlug,
+          '--target',
+          headCommit,
+          '--title',
+          currentTag,
+          '--notes',
+          notes,
+        ];
+
+  console.log(
+    `[${TOOL_NAME}] ${existingRelease.status === 0 ? 'Updating' : 'Creating'} GitHub release ${currentTag} on ${repoSlug}`,
+  );
+  if (previousTag) {
+    console.log(`[${TOOL_NAME}] Aggregating README release notes newer than ${previousTag}.`);
+  } else {
+    console.log(`[${TOOL_NAME}] No earlier published GitHub release found; using only ${currentTag}.`);
+  }
+
+  const releaseResult = run(GH_BIN, releaseArgs, { cwd: repoRoot, timeout: 60_000 });
+  if (releaseResult.error) {
+    throw new Error(`Release blocked: unable to run '${GH_BIN} release': ${releaseResult.error.message}`);
+  }
+  if (releaseResult.status !== 0) {
+    const details = (releaseResult.stderr || releaseResult.stdout || '').trim();
+    throw new Error(`GitHub release command failed.${details ? `\n${details}` : ''}`);
+  }
+
+  const releaseUrl = String(releaseResult.stdout || '').trim();
+  if (releaseUrl) {
+    console.log(releaseUrl);
+  }
+
+  console.log(`[${TOOL_NAME}] ✅ GitHub release ${currentTag} is synced to the README history.`);
   process.exitCode = 0;
 }
 

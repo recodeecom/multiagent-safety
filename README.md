@@ -218,7 +218,14 @@ gx cleanup                # prune merged/stale branches and worktrees
 gx cleanup --watch --interval 60
 gx cleanup --idle-minutes 10
 gx cleanup --watch --once --interval 60
+gx release                # create/update the current GitHub release from README notes
 ```
+
+### Release publishing
+
+`gx release` is the maintainer path for package releases. It reads the versioned sections under `README.md -> Release notes`, finds the last published GitHub release, and writes one grouped GitHub release body covering everything newer than that release and up to the current package version.
+
+That GitHub release then triggers `.github/workflows/release.yml`, which performs the actual `npm publish --provenance --access public` step.
 
 ### Prompts for your agents
 
