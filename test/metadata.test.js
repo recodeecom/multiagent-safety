@@ -72,6 +72,7 @@ test('README documents gx release as README-driven GitHub release writer', () =>
 test('README keeps canonical About copy and problem-solution visuals aligned', () => {
   const readme = fs.readFileSync(readmePath, 'utf8');
   const aboutDescription = fs.readFileSync(aboutDescriptionPath, 'utf8').trim();
+  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
   assert.match(
     readme,
@@ -83,6 +84,7 @@ test('README keeps canonical About copy and problem-solution visuals aligned', (
   );
   assert.match(readme, /\[about_description\.txt\]\(\.\/about_description\.txt\)/);
   assert.match(readme, new RegExp(escapeRegexLiteral(aboutDescription)));
+  assert.equal(pkg.description, aboutDescription);
 });
 
 test('security workflows are present and use pinned GitHub Actions SHAs', () => {
