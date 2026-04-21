@@ -50,6 +50,13 @@ test('README release notes include current package version', () => {
   );
 });
 
+test('README documents gx release as README-driven GitHub release writer', () => {
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  assert.match(readme, /gx release\s+# create\/update the current GitHub release from README notes/);
+  assert.match(readme, /`gx release` is the maintainer path for package releases\./);
+  assert.match(readme, /finds the last published GitHub release, and writes one grouped GitHub release body/);
+});
+
 test('security workflows are present and use pinned GitHub Actions SHAs', () => {
   const workflowDir = path.join(repoRoot, '.github', 'workflows');
   const expected = ['ci.yml', 'release.yml', 'scorecard.yml', 'codeql.yml', 'cr.yml'];

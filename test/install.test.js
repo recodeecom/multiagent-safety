@@ -181,6 +181,22 @@ function seedCommit(repoDir) {
   assert.equal(result.status, 0, result.stderr);
 }
 
+function seedReleasePackageManifest(repoDir, overrides = {}) {
+  const packageJsonPath = path.join(repoDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const mergedPackageJson = {
+    ...packageJson,
+    name: packageJson.name || '@imdeadpool/guardex',
+    version: cliVersion,
+    repository: {
+      type: 'git',
+      url: 'git+https://github.com/recodeee/gitguardex.git',
+    },
+    ...overrides,
+  };
+  fs.writeFileSync(packageJsonPath, `${JSON.stringify(mergedPackageJson, null, 2)}\n`, 'utf8');
+}
+
 function attachOriginRemote(repoDir) {
   return attachOriginRemoteForBranch(repoDir, 'dev');
 }
@@ -2998,13 +3014,8 @@ test('codex-agent restores local branch and falls back to safe worktree start wh
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
   const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
   assert.match(combinedOutput, /Unsafe starter output/);
-<<<<<<< HEAD
-  assert.match(combinedOutput, /\[agent-branch-start\] Created branch: agent\/[^/]+\//);
-  assert.match(combinedOutput, /Origin remote does not provide a mergeable PR surface; skipping auto-finish merge\/PR pipeline/);
-  const launchedBranch = extractCreatedBranch(combinedOutput);
-=======
   assert.match(combinedOutput, /\[agent-branch-start\] Created branch: agent\/planner\//);
->>>>>>> d6a57dd (Align Guardex finish-path regressions with the current workflow contract)
+  assert.match(combinedOutput, /Origin remote does not provide a mergeable PR surface; skipping auto-finish merge\/PR pipeline/);
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
   assert.match(
@@ -3138,7 +3149,7 @@ test('codex-agent keeps dirty sandbox worktrees after session exit', () => {
   assert.equal(fs.existsSync(path.join(launchedCwd, 'codex-dirty.txt')), true);
 });
 
-test('codex-agent waits for PR merge completion and cleans merged sandbox branch/worktree by default', () => {
+test('codex-agent keeps the sandbox when origin cannot provide a mergeable PR surface', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
   attachOriginRemote(repoDir);
@@ -3214,24 +3225,24 @@ exit 1
     },
   );
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
-  assert.match(launch.stdout, /\[codex-agent\] Auto-finish enabled: commit -> push\/PR -> wait for merge -> cleanup\./);
-  assert.match(launch.stdout, /\[codex-agent\] Auto-finish completed for/);
-  assert.match(launch.stdout, /\[codex-agent\] Auto-cleaned sandbox worktree:/);
-  assert.equal(fs.readFileSync(ghMergeState, 'utf8').trim(), '2', 'finish flow should retry merge until checks are ready');
+  const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
+  assert.match(combinedOutput, /\[codex-agent\] Auto-finish enabled: commit -> push\/PR -> wait for merge -> cleanup\./);
+  assert.match(combinedOutput, /\[codex-agent\] Auto-finish skipped for 'agent\/codex\/autofinish-task-/);
+  assert.equal(fs.existsSync(ghMergeState), false, 'merge should not be attempted without a mergeable remote context');
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
-  assert.equal(fs.existsSync(launchedCwd), false, 'auto-finished sandbox should be cleaned by default');
+  assert.equal(fs.existsSync(launchedCwd), true, 'sandbox should stay available for manual finish');
   const launchedBranch = extractCreatedBranch(launch.stdout);
   result = runCmd('git', ['show-ref', '--verify', '--quiet', `refs/heads/${launchedBranch}`], repoDir);
-  assert.notEqual(result.status, 0, 'auto-finished branch should be removed locally by default');
-  result = runCmd('git', ['ls-remote', '--heads', 'origin', launchedBranch], repoDir);
-  assert.equal(result.stdout.trim(), '', 'auto-finished branch should be removed on origin by default');
+  assert.equal(result.status, 0, 'branch should remain available locally for manual finish');
+  assert.match(launch.stdout, /\[codex-agent\] Sandbox worktree kept:/);
+  assert.match(launch.stdout, /\[codex-agent\] If finished, merge with:/);
 
   const launchedArgs = fs.readFileSync(argsMarker, 'utf8').trim();
   assert.match(launchedArgs, /--model gpt-5\.4-mini/);
 });
 
-test('codex-agent still auto-finishes when base branch advances during task run', () => {
+test('codex-agent keeps the sandbox when base branch advances without a mergeable remote context', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
   const originPath = attachOriginRemote(repoDir);
@@ -3317,18 +3328,15 @@ exit 1
     },
   );
   assert.equal(launch.status, 0, launch.stderr || launch.stdout);
-  const sawCommitRetry = /Auto-commit retry: .*behind origin\/dev/.test(launch.stdout);
-  const sawFinishSync = /\[agent-sync-guard\] Auto-syncing .* onto origin\/dev before finish/.test(launch.stdout);
-  assert.equal(
-    sawCommitRetry || sawFinishSync,
-    true,
-    `expected sync retry evidence in output, got:\n${launch.stdout}`,
-  );
-  assert.match(launch.stdout, /\[codex-agent\] Auto-finish completed for/);
-  assert.match(launch.stdout, /\[codex-agent\] Auto-cleaned sandbox worktree:/);
+  const combinedOutput = `${launch.stdout}\n${launch.stderr}`;
+  assert.match(combinedOutput, /\[codex-agent\] Auto-committed sandbox changes on 'agent\/codex\/autocommit-retry-task-/);
+  assert.match(combinedOutput, /\[codex-agent\] Auto-finish skipped for 'agent\/codex\/autocommit-retry-task-/);
+  assert.equal(fs.existsSync(path.join(originAdvanceClone, 'base-advance.txt')), true, 'test should still advance the base branch during codex execution');
 
   const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
-  assert.equal(fs.existsSync(launchedCwd), false, 'auto-finished sandbox should be cleaned by default');
+  assert.equal(fs.existsSync(launchedCwd), true, 'sandbox should stay available for manual finish');
+  assert.equal(fs.existsSync(path.join(launchedCwd, 'codex-autocommit-retry.txt')), true);
+  assert.match(launch.stdout, /\[codex-agent\] If finished, merge with:/);
 });
 
 test('codex-agent surfaces commit-hook failures so unfinished sandboxes are actionable', () => {
@@ -4737,60 +4745,214 @@ test('release fails when git status is dirty', () => {
   assert.match(result.stderr, /working tree is not clean/);
 });
 
-test('release runs npm publish when guardrails pass', () => {
+test('release creates a GitHub release with README-generated notes', () => {
   const repoDir = initRepoOnBranch('main');
-  seedCommit(repoDir);
-
-  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-fake-bin-'));
-  const markerPath = path.join(repoDir, '.npm-publish-called');
-  const fakeNpmPath = path.join(fakeBin, 'npm');
+  seedReleasePackageManifest(repoDir);
   fs.writeFileSync(
-    fakeNpmPath,
-    `#!/usr/bin/env bash\n` +
-      `echo "$@" > "${markerPath}"\n` +
-      `exit 0\n`,
+    path.join(repoDir, 'README.md'),
+    `## Release notes
+
+### v${cliVersion}
+- Current release fix.
+
+### v7.0.14
+- Previous release metadata bump.
+
+### v7.0.13
+- Claude companion naming cleanup.
+`,
     'utf8',
   );
-  fs.chmodSync(fakeNpmPath, 0o755);
+  seedCommit(repoDir);
+
+  const markerPath = path.join(repoDir, '.gh-release-create-called');
+  const fakeGh = createFakeGhScript(`
+if [[ "$1" == "auth" && "$2" == "status" ]]; then
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "list" ]]; then
+  printf 'v7.0.12\\tLatest\\tv7.0.12\\t2026-04-21T01:42:36Z\\n'
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "view" ]]; then
+  exit 1
+fi
+if [[ "$1" == "release" && "$2" == "create" ]]; then
+  printf '%s\\n' "$@" > "${markerPath}"
+  printf '%s\\n' "https://example.test/releases/tag/v${cliVersion}"
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
 
   const result = runNodeWithEnv(['release'], repoDir, {
     GUARDEX_RELEASE_REPO: repoDir,
-    PATH: `${fakeBin}:${process.env.PATH}`,
+    GUARDEX_GH_BIN: fakeGh.fakePath,
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  const args = fs.readFileSync(markerPath, 'utf8').trim();
-  assert.equal(args, 'publish');
+  const args = fs.readFileSync(markerPath, 'utf8');
+  assert.match(args, new RegExp(`^create$`, 'm'));
+  assert.match(args, new RegExp(`^v${escapeRegexLiteral(cliVersion)}$`, 'm'));
+  assert.match(args, /^--repo$\nrecodeee\/gitguardex$/m);
+  assert.match(args, /^--title$\nv7\.0\.15$/m);
+  assert.match(args, /Changes since v7\.0\.12\./);
+  assert.match(args, /### v7\.0\.15/);
+  assert.match(args, /### v7\.0\.14/);
+  assert.match(args, /### v7\.0\.13/);
+});
+
+test('release prefers the target repo package manifest when resolving the GitHub repo', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedReleasePackageManifest(repoDir, {
+    repository: {
+      type: 'git',
+      url: 'git+https://github.com/example/custom-release-target.git',
+    },
+  });
+  fs.writeFileSync(
+    path.join(repoDir, 'README.md'),
+    `## Release notes
+
+### v${cliVersion}
+- Current release fix.
+`,
+    'utf8',
+  );
+  runCmd('git', ['remote', 'add', 'origin', 'https://github.com/example/ignored-origin.git'], repoDir);
+  seedCommit(repoDir);
+
+  const markerPath = path.join(repoDir, '.gh-release-target-called');
+  const fakeGh = createFakeGhScript(`
+if [[ "$1" == "auth" && "$2" == "status" ]]; then
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "list" ]]; then
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "view" ]]; then
+  exit 1
+fi
+if [[ "$1" == "release" && "$2" == "create" ]]; then
+  printf '%s\\n' "$@" > "${markerPath}"
+  printf '%s\\n' "https://example.test/releases/tag/v${cliVersion}"
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(['release'], repoDir, {
+    GUARDEX_RELEASE_REPO: repoDir,
+    GUARDEX_GH_BIN: fakeGh.fakePath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const args = fs.readFileSync(markerPath, 'utf8');
+  assert.match(args, /^--repo$\nexample\/custom-release-target$/m);
+  assert.doesNotMatch(args, /example\/ignored-origin/);
+});
+
+test('release edits an existing GitHub release instead of failing', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedReleasePackageManifest(repoDir);
+  fs.writeFileSync(
+    path.join(repoDir, 'README.md'),
+    `## Release notes
+
+### v${cliVersion}
+- Current release fix.
+
+### v7.0.14
+- Previous release metadata bump.
+`,
+    'utf8',
+  );
+  seedCommit(repoDir);
+
+  const markerPath = path.join(repoDir, '.gh-release-edit-called');
+  const fakeGh = createFakeGhScript(`
+if [[ "$1" == "auth" && "$2" == "status" ]]; then
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "list" ]]; then
+  printf 'v${cliVersion}\\tLatest\\tv${cliVersion}\\t2026-04-21T11:03:27Z\\n'
+  printf 'v7.0.12\\t\\tv7.0.12\\t2026-04-21T01:42:36Z\\n'
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "view" ]]; then
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "edit" ]]; then
+  printf '%s\\n' "$@" > "${markerPath}"
+  printf '%s\\n' "https://example.test/releases/tag/v${cliVersion}"
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(['release'], repoDir, {
+    GUARDEX_RELEASE_REPO: repoDir,
+    GUARDEX_GH_BIN: fakeGh.fakePath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const args = fs.readFileSync(markerPath, 'utf8');
+  assert.match(args, /^edit$/m);
+  assert.match(args, new RegExp(`^v${escapeRegexLiteral(cliVersion)}$`, 'm'));
+  assert.match(args, /Changes since v7\.0\.12\./);
 });
 
 test('typo helper maps relaese/realaese to release', () => {
   const repoDir = initRepoOnBranch('main');
+  seedReleasePackageManifest(repoDir);
+  fs.writeFileSync(
+    path.join(repoDir, 'README.md'),
+    `## Release notes
+
+### v${cliVersion}
+- Current release fix.
+`,
+    'utf8',
+  );
   seedCommit(repoDir);
-  const marker = path.join(os.tmpdir(), `guardex-typo-publish-${Date.now()}-${Math.random()}.txt`);
-  const fakeNpm = createFakeNpmScript(`
-if [[ "$1" == "publish" ]]; then
-  echo "$@" > "${marker}"
+  const marker = path.join(os.tmpdir(), `guardex-typo-release-${Date.now()}-${Math.random()}.txt`);
+  const fakeGh = createFakeGhScript(`
+if [[ "$1" == "auth" && "$2" == "status" ]]; then
   exit 0
 fi
-echo "unexpected npm args: $*" >&2
+if [[ "$1" == "release" && "$2" == "list" ]]; then
+  exit 0
+fi
+if [[ "$1" == "release" && "$2" == "view" ]]; then
+  exit 1
+fi
+if [[ "$1" == "release" && "$2" == "create" ]]; then
+  printf '%s\\n' "$@" > "${marker}"
+  printf '%s\\n' "https://example.test/releases/tag/v${cliVersion}"
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
 exit 1
 `);
 
   const typoA = runNodeWithEnv(['relaese'], repoDir, {
     GUARDEX_RELEASE_REPO: repoDir,
-    GUARDEX_NPM_BIN: fakeNpm,
+    GUARDEX_GH_BIN: fakeGh.fakePath,
   });
   assert.equal(typoA.status, 0, typoA.stderr || typoA.stdout);
   assert.match(typoA.stdout, /Interpreting 'relaese' as 'release'/);
-  assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'publish');
+  assert.match(fs.readFileSync(marker, 'utf8'), /^create$/m);
 
   const typoB = runNodeWithEnv(['realaese'], repoDir, {
     GUARDEX_RELEASE_REPO: repoDir,
-    GUARDEX_NPM_BIN: fakeNpm,
+    GUARDEX_GH_BIN: fakeGh.fakePath,
   });
   assert.equal(typoB.status, 0, typoB.stderr || typoB.stdout);
   assert.match(typoB.stdout, /Interpreting 'realaese' as 'release'/);
-  assert.equal(fs.readFileSync(marker, 'utf8').trim(), 'publish');
+  assert.match(fs.readFileSync(marker, 'utf8'), /^create$/m);
 });
 
 test('unknown command suggests nearest valid command', () => {
