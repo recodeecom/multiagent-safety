@@ -31,6 +31,17 @@ test('release workflow publishes with provenance in CI', () => {
   assert.match(workflow, /npm publish --provenance --access public/);
 });
 
+test('release workflow skips publish when the current version is already on npm', () => {
+  const workflowPath = path.join(repoRoot, '.github', 'workflows', 'release.yml');
+  const workflow = fs.readFileSync(workflowPath, 'utf8');
+  assert.match(workflow, /name:\s+Resolve package metadata/);
+  assert.match(workflow, /name:\s+Check npm registry for current version/);
+  assert.match(workflow, /npm view "\$\{PACKAGE_NAME\}@\$\{PACKAGE_VERSION\}" version/);
+  assert.match(workflow, /if:\s+\$\{\{\s*steps\.registry\.outputs\.already_published != 'true'\s*\}\}/);
+  assert.match(workflow, /if:\s+\$\{\{\s*steps\.registry\.outputs\.already_published == 'true'\s*\}\}/);
+  assert.match(workflow, /skipping publish\./);
+});
+
 test('release workflow only publishes from published releases or manual dispatch', () => {
   const workflowPath = path.join(repoRoot, '.github', 'workflows', 'release.yml');
   const workflow = fs.readFileSync(workflowPath, 'utf8');
