@@ -383,6 +383,89 @@ fi
   assert.equal(result.stdout.trim(), '', 'agent branch should be absent on origin');
 });
 
+test('agent-branch-finish cleanup tolerates an already-deleted local branch after gh delete warning', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  const agentWorktreePath = path.join(repoDir, '.omx', 'agent-worktrees', 'agent__local-delete-race');
+  result = runCmd(
+    'git',
+    ['worktree', 'add', '-b', 'agent/test-pr-local-delete-race', agentWorktreePath, 'dev'],
+    repoDir,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  fs.writeFileSync(path.join(agentWorktreePath, 'local-delete-race.txt'), 'cleanup race\n', 'utf8');
+  result = runCmd('git', ['add', 'local-delete-race.txt'], agentWorktreePath);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '--no-verify', '-m', 'local delete race change'], agentWorktreePath);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/local-delete-race"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  git_bin="$(command -v git)"
+  "$git_bin" -C "${'${GUARDEX_TEST_AGENT_WORKTREE}'}" checkout --detach >/dev/null 2>&1 || true
+  "$git_bin" -C "${'${GUARDEX_TEST_REPO_DIR}'}" branch -D "$3" >/dev/null 2>&1 || true
+  echo "failed to delete local branch $3: error: cannot delete branch '$3' used by worktree at '${'${GUARDEX_TEST_AGENT_WORKTREE}'}'" >&2
+  echo "/usr/bin/git: exit status 1" >&2
+  exit 1
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const finish = runBranchFinish(
+    ['--branch', 'agent/test-pr-local-delete-race', '--base', 'dev', '--mode', 'pr', '--cleanup'],
+    repoDir,
+    {
+      GUARDEX_GH_BIN: fakeGhPath,
+      GUARDEX_TEST_REPO_DIR: repoDir,
+      GUARDEX_TEST_AGENT_WORKTREE: agentWorktreePath,
+    },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(
+    finish.stderr,
+    /PR merged but gh could not delete the local branch \(active worktree\); continuing local cleanup\./,
+  );
+  assert.match(
+    finish.stderr,
+    /Local branch 'agent\/test-pr-local-delete-race' was already deleted; continuing cleanup\./,
+  );
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-pr-local-delete-race' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+  );
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', 'refs/heads/agent/test-pr-local-delete-race'], repoDir);
+  assert.notEqual(result.status, 0, 'agent branch should stay deleted locally');
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', 'agent/test-pr-local-delete-race'], repoDir);
+  assert.equal(result.stdout.trim(), '', 'agent branch should be deleted on origin');
+});
+
 
 test('agent-branch-finish cleanup succeeds from active agent worktree when base branch is checked out elsewhere', () => {
   const repoDir = initRepo();

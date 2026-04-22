@@ -409,6 +409,33 @@ is_remote_branch_missing_error() {
   return 1
 }
 
+local_branch_exists() {
+  local branch="$1"
+  git -C "$repo_root" show-ref --verify --quiet "refs/heads/${branch}"
+}
+
+delete_local_branch_for_cleanup() {
+  local branch="$1"
+  local delete_output=""
+
+  if ! local_branch_exists "$branch"; then
+    echo "[agent-branch-finish] Local branch '${branch}' was already deleted; continuing cleanup." >&2
+    return 0
+  fi
+
+  if delete_output="$(git -C "$repo_root" branch -d "$branch" 2>&1)"; then
+    return 0
+  fi
+
+  if ! local_branch_exists "$branch"; then
+    echo "[agent-branch-finish] Local branch '${branch}' was already deleted; continuing cleanup." >&2
+    return 0
+  fi
+
+  echo "$delete_output" >&2
+  return 1
+}
+
 read_pr_state() {
   local state_line
   state_line="$("$GH_BIN" pr view "$SOURCE_BRANCH" --json state,mergedAt,url --jq '[.state, (.mergedAt // ""), (.url // "")] | join("\u001f")' 2>/dev/null || true)"
@@ -607,7 +634,9 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
     git -C "$repo_root" worktree remove "$source_worktree" --force >/dev/null 2>&1 || true
   fi
 
-  git -C "$repo_root" branch -d "$SOURCE_BRANCH"
+  if ! delete_local_branch_for_cleanup "$SOURCE_BRANCH"; then
+    exit 1
+  fi
 
   if [[ "$PUSH_ENABLED" -eq 1 && "$DELETE_REMOTE_BRANCH" -eq 1 ]]; then
     if git -C "$repo_root" ls-remote --exit-code --heads origin "$SOURCE_BRANCH" >/dev/null 2>&1; then
