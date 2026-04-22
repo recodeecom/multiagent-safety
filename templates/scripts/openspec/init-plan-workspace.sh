@@ -50,16 +50,37 @@ Chronological checkpoint log for all roles.
 CPTEOF
 fi
 
+if [[ ! -f "$PLAN_DIR/open-questions.md" ]]; then
+  cat > "$PLAN_DIR/open-questions.md" <<OPENQUESTIONSEOF
+# Open Questions: ${PLAN_SLUG}
+
+Capture unresolved plan questions here as unchecked checklist items.
+Keep each item concrete, decision-shaped, and easy to close with evidence.
+
+- [ ] Add the next unresolved question here.
+OPENQUESTIONSEOF
+fi
+
 if [[ ! -f "$PLAN_DIR/README.md" ]]; then
   {
     echo "# Plan Workspace: ${PLAN_SLUG}"
     echo
     echo "This folder stores durable planning artifacts before implementation changes."
     echo
+    echo "## Shared files"
+    echo "- \`summary.md\`"
+    echo "- \`checkpoints.md\`"
+    echo "- \`phases.md\`"
+    echo "- \`open-questions.md\`"
+    echo "- \`coordinator-prompt.md\`"
+    echo "- \`kickoff-prompts.md\`"
+    echo
     echo "## Role folders"
     for role in "${ROLES[@]}"; do
       echo "- \`${role}/\`"
     done
+    echo
+    echo "When Codex or Claude hits an unresolved question that should survive chat, add it to \`open-questions.md\` as an unchecked \`- [ ]\` item."
     echo
     echo "Each role folder contains OpenSpec-style artifacts:"
     echo "- \`.openspec.yaml\`"
@@ -85,15 +106,17 @@ Drive this plan from draft to execution-ready status with strict checkpoint disc
 
 - \`openspec/plan/${PLAN_SLUG}/summary.md\`
 - \`openspec/plan/${PLAN_SLUG}/checkpoints.md\`
+- \`openspec/plan/${PLAN_SLUG}/open-questions.md\`
 - \`openspec/plan/${PLAN_SLUG}/planner/plan.md\`
 - role \`tasks.md\` files for planner/architect/critic/executor/writer/verifier
 
 ## Coordinator responsibilities
 
 1. Keep checkpoints current in each role \`tasks.md\` and root \`checkpoints.md\`.
-2. Ensure each role has explicit acceptance criteria and verification evidence.
-3. Prevent implementation from starting before planning gates are complete.
-4. Keep handoffs concise: files changed, behavior touched, verification output, risks.
+2. Route unresolved questions and branching decisions into \`open-questions.md\`.
+3. Ensure each role has explicit acceptance criteria and verification evidence.
+4. Prevent implementation from starting before planning gates are complete.
+5. Keep handoffs concise: files changed, behavior touched, verification output, risks.
 
 ## Wave-splitting decision (optional)
 
@@ -109,6 +132,7 @@ If wave splitting is not needed, keep execution under a single owner with normal
 
 - All role checkpoints required for planning are done.
 - Execution lanes (if any) have clear ownership boundaries.
+- \`open-questions.md\` captures unresolved decisions that still need answers.
 - Verification plan and rollback expectations are explicit and testable.
 COORDPROMPTEOF
 fi
@@ -431,6 +455,7 @@ EXCCPTEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 
@@ -467,6 +492,7 @@ TASKEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 
@@ -503,6 +529,7 @@ TASKEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 
@@ -539,6 +566,7 @@ TASKEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 
@@ -575,6 +603,7 @@ TASKEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 
@@ -611,6 +640,7 @@ TASKEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 
@@ -647,6 +677,7 @@ TASKEOF
 
 - [ ] 5.1 Owner recorded this lane before edits.
 - [ ] 5.2 Record joined agents / handoffs, or mark \`N/A\` when solo.
+- [ ] 5.3 Record unresolved plan questions in \`../open-questions.md\`, or mark \`N/A\` when none.
 
 ## 6. Cleanup
 

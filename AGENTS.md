@@ -237,11 +237,13 @@ Use `openspec/plan/README.md` as the operational runbook and `openspec/plan/PLAN
 
 Default quick flow:
 1. Create/maintain `openspec/plan/<plan-slug>/`.
-2. Keep role `tasks.md` files current (`planner`, `architect`, `critic`, `executor`, `writer`, `verifier`).
-3. Keep checklist headings visible: `## 1. Spec`, `## 2. Tests`, `## 3. Implementation`, `## 4. Checkpoints`, plus a final cleanup section (`## 5. Cleanup` or `## 6. Cleanup`).
-4. Update checkboxes continuously while work progresses.
-5. Execute from approved `planner/plan.md` with role ownership.
-6. Verify with evidence before archive/finish.
+2. Create/maintain `openspec/plan/<plan-slug>/open-questions.md`.
+3. Keep `open-questions.md` current; when Codex/Claude hits an unresolved question, branching decision, or blocker that should survive chat, record it there as an unchecked `- [ ]` item.
+4. Keep role `tasks.md` files current (`planner`, `architect`, `critic`, `executor`, `writer`, `verifier`).
+5. Keep checklist headings visible: `## 1. Spec`, `## 2. Tests`, `## 3. Implementation`, `## 4. Checkpoints`, plus a final cleanup section (`## 5. Cleanup` or `## 6. Cleanup`).
+6. Update checkboxes continuously while work progresses.
+7. Execute from approved `planner/plan.md` with role ownership.
+8. Verify with evidence before archive/finish.
 
 Helper sub-branch exception:
 - When a helper branch targets another `agent/*` owner branch, implementation is allowed in helper lanes, but OpenSpec change/spec/tasks artifacts stay owned by the owner branch.
@@ -278,6 +280,8 @@ OMX completion policy: when a task is done, the agent must commit the task chang
 **Parallel safety.** Assume other agents edit nearby. Never revert unrelated changes. Report conflicts in the handoff.
 
 **Reporting.** Every completion handoff includes: files changed, behavior touched, verification commands + results, risks/follow-ups.
+
+**Open questions.** If Codex/Claude hits an unresolved question, branching decision, or blocker that should survive chat, record it in `openspec/plan/<plan-slug>/open-questions.md` as an unchecked `- [ ]` item. Resolve it in-place when answered instead of burying it in chat-only notes.
 
 **OpenSpec (when change-driven).** Keep `openspec/changes/<slug>/tasks.md` checkboxes current during work, not batched at the end. Task scaffolds and manual task edits must include an explicit final completion/cleanup section that ends with PR merge + sandbox cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `gx branch finish ... --cleanup`) and records PR URL + final `MERGED` evidence. Verify specs with `openspec validate --specs` before archive. Don't archive unverified.
 

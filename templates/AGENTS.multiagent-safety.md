@@ -25,6 +25,8 @@ OMX completion policy: when a task is done, the agent must commit the task chang
 
 **Reporting.** Every completion handoff includes: files changed, behavior touched, verification commands + results, risks/follow-ups.
 
+**Open questions.** If Codex/Claude hits an unresolved question, branching decision, or blocker that should survive chat, record it in `openspec/plan/<plan-slug>/open-questions.md` as an unchecked `- [ ]` item. Resolve it in-place when answered instead of burying it in chat-only notes.
+
 **OpenSpec (when change-driven).** Keep `openspec/changes/<slug>/tasks.md` checkboxes current during work, not batched at the end. Task scaffolds and manual task edits must include an explicit final completion/cleanup section that ends with PR merge + sandbox cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `gx branch finish ... --cleanup`) and records PR URL + final `MERGED` evidence. Verify specs with `openspec validate --specs` before archive. Don't archive unverified.
 
 **Version bumps.** If a change bumps a published version, the same PR updates release notes/changelog.
