@@ -306,6 +306,84 @@ exit 1
 });
 
 
+test('agent-branch-finish cleanup succeeds when remote delete reports an already-removed branch', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  result = runCmd('git', ['checkout', '-b', 'agent/test-pr-remote-delete-race'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  commitFile(repoDir, 'agent-pr-remote-delete.txt', 'agent change\n', 'agent change');
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/2"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+  const realGit = runCmd('bash', ['-lc', 'command -v git'], repoDir);
+  assert.equal(realGit.status, 0, realGit.stderr || realGit.stdout);
+  const realGitPath = realGit.stdout.trim();
+  const { fakeBin } = createFakeBin('git', `
+real_git="${realGitPath}"
+if [[ "$1" == "-C" && "$3" == "push" && "$4" == "origin" && "$5" == "--delete" && "$6" == "agent/test-pr-remote-delete-race" ]]; then
+  "$real_git" "$@" >/dev/null 2>&1 || true
+  echo "error: unable to delete 'agent/test-pr-remote-delete-race': remote ref does not exist" >&2
+  echo "error: failed to push some refs to 'origin'" >&2
+  exit 1
+fi
+"$real_git" "$@"
+`);
+
+  const finish = runBranchFinish(
+    ['--branch', 'agent/test-pr-remote-delete-race', '--mode', 'pr', '--cleanup'],
+    repoDir,
+    {
+      GUARDEX_GH_BIN: fakeGhPath,
+      PATH: `${fakeBin}:${process.env.PATH || ''}`,
+    },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(
+    finish.stderr,
+    /Remote branch 'agent\/test-pr-remote-delete-race' was already deleted; continuing cleanup\./,
+  );
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-pr-remote-delete-race' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+  );
+
+  result = runCmd('git', ['show-ref', '--verify', '--quiet', 'refs/heads/agent/test-pr-remote-delete-race'], repoDir);
+  assert.notEqual(result.status, 0, 'agent branch should be deleted locally');
+
+  result = runCmd('git', ['ls-remote', '--heads', 'origin', 'agent/test-pr-remote-delete-race'], repoDir);
+  assert.equal(result.stdout.trim(), '', 'agent branch should be absent on origin');
+});
+
+
 test('agent-branch-finish cleanup succeeds from active agent worktree when base branch is checked out elsewhere', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);

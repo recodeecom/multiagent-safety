@@ -401,6 +401,14 @@ is_local_branch_delete_error() {
   return 1
 }
 
+is_remote_branch_missing_error() {
+  local output="$1"
+  if [[ "$output" == *"remote ref does not exist"* ]] || [[ "$output" == *"failed to push some refs"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
 read_pr_state() {
   local state_line
   state_line="$("$GH_BIN" pr view "$SOURCE_BRANCH" --json state,mergedAt,url --jq '[.state, (.mergedAt // ""), (.url // "")] | join("\u001f")' 2>/dev/null || true)"
@@ -603,7 +611,15 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
 
   if [[ "$PUSH_ENABLED" -eq 1 && "$DELETE_REMOTE_BRANCH" -eq 1 ]]; then
     if git -C "$repo_root" ls-remote --exit-code --heads origin "$SOURCE_BRANCH" >/dev/null 2>&1; then
-      git -C "$repo_root" push origin --delete "$SOURCE_BRANCH"
+      remote_delete_output=""
+      if ! remote_delete_output="$(git -C "$repo_root" push origin --delete "$SOURCE_BRANCH" 2>&1)"; then
+        if is_remote_branch_missing_error "$remote_delete_output"; then
+          echo "[agent-branch-finish] Remote branch '${SOURCE_BRANCH}' was already deleted; continuing cleanup." >&2
+        else
+          echo "$remote_delete_output" >&2
+          exit 1
+        fi
+      fi
     fi
   fi
 
