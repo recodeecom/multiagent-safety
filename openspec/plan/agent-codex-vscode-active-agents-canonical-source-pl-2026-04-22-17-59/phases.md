@@ -19,17 +19,17 @@ One phase is intended to fit into a single Codex or Claude session task.
   - checkpoints: A1, C1
   - summary: Keep `vscode/guardex-active-agents/` as the authored source of truth and route setup/doctor/materialization through that source instead of manual twin-tree edits.
 
-- [ ] [PH03] Implement canonical-source migration
+- [x] [PH03] Implement canonical-source migration
   - session: codex
   - checkpoints: E1
   - summary: Update managed-file resolution, asset copying, and duplicate-tree handling without changing user-visible Active Agents behavior.
 
-- [ ] [PH04] Refresh docs and focused regression coverage
+- [x] [PH04] Refresh docs and focused regression coverage
   - session: codex
   - checkpoints: W1, V1
   - summary: Replace duplicate-tree parity proofs with canonical-source/install/setup checks and update operator guidance to match the new source path.
 
-- [ ] [PH05] Validate and finish the execution lane
+- [>] [PH05] Validate and finish the execution lane
   - session: codex
   - checkpoints: E1, V1
   - summary: Run targeted tests plus OpenSpec validation, then finish the implementation branch via PR merge and cleanup.

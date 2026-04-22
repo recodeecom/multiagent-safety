@@ -1,6 +1,7 @@
 const {
   fs,
   path,
+  PACKAGE_ROOT,
   TOOL_NAME,
   SHORT_TOOL_NAME,
   GUARDEX_HOME_DIR,
@@ -9,6 +10,7 @@ const {
   HOOK_NAMES,
   LOCK_FILE_RELATIVE,
   LEGACY_MANAGED_PACKAGE_SCRIPTS,
+  PACKAGE_ROOT_SOURCE_OVERRIDES,
   USER_LEVEL_SKILL_ASSETS,
   AGENTS_MARKER_START,
   AGENTS_MARKER_END,
@@ -172,17 +174,13 @@ function ensureHookShim(repoRoot, hookName, options = {}) {
   );
 }
 
-function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
-  const sourcePath = path.join(TEMPLATE_ROOT, relativeTemplatePath);
-  const destinationRelativePath = toDestinationPath(relativeTemplatePath);
-  const destinationPath = path.join(repoRoot, destinationRelativePath);
-
-  const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+function copyManagedSourceFile(repoRoot, sourcePath, destinationPath, destinationRelativePath, force, dryRun) {
+  const sourceContent = fs.readFileSync(sourcePath);
   const destinationExists = fs.existsSync(destinationPath);
 
   if (destinationExists) {
-    const existingContent = fs.readFileSync(destinationPath, 'utf8');
-    if (existingContent === sourceContent) {
+    const existingContent = fs.readFileSync(destinationPath);
+    if (existingContent.equals(sourceContent)) {
       ensureExecutable(destinationPath, destinationRelativePath, dryRun);
       return { status: 'unchanged', file: destinationRelativePath };
     }
@@ -193,7 +191,7 @@ function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
 
   ensureParentDir(repoRoot, destinationPath, dryRun);
   if (!dryRun) {
-    fs.writeFileSync(destinationPath, sourceContent, 'utf8');
+    fs.writeFileSync(destinationPath, sourceContent);
     ensureExecutable(destinationPath, destinationRelativePath, dryRun);
   }
 
@@ -204,22 +202,54 @@ function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
   return { status: destinationExists ? 'overwritten' : 'created', file: destinationRelativePath };
 }
 
-function ensureTemplateFilePresent(repoRoot, relativeTemplatePath, dryRun) {
-  const sourcePath = path.join(TEMPLATE_ROOT, relativeTemplatePath);
+function normalizeTemplatePath(relativeTemplatePath) {
+  return String(relativeTemplatePath).replace(/\\/g, '/');
+}
+
+function usesPackageRootSource(repoRoot, relativeTemplatePath) {
+  return (
+    path.resolve(repoRoot) === PACKAGE_ROOT &&
+    PACKAGE_ROOT_SOURCE_OVERRIDES.has(normalizeTemplatePath(relativeTemplatePath))
+  );
+}
+
+function resolveTemplateSourcePath(repoRoot, relativeTemplatePath) {
+  if (usesPackageRootSource(repoRoot, relativeTemplatePath)) {
+    return path.join(PACKAGE_ROOT, relativeTemplatePath);
+  }
+  return path.join(TEMPLATE_ROOT, relativeTemplatePath);
+}
+
+function copyTemplateFile(repoRoot, relativeTemplatePath, force, dryRun) {
+  const sourcePath = resolveTemplateSourcePath(repoRoot, relativeTemplatePath);
   const destinationRelativePath = toDestinationPath(relativeTemplatePath);
   const destinationPath = path.join(repoRoot, destinationRelativePath);
-  const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+  return copyManagedSourceFile(
+    repoRoot,
+    sourcePath,
+    destinationPath,
+    destinationRelativePath,
+    force,
+    dryRun,
+  );
+}
+
+function ensureTemplateFilePresent(repoRoot, relativeTemplatePath, dryRun) {
+  const sourcePath = resolveTemplateSourcePath(repoRoot, relativeTemplatePath);
+  const destinationRelativePath = toDestinationPath(relativeTemplatePath);
+  const destinationPath = path.join(repoRoot, destinationRelativePath);
+  const sourceContent = fs.readFileSync(sourcePath);
 
   if (fs.existsSync(destinationPath)) {
-    const existingContent = fs.readFileSync(destinationPath, 'utf8');
-    if (existingContent === sourceContent) {
+    const existingContent = fs.readFileSync(destinationPath);
+    if (existingContent.equals(sourceContent)) {
       ensureExecutable(destinationPath, destinationRelativePath, dryRun);
       return { status: 'unchanged', file: destinationRelativePath };
     }
 
     if (isCriticalGuardrailPath(destinationRelativePath)) {
       if (!dryRun) {
-        fs.writeFileSync(destinationPath, sourceContent, 'utf8');
+        fs.writeFileSync(destinationPath, sourceContent);
         ensureExecutable(destinationPath, destinationRelativePath, dryRun);
       }
       return { status: dryRun ? 'would-repair-critical' : 'repaired-critical', file: destinationRelativePath };
@@ -230,11 +260,36 @@ function ensureTemplateFilePresent(repoRoot, relativeTemplatePath, dryRun) {
 
   ensureParentDir(repoRoot, destinationPath, dryRun);
   if (!dryRun) {
-    fs.writeFileSync(destinationPath, sourceContent, 'utf8');
+    fs.writeFileSync(destinationPath, sourceContent);
     ensureExecutable(destinationPath, destinationRelativePath, dryRun);
   }
 
   return { status: 'created', file: destinationRelativePath };
+}
+
+function materializePackageRepoTemplateFiles(repoRoot, relativeTemplatePaths, dryRun) {
+  if (path.resolve(repoRoot) !== PACKAGE_ROOT) {
+    return [];
+  }
+
+  const operations = [];
+  for (const relativeTemplatePath of relativeTemplatePaths) {
+    if (!PACKAGE_ROOT_SOURCE_OVERRIDES.has(normalizeTemplatePath(relativeTemplatePath))) {
+      continue;
+    }
+    const templateRelativePath = path.posix.join('templates', normalizeTemplatePath(relativeTemplatePath));
+    operations.push(
+      copyManagedSourceFile(
+        PACKAGE_ROOT,
+        path.join(PACKAGE_ROOT, relativeTemplatePath),
+        path.join(PACKAGE_ROOT, templateRelativePath),
+        templateRelativePath,
+        true,
+        dryRun,
+      ),
+    );
+  }
+  return operations;
 }
 
 function lockFilePath(repoRoot) {
@@ -806,6 +861,7 @@ module.exports = {
   ensureHookShim,
   copyTemplateFile,
   ensureTemplateFilePresent,
+  materializePackageRepoTemplateFiles,
   ensureOmxScaffold,
   ensureLockRegistry,
   lockStateOrError,

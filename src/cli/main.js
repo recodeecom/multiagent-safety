@@ -159,6 +159,7 @@ const {
   ensureHookShim,
   copyTemplateFile,
   ensureTemplateFilePresent,
+  materializePackageRepoTemplateFiles,
   ensureOmxScaffold,
   ensureLockRegistry,
   lockStateOrError,
@@ -1445,6 +1446,7 @@ function runInstallInternal(options) {
       ),
     );
   }
+  operations.push(...materializePackageRepoTemplateFiles(repoRoot, TEMPLATE_FILES, Boolean(options.dryRun)));
   operations.push(...ensureTargetedLegacyWorkflowShims(repoRoot, options));
   for (const hookName of HOOK_NAMES) {
     const hookRelativePath = path.posix.join('.githooks', hookName);
@@ -1501,6 +1503,7 @@ function runFixInternal(options) {
     }
     operations.push(ensureTemplateFilePresent(repoRoot, templateFile, Boolean(options.dryRun)));
   }
+  operations.push(...materializePackageRepoTemplateFiles(repoRoot, TEMPLATE_FILES, Boolean(options.dryRun)));
   operations.push(...ensureTargetedLegacyWorkflowShims(repoRoot, options));
   for (const hookName of HOOK_NAMES) {
     const hookRelativePath = path.posix.join('.githooks', hookName);

@@ -129,16 +129,21 @@ test('critical runtime helper scripts and active-agents sources stay in sync wit
     ['templates/scripts/codex-agent.sh', 'scripts/codex-agent.sh'],
     ['templates/scripts/openspec/init-plan-workspace.sh', 'scripts/openspec/init-plan-workspace.sh'],
     ['templates/scripts/openspec/init-change-workspace.sh', 'scripts/openspec/init-change-workspace.sh'],
+    ['templates/scripts/agent-session-state.js', 'scripts/agent-session-state.js'],
+    ['templates/scripts/install-vscode-active-agents-extension.js', 'scripts/install-vscode-active-agents-extension.js'],
+    ['templates/vscode/guardex-active-agents/package.json', 'vscode/guardex-active-agents/package.json'],
+    ['templates/vscode/guardex-active-agents/README.md', 'vscode/guardex-active-agents/README.md'],
     ['templates/vscode/guardex-active-agents/extension.js', 'vscode/guardex-active-agents/extension.js'],
     ['templates/vscode/guardex-active-agents/session-schema.js', 'vscode/guardex-active-agents/session-schema.js'],
+    ['templates/vscode/guardex-active-agents/icon.png', 'vscode/guardex-active-agents/icon.png'],
   ];
 
   for (const [templatePath, runtimePath] of pairs) {
-    const template = fs.readFileSync(path.join(repoRoot, templatePath), 'utf8');
-    const runtime = fs.readFileSync(path.join(repoRoot, runtimePath), 'utf8');
+    const template = fs.readFileSync(path.join(repoRoot, templatePath));
+    const runtime = fs.readFileSync(path.join(repoRoot, runtimePath));
     assert.equal(
-      runtime,
-      template,
+      Buffer.compare(runtime, template),
+      0,
       `${runtimePath} diverged from ${templatePath}; run gx setup/doctor parity repair`,
     );
   }

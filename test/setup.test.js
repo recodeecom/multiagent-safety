@@ -62,6 +62,8 @@ const {
   defineSpawnSuite,
 } = require('./helpers/install-test-helpers');
 
+const packageRepoRoot = path.resolve(__dirname, '..');
+
 defineSpawnSuite('setup integration suite', () => {
 
 test('setup provisions workflow files and repo config', () => {
@@ -167,6 +169,23 @@ test('setup provisions workflow files and repo config', () => {
 
   const secondRun = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
+
+  const canonicalBundleFiles = [
+    'vscode/guardex-active-agents/package.json',
+    'vscode/guardex-active-agents/README.md',
+    'vscode/guardex-active-agents/extension.js',
+    'vscode/guardex-active-agents/session-schema.js',
+    'vscode/guardex-active-agents/icon.png',
+  ];
+  for (const relativePath of canonicalBundleFiles) {
+    const installedPath = path.join(repoDir, relativePath);
+    const expectedPath = path.join(packageRepoRoot, relativePath);
+    assert.equal(
+      Buffer.compare(fs.readFileSync(installedPath), fs.readFileSync(expectedPath)),
+      0,
+      `${relativePath} should match the package repo canonical bundle`,
+    );
+  }
 });
 
 

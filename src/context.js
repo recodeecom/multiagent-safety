@@ -128,7 +128,18 @@ const TEMPLATE_FILES = [
   'vscode/guardex-active-agents/extension.js',
   'vscode/guardex-active-agents/session-schema.js',
   'vscode/guardex-active-agents/README.md',
+  'vscode/guardex-active-agents/icon.png',
 ];
+
+const PACKAGE_ROOT_SOURCE_OVERRIDES = new Set([
+  'scripts/agent-session-state.js',
+  'scripts/install-vscode-active-agents-extension.js',
+  'vscode/guardex-active-agents/package.json',
+  'vscode/guardex-active-agents/extension.js',
+  'vscode/guardex-active-agents/session-schema.js',
+  'vscode/guardex-active-agents/README.md',
+  'vscode/guardex-active-agents/icon.png',
+]);
 
 const LEGACY_WORKFLOW_SHIM_SPECS = [
   { relativePath: 'scripts/agent-branch-start.sh', kind: 'shell', command: ['branch', 'start'] },
@@ -620,6 +631,7 @@ module.exports = {
   HOOK_NAMES,
   toDestinationPath,
   TEMPLATE_FILES,
+  PACKAGE_ROOT_SOURCE_OVERRIDES,
   LEGACY_WORKFLOW_SHIM_SPECS,
   LEGACY_WORKFLOW_SHIMS,
   MANAGED_TEMPLATE_DESTINATIONS,
