@@ -19,6 +19,13 @@ Verification note: `node --check bin/multiagent-safety.js` passed. `node --test 
 
 ## 4. Completion
 
-- [ ] 4.1 Finish the agent branch via PR merge + cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `bash scripts/agent-branch-finish.sh --branch <agent-branch> --base <base-branch> --via-pr --wait-for-merge --cleanup`).
-- [ ] 4.2 Record PR URL + final `MERGED` state in the completion handoff.
-- [ ] 4.3 Confirm sandbox cleanup (`git worktree list`, `git branch -a`) or capture a `BLOCKED:` handoff if merge/cleanup is pending.
+- [x] 4.1 Finish the agent branch via PR merge + cleanup (`gx finish --via-pr --wait-for-merge --cleanup` or `bash scripts/agent-branch-finish.sh --branch <agent-branch> --base <base-branch> --via-pr --wait-for-merge --cleanup`).
+- [x] 4.2 Record PR URL + final `MERGED` state in the completion handoff.
+- [x] 4.3 Confirm sandbox cleanup (`git worktree list`, `git branch -a`) or capture a `BLOCKED:` handoff if merge/cleanup is pending.
+
+Completion evidence:
+- PR: `#277` <https://github.com/recodeee/gitguardex/pull/277>
+- Final state: `MERGED` into `main` at `2026-04-22T08:50:34Z`
+- Merge commit: `8a49fbaa2a9d75c9255f116733c4e563f5893ec1`
+- Merge/cleanup path: `bash scripts/agent-branch-finish.sh --branch "agent/codex/doctor-auto-finish-rebase-conflict-statu-2026-04-22-10-42" --base main --via-pr --wait-for-merge --cleanup`
+- Cleanup confirmation: `git worktree list` now shows only the primary repo plus one unrelated active `agent/gx/...` doctor sandbox, and `git branch -a | rg "doctor-auto-finish-rebase-conflict-statu-2026-04-22-10-42|main$|origin/main"` shows only `main` and `origin/main` after `git remote prune origin`
