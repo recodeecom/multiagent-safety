@@ -15,7 +15,9 @@ const IDLE_ERROR_MS = 30 * 60 * 1000;
 const LOCK_FILE_RELATIVE = path.join('.omx', 'state', 'agent-file-locks.json');
 const ACTIVE_SESSION_FILES_GLOB = '**/.omx/state/active-sessions/*.json';
 const AGENT_FILE_LOCKS_GLOB = '**/.omx/state/agent-file-locks.json';
+const WORKTREE_AGENT_LOCKS_GLOB = '**/{.omx,.omc}/agent-worktrees/**/AGENT.lock';
 const SESSION_SCAN_EXCLUDE_GLOB = '**/{node_modules,.git,.omx/agent-worktrees,.omc/agent-worktrees}/**';
+const WORKTREE_LOCK_SCAN_EXCLUDE_GLOB = '**/{node_modules,.git}/**';
 const SESSION_SCAN_LIMIT = 200;
 const REFRESH_DEBOUNCE_MS = 250;
 const SESSION_ACTIVITY_GROUPS = [
@@ -187,14 +189,23 @@ class SessionItem extends vscode.TreeItem {
     const tooltipLines = [
       session.branch,
       `${session.agentName} · ${session.taskName}`,
+      session.latestTaskPreview && session.latestTaskPreview !== session.taskName
+        ? `Live task ${session.latestTaskPreview}`
+        : '',
       `Status ${this.description}`,
       session.changeCount > 0
         ? `Changed ${session.activityCountLabel}: ${session.activitySummary}`
         : session.activitySummary,
       `Locks ${lockCount}`,
-      session.pidAlive === false ? `PID ${session.pid} not alive` : `PID ${session.pid} alive`,
+      Number.isInteger(session.pid) && session.pid > 0
+        ? session.pidAlive === false
+          ? `PID ${session.pid} not alive`
+          : `PID ${session.pid} alive`
+        : '',
       session.lastFileActivityAt ? `Last file activity ${session.lastFileActivityAt}` : '',
-      `Started ${session.startedAt}`,
+      session.sourceKind === 'worktree-lock'
+        ? `Telemetry updated ${session.telemetryUpdatedAt || session.startedAt}`
+        : `Started ${session.startedAt}`,
       session.worktreePath,
     ];
     this.tooltip = tooltipLines.filter(Boolean).join('\n');
@@ -365,6 +376,10 @@ function repoRootFromSessionFile(filePath) {
   return path.resolve(path.dirname(filePath), '..', '..', '..');
 }
 
+function repoRootFromWorktreeLockFile(filePath) {
+  return path.resolve(path.dirname(filePath), '..', '..', '..');
+}
+
 function repoRootFromLockFile(filePath) {
   return path.resolve(path.dirname(filePath), '..', '..');
 }
@@ -479,15 +494,28 @@ function localizeChangeForSession(session, change) {
 }
 
 async function findRepoSessionEntries() {
-  const sessionFiles = await vscode.workspace.findFiles(
-    ACTIVE_SESSION_FILES_GLOB,
-    SESSION_SCAN_EXCLUDE_GLOB,
-    SESSION_SCAN_LIMIT,
-  );
+  const [sessionFiles, worktreeLockFiles] = await Promise.all([
+    vscode.workspace.findFiles(
+      ACTIVE_SESSION_FILES_GLOB,
+      SESSION_SCAN_EXCLUDE_GLOB,
+      SESSION_SCAN_LIMIT,
+    ),
+    vscode.workspace.findFiles(
+      WORKTREE_AGENT_LOCKS_GLOB,
+      WORKTREE_LOCK_SCAN_EXCLUDE_GLOB,
+      SESSION_SCAN_LIMIT,
+    ),
+  ]);
 
   const repoRoots = new Set();
   for (const uri of sessionFiles) {
     repoRoots.add(repoRootFromSessionFile(uri.fsPath));
+  }
+  for (const uri of worktreeLockFiles) {
+    if (path.basename(uri.fsPath) !== 'AGENT.lock') {
+      continue;
+    }
+    repoRoots.add(repoRootFromWorktreeLockFile(uri.fsPath));
   }
 
   if (repoRoots.size === 0) {
@@ -1057,6 +1085,7 @@ function activate(context) {
   const refresh = () => void refreshController.refreshNow();
   const activeSessionsWatcher = vscode.workspace.createFileSystemWatcher(ACTIVE_SESSION_FILES_GLOB);
   const lockWatcher = vscode.workspace.createFileSystemWatcher(AGENT_FILE_LOCKS_GLOB);
+  const worktreeLockWatcher = vscode.workspace.createFileSystemWatcher(WORKTREE_AGENT_LOCKS_GLOB);
   const updateCommitInput = (session) => {
     sourceControl.inputBox.enabled = true;
     sourceControl.inputBox.visible = true;
@@ -1151,12 +1180,14 @@ function activate(context) {
     vscode.workspace.onDidChangeWorkspaceFolders(scheduleRefresh),
     activeSessionsWatcher,
     lockWatcher,
+    worktreeLockWatcher,
     { dispose: () => clearInterval(interval) },
   );
 
   context.subscriptions.push(
     ...bindRefreshWatcher(activeSessionsWatcher, scheduleRefresh),
     ...bindRefreshWatcher(lockWatcher, refreshLockRegistry),
+    ...bindRefreshWatcher(worktreeLockWatcher, scheduleRefresh),
   );
   void refreshController.refreshNow();
 }

@@ -5,6 +5,11 @@ const cp = require('node:child_process');
 const ACTIVE_SESSIONS_RELATIVE_DIR = path.join('.omx', 'state', 'active-sessions');
 const SESSION_SCHEMA_VERSION = 1;
 const LOCK_FILE_RELATIVE = path.join('.omx', 'state', 'agent-file-locks.json');
+const AGENT_WORKTREE_LOCK_FILE = 'AGENT.lock';
+const MANAGED_WORKTREE_ROOTS = [
+  path.join('.omx', 'agent-worktrees'),
+  path.join('.omc', 'agent-worktrees'),
+];
 const MAX_CHANGED_PATH_PREVIEW = 3;
 const ACTIVE_SESSIONS_FILTER_PREFIX = ACTIVE_SESSIONS_RELATIVE_DIR.split(path.sep).join('/');
 const LOCK_FILE_FILTER_PATH = LOCK_FILE_RELATIVE.split(path.sep).join('/');
@@ -62,6 +67,10 @@ function sessionFilePathForBranch(repoRoot, branch) {
   return path.join(activeSessionsDirForRepo(repoRoot), sessionFileNameForBranch(branch));
 }
 
+function resolveManagedWorktreeRoots(repoRoot) {
+  return MANAGED_WORKTREE_ROOTS.map((relativeRoot) => path.join(path.resolve(repoRoot), relativeRoot));
+}
+
 function splitOutputLines(output) {
   if (typeof output !== 'string') {
     return null;
@@ -74,6 +83,24 @@ function splitOutputLines(output) {
 
 function normalizeRelativePath(value) {
   return toNonEmptyString(value).replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function normalizeIsoString(value, fallback = '') {
+  const normalized = toNonEmptyString(value);
+  if (!normalized) {
+    return fallback;
+  }
+
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : fallback;
 }
 
 function runGitLines(worktreePath, args) {
@@ -200,8 +227,8 @@ function parseRepoChangeLine(repoRoot, line) {
 
 function collectWorktreeChangedPaths(worktreePath) {
   const changedGroups = [
-    runGitLines(worktreePath, ['diff', '--name-only', '--', '.', `:(exclude)${LOCK_FILE_RELATIVE}`]),
-    runGitLines(worktreePath, ['diff', '--cached', '--name-only', '--', '.', `:(exclude)${LOCK_FILE_RELATIVE}`]),
+    runGitLines(worktreePath, ['diff', '--name-only', '--', '.', `:(exclude)${LOCK_FILE_RELATIVE}`, `:(exclude)${AGENT_WORKTREE_LOCK_FILE}`]),
+    runGitLines(worktreePath, ['diff', '--cached', '--name-only', '--', '.', `:(exclude)${LOCK_FILE_RELATIVE}`, `:(exclude)${AGENT_WORKTREE_LOCK_FILE}`]),
     runGitLines(worktreePath, ['ls-files', '--others', '--exclude-standard']),
   ];
 
@@ -210,7 +237,11 @@ function collectWorktreeChangedPaths(worktreePath) {
   }
 
   return [...new Set(changedGroups.flat())]
-    .filter((relativePath) => relativePath && relativePath !== LOCK_FILE_RELATIVE)
+    .filter((relativePath) => (
+      relativePath
+      && relativePath !== LOCK_FILE_RELATIVE
+      && relativePath !== AGENT_WORKTREE_LOCK_FILE
+    ))
     .sort((left, right) => left.localeCompare(right));
 }
 
@@ -290,6 +321,8 @@ function deriveLatestWorktreeFileActivity(worktreePath) {
 
 function deriveSessionActivity(session, options = {}) {
   const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const pid = toPositiveInteger(session?.pid);
+  const pidAlive = pid ? isPidAlive(pid) : null;
   const blockingLabel = deriveBlockingGitLabel(session.worktreePath);
   if (blockingLabel) {
     return {
@@ -299,14 +332,13 @@ function deriveSessionActivity(session, options = {}) {
       activitySummary: blockingLabel,
       changeCount: 0,
       changedPaths: [],
-      pidAlive: isPidAlive(session.pid),
+      pidAlive,
       lastFileActivityAt: '',
       lastFileActivityLabel: '',
     };
   }
 
-  const pidAlive = isPidAlive(session.pid);
-  if (!pidAlive) {
+  if (pid && !pidAlive) {
     return {
       activityKind: 'dead',
       activityLabel: 'dead',
@@ -426,6 +458,7 @@ function buildSessionRecord(input) {
     repoRoot,
     branch,
     taskName: toNonEmptyString(input.taskName, 'task'),
+    latestTaskPreview: '',
     agentName: toNonEmptyString(input.agentName, 'agent'),
     worktreePath,
     pid,
@@ -465,6 +498,7 @@ function normalizeSessionRecord(input, options = {}) {
     repoRoot: path.resolve(repoRoot),
     branch,
     taskName: toNonEmptyString(input.taskName, 'task'),
+    latestTaskPreview: '',
     agentName: toNonEmptyString(input.agentName, 'agent'),
     worktreePath: path.resolve(worktreePath),
     pid,
@@ -476,6 +510,12 @@ function normalizeSessionRecord(input, options = {}) {
     filePath: toNonEmptyString(options.filePath),
     label: deriveSessionLabel(branch, worktreePath),
     changedPaths: [],
+    sourceKind: 'active-session',
+    telemetryUpdatedAt: '',
+    telemetrySource: '',
+    lockSnapshotCount: 0,
+    lockSessionCount: 0,
+    collaboration: false,
   };
 }
 
@@ -517,40 +557,39 @@ function isPidAlive(pid) {
   }
 }
 
-function readActiveSessions(repoRoot, options = {}) {
-  const activeSessionsDir = activeSessionsDirForRepo(repoRoot);
-  if (!fs.existsSync(activeSessionsDir)) {
-    return [];
+function readWorktreeBranch(worktreePath) {
+  const lines = runGitLines(worktreePath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  return Array.isArray(lines) && typeof lines[0] === 'string' ? lines[0].trim() : '';
+}
+
+function deriveAgentNameFromBranch(branch) {
+  const parts = toNonEmptyString(branch).split('/').filter(Boolean);
+  if (parts.length >= 2 && parts[0] === 'agent') {
+    return parts[1];
   }
+  return 'agent';
+}
 
-  const now = options.now || Date.now();
-  const sessions = [];
-  for (const entry of fs.readdirSync(activeSessionsDir, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.json')) {
-      continue;
+function flattenTelemetrySnapshotSessions(lockPayload) {
+  const flattened = [];
+  const snapshots = Array.isArray(lockPayload?.snapshots) ? lockPayload.snapshots : [];
+  for (const snapshot of snapshots) {
+    const snapshotSessions = Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
+    for (const session of snapshotSessions) {
+      flattened.push({
+        taskPreview: toNonEmptyString(session?.taskPreview),
+        taskUpdatedAt: normalizeIsoString(session?.taskUpdatedAt),
+        projectName: toNonEmptyString(session?.projectName),
+        projectPath: toNonEmptyString(session?.projectPath),
+        snapshotName: toNonEmptyString(snapshot?.snapshotName),
+        email: toNonEmptyString(snapshot?.email),
+      });
     }
-
-    const filePath = path.join(activeSessionsDir, entry.name);
-    let parsed;
-    try {
-      parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch (_error) {
-      continue;
-    }
-
-    const normalized = normalizeSessionRecord(parsed, { filePath });
-    if (!normalized) {
-      continue;
-    }
-    if (!options.includeStale && !isPidAlive(normalized.pid)) {
-      continue;
-    }
-
-    normalized.elapsedLabel = formatElapsedFrom(normalized.startedAt, now);
-    Object.assign(normalized, deriveSessionActivity(normalized, { now }));
-    sessions.push(normalized);
   }
+  return flattened;
+}
 
+function sortSessionsByTimestamp(sessions) {
   sessions.sort((left, right) => {
     const timeDelta = Date.parse(right.startedAt) - Date.parse(left.startedAt);
     if (timeDelta !== 0) {
@@ -558,8 +597,172 @@ function readActiveSessions(repoRoot, options = {}) {
     }
     return left.label.localeCompare(right.label);
   });
-
   return sessions;
+}
+
+function deriveLockTaskAnchor(entries, fallbackTaskName, fallbackTimestamp) {
+  const sortedEntries = [...entries].sort((left, right) => {
+    const timeDelta = Date.parse(right.taskUpdatedAt || '') - Date.parse(left.taskUpdatedAt || '');
+    if (timeDelta !== 0) {
+      return timeDelta;
+    }
+    if (Boolean(right.taskPreview) !== Boolean(left.taskPreview)) {
+      return Number(Boolean(right.taskPreview)) - Number(Boolean(left.taskPreview));
+    }
+    return (right.projectPath || '').localeCompare(left.projectPath || '');
+  });
+
+  const latestEntry = sortedEntries[0] || null;
+  return {
+    taskName: latestEntry?.taskPreview || fallbackTaskName || 'task',
+    latestTaskPreview: latestEntry?.taskPreview || '',
+    timestamp: latestEntry?.taskUpdatedAt || fallbackTimestamp || '',
+  };
+}
+
+function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options = {}) {
+  const now = options.now || Date.now();
+  const telemetryEntries = flattenTelemetrySnapshotSessions(lockPayload);
+  const telemetryUpdatedAt = normalizeIsoString(lockPayload?.updatedAt);
+  const branch = readWorktreeBranch(worktreePath);
+  const effectiveBranch = branch && branch !== 'HEAD'
+    ? branch
+    : `agent/telemetry/${path.basename(worktreePath)}`;
+  const label = deriveSessionLabel(effectiveBranch, worktreePath);
+  const taskAnchor = deriveLockTaskAnchor(telemetryEntries, label, telemetryUpdatedAt);
+  const startedAt = taskAnchor.timestamp || telemetryUpdatedAt || new Date(now).toISOString();
+
+  const session = {
+    schemaVersion: toPositiveInteger(lockPayload?.schemaVersion) || SESSION_SCHEMA_VERSION,
+    repoRoot: path.resolve(repoRoot),
+    branch: effectiveBranch,
+    taskName: taskAnchor.taskName,
+    latestTaskPreview: taskAnchor.latestTaskPreview,
+    agentName: deriveAgentNameFromBranch(effectiveBranch),
+    worktreePath: path.resolve(worktreePath),
+    pid: null,
+    cliName: 'codex',
+    taskMode: '',
+    openspecTier: '',
+    taskRoutingReason: '',
+    startedAt,
+    filePath: path.join(worktreePath, AGENT_WORKTREE_LOCK_FILE),
+    label,
+    changedPaths: [],
+    sourceKind: 'worktree-lock',
+    telemetryUpdatedAt: telemetryUpdatedAt || startedAt,
+    telemetrySource: toNonEmptyString(lockPayload?.source, 'worktree-lock'),
+    lockSnapshotCount: toPositiveInteger(lockPayload?.snapshotCount) || 0,
+    lockSessionCount: toPositiveInteger(lockPayload?.sessionCount) || telemetryEntries.length,
+    collaboration: Boolean(lockPayload?.collaboration),
+  };
+
+  session.elapsedLabel = formatElapsedFrom(session.startedAt, now);
+  Object.assign(session, deriveSessionActivity(session, { now }));
+  return session;
+}
+
+function readWorktreeLockSessions(repoRoot, options = {}) {
+  const sessions = [];
+  for (const managedRoot of resolveManagedWorktreeRoots(repoRoot)) {
+    if (!fs.existsSync(managedRoot)) {
+      continue;
+    }
+
+    let entries;
+    try {
+      entries = fs.readdirSync(managedRoot, { withFileTypes: true });
+    } catch (_error) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const worktreePath = path.join(managedRoot, entry.name);
+      const lockPath = path.join(worktreePath, AGENT_WORKTREE_LOCK_FILE);
+      if (!fs.existsSync(lockPath)) {
+        continue;
+      }
+
+      const lockPayload = readJsonFile(lockPath);
+      if (!lockPayload || typeof lockPayload !== 'object' || Array.isArray(lockPayload)) {
+        continue;
+      }
+
+      const telemetryEntries = flattenTelemetrySnapshotSessions(lockPayload);
+      if (telemetryEntries.length === 0 && !toPositiveInteger(lockPayload.sessionCount)) {
+        continue;
+      }
+
+      sessions.push(buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options));
+    }
+  }
+
+  return sortSessionsByTimestamp(sessions);
+}
+
+function mergeSessionSources(primarySessions, lockSessions) {
+  const lockSessionsByWorktree = new Map(
+    lockSessions.map((session) => [path.resolve(session.worktreePath), session]),
+  );
+  const consumedLockWorktrees = new Set();
+  const merged = [];
+
+  for (const session of primarySessions) {
+    const worktreeKey = path.resolve(session.worktreePath);
+    const lockSession = lockSessionsByWorktree.get(worktreeKey);
+    if (lockSession && session.activityKind === 'dead') {
+      continue;
+    }
+    if (lockSession) {
+      consumedLockWorktrees.add(worktreeKey);
+    }
+    merged.push(session);
+  }
+
+  for (const lockSession of lockSessions) {
+    const worktreeKey = path.resolve(lockSession.worktreePath);
+    if (!consumedLockWorktrees.has(worktreeKey)) {
+      merged.push(lockSession);
+    }
+  }
+
+  return sortSessionsByTimestamp(merged);
+}
+
+function readActiveSessions(repoRoot, options = {}) {
+  const activeSessionsDir = activeSessionsDirForRepo(repoRoot);
+  const now = options.now || Date.now();
+  const sessionFileSessions = [];
+  if (fs.existsSync(activeSessionsDir)) {
+    for (const entry of fs.readdirSync(activeSessionsDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) {
+        continue;
+      }
+
+      const filePath = path.join(activeSessionsDir, entry.name);
+      const parsed = readJsonFile(filePath);
+      const normalized = normalizeSessionRecord(parsed, { filePath });
+      if (!normalized) {
+        continue;
+      }
+      if (!options.includeStale && !isPidAlive(normalized.pid)) {
+        continue;
+      }
+
+      normalized.elapsedLabel = formatElapsedFrom(normalized.startedAt, now);
+      Object.assign(normalized, deriveSessionActivity(normalized, { now }));
+      sessionFileSessions.push(normalized);
+    }
+  }
+
+  return mergeSessionSources(
+    sortSessionsByTimestamp(sessionFileSessions),
+    readWorktreeLockSessions(repoRoot, { now }),
+  );
 }
 
 function readRepoChanges(repoRoot) {
@@ -592,6 +795,7 @@ module.exports = {
   parseRepoChangeLine,
   previewChangedPaths,
   readActiveSessions,
+  readWorktreeLockSessions,
   readRepoChanges,
   deriveRepoChangeStatus,
   resolveWorktreeGitDir,

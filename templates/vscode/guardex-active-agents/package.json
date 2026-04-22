@@ -14,6 +14,8 @@
   ],
   "activationEvents": [
     "workspaceContains:.omx/state/active-sessions",
+    "workspaceContains:.omx/agent-worktrees",
+    "workspaceContains:.omc/agent-worktrees",
     "onView:gitguardex.activeAgents"
   ],
   "main": "./extension.js",

@@ -52,6 +52,50 @@ function writeSessionRecord(repoRoot, record) {
   return sessionPath;
 }
 
+function buildWorktreeLockPayload(worktreePath, overrides = {}) {
+  return {
+    schemaVersion: 1,
+    source: 'recodee-live-telemetry',
+    updatedAt: '2026-04-22T08:56:00.000Z',
+    worktreePath,
+    worktreeName: path.basename(worktreePath),
+    collaboration: false,
+    snapshotCount: 1,
+    sessionCount: 1,
+    snapshots: [
+      {
+        snapshotName: 'snapshot-a',
+        accountId: 'acct-1',
+        email: 'agent@example.com',
+        liveSessionCount: 1,
+        trackedSessionCount: 1,
+        compatSessionCount: 1,
+        sessions: [
+          {
+            sessionKey: 'pid:101',
+            taskPreview: 'Implement live worktree telemetry',
+            taskUpdatedAt: '2026-04-22T08:55:00.000Z',
+            projectName: 'gitguardex',
+            projectPath: worktreePath,
+          },
+        ],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function writeWorktreeLock(worktreePath, overrides = {}) {
+  const lockPath = path.join(worktreePath, 'AGENT.lock');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(
+    lockPath,
+    `${JSON.stringify(buildWorktreeLockPayload(worktreePath, overrides), null, 2)}\n`,
+    'utf8',
+  );
+  return lockPath;
+}
+
 function loadExtensionWithMockVscode(mockVscode, mockSessionSchema = null) {
   const Module = require('node:module');
   const originalLoad = Module._load;
@@ -470,6 +514,62 @@ test('session-schema ignores stale or invalid session records', () => {
   );
 });
 
+test('session-schema falls back to managed worktree AGENT.lock telemetry when launcher state is absent', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-lock-fallback-'));
+  const worktreePath = path.join(
+    tempRoot,
+    '.omx',
+    'agent-worktrees',
+    'agent__codex__live-lock-task',
+  );
+  initGitRepo(worktreePath);
+  runGit(worktreePath, ['checkout', '-b', 'agent/codex/live-lock-task']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'tracked.txt']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  writeWorktreeLock(worktreePath);
+
+  const [session] = sessionSchema.readActiveSessions(tempRoot);
+  assert.equal(session.sourceKind, 'worktree-lock');
+  assert.equal(session.branch, 'agent/codex/live-lock-task');
+  assert.equal(session.agentName, 'codex');
+  assert.equal(session.taskName, 'Implement live worktree telemetry');
+  assert.equal(session.activityKind, 'idle');
+  assert.equal(session.telemetrySource, 'recodee-live-telemetry');
+  assert.equal(session.telemetryUpdatedAt, '2026-04-22T08:56:00.000Z');
+});
+
+test('session-schema prefers live worktree telemetry over a dead launcher record for the same worktree', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-lock-prefer-'));
+  const worktreePath = path.join(
+    tempRoot,
+    '.omx',
+    'agent-worktrees',
+    'agent__codex__replace-dead-session',
+  );
+  initGitRepo(worktreePath);
+  runGit(worktreePath, ['checkout', '-b', 'agent/codex/replace-dead-session']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'tracked.txt']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  writeWorktreeLock(worktreePath, {
+    updatedAt: '2026-04-22T08:57:00.000Z',
+  });
+  writeSessionRecord(tempRoot, sessionSchema.buildSessionRecord({
+    repoRoot: tempRoot,
+    branch: 'agent/codex/replace-dead-session',
+    taskName: 'replace-dead-session',
+    agentName: 'codex',
+    worktreePath,
+    pid: 999999,
+    cliName: 'codex',
+  }));
+
+  const [session] = sessionSchema.readActiveSessions(tempRoot, { includeStale: true });
+  assert.equal(session.sourceKind, 'worktree-lock');
+  assert.equal(session.activityKind, 'idle');
+});
+
 test('session-schema derives working activity from dirty sandbox worktrees', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-working-'));
   const worktreePath = path.join(tempRoot, 'sandbox');
@@ -640,12 +740,13 @@ test('active-agents extension registers tree and decoration providers', async ()
   assert.equal(registrations.providers.length, 1);
   assert.equal(registrations.providers[0].viewId, 'gitguardex.activeAgents');
   assert.equal(registrations.decorationProviders.length, 1);
-  assert.equal(registrations.fileWatchers.length, 2);
+  assert.equal(registrations.fileWatchers.length, 3);
   assert.deepEqual(
     registrations.fileWatchers.map((watcher) => watcher.pattern),
     [
       '**/.omx/state/active-sessions/*.json',
       '**/.omx/state/agent-file-locks.json',
+      '**/{.omx,.omc}/agent-worktrees/**/AGENT.lock',
     ],
   );
   assert.equal(registrations.workspaceFolderListeners.length, 1);
@@ -998,6 +1099,60 @@ test('active-agents extension shows grouped repo changes beside active agents', 
   }
 });
 
+test('active-agents extension surfaces live managed worktrees from AGENT.lock fallback', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-worktree-lock-view-'));
+  initGitRepo(tempRoot);
+
+  const worktreePath = path.join(
+    tempRoot,
+    '.omx',
+    'agent-worktrees',
+    'agent__codex__lock-visible-task',
+  );
+  initGitRepo(worktreePath);
+  runGit(worktreePath, ['checkout', '-b', 'agent/codex/lock-visible-task']);
+  fs.mkdirSync(path.join(worktreePath, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'src/live.js']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\nchanged\n', 'utf8');
+  const lockPath = writeWorktreeLock(worktreePath, {
+    updatedAt: '2026-04-22T09:01:00.000Z',
+  });
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async (pattern) => {
+    if (pattern === '**/.omx/state/active-sessions/*.json') {
+      return [];
+    }
+    if (pattern === '**/{.omx,.omc}/agent-worktrees/**/AGENT.lock') {
+      return [{ fsPath: lockPath }];
+    }
+    return [];
+  };
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const provider = registrations.providers[0].provider;
+  const [repoItem] = await provider.getChildren();
+  assert.equal(repoItem.description, '1 active · 1 working · 1 changed');
+
+  const [agentsSection] = await provider.getChildren(repoItem);
+  const [workingSection] = await provider.getChildren(agentsSection);
+  const [sessionItem] = await provider.getChildren(workingSection);
+  assert.equal(workingSection.label, 'WORKING NOW');
+  assert.equal(sessionItem.label, `${path.basename(worktreePath)} 🔒 0`);
+  assert.match(sessionItem.description, /^working · 1 file · /);
+  assert.match(sessionItem.tooltip, /Telemetry updated 2026-04-22T09:01:00.000Z/);
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
 test('active-agents extension decorates sessions and repo changes from the lock registry', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-lock-decorations-'));
   initGitRepo(tempRoot);
@@ -1339,6 +1494,7 @@ test('active-agents extension watches active sessions, lock files, and session g
     [
       '**/.omx/state/active-sessions/*.json',
       '**/.omx/state/agent-file-locks.json',
+      '**/{.omx,.omc}/agent-worktrees/**/AGENT.lock',
       path.join(worktreePath, '.git', 'index'),
     ],
   );
@@ -1349,7 +1505,7 @@ test('active-agents extension watches active sessions, lock files, and session g
   await new Promise((resolve) => setTimeout(resolve, 350));
   await flushAsyncWork();
 
-  assert.equal(registrations.fileWatchers[2].disposed, true);
+  assert.equal(registrations.fileWatchers[3].disposed, true);
 
   for (const subscription of context.subscriptions) {
     subscription.dispose?.();
@@ -1370,6 +1526,7 @@ test('active-agents extension debounces refresh events with a trailing 250ms tim
 
   registrations.fileWatchers[0].fireChange({ fsPath: path.join(tempRoot, '.omx', 'state', 'active-sessions', 'a.json') });
   registrations.fileWatchers[1].fireChange({ fsPath: path.join(tempRoot, '.omx', 'state', 'agent-file-locks.json') });
+  registrations.fileWatchers[2].fireChange({ fsPath: path.join(tempRoot, '.omx', 'agent-worktrees', 'agent__codex__a', 'AGENT.lock') });
   assert.equal(provider.onDidChangeTreeDataEmitter.fireCount, 0);
 
   await new Promise((resolve) => setTimeout(resolve, 300));

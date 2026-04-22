@@ -24,4 +24,4 @@ What it does:
 - Shows repo-root git changes in a sibling `CHANGES` section when the guarded repo itself is dirty.
 - Derives session state from dirty worktree status, git conflict markers, PID liveness, and recent file mtimes, surfaces working/dead counts in the repo/header summary, and shows changed-file counts for active edits.
 - Uses distinct VS Code codicons for each session state: `warning`, `edit`, `loading~spin`, `clock`, and `error`.
-- Reads repo-local presence files from `.omx/state/active-sessions/`.
+- Reads repo-local presence files from `.omx/state/active-sessions/` and falls back to managed worktree-root `AGENT.lock` telemetry when the launcher session file is absent.
