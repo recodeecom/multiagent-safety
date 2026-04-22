@@ -1,5 +1,39 @@
 const path = require('node:path');
 
+function requireFlagValue(rawArgs, index, flagName) {
+  const value = rawArgs[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${flagName} requires a value`);
+  }
+  return value;
+}
+
+function parseHeartbeatArgs(rawArgs) {
+  let branch = '';
+  let state = '';
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
+    if (arg === '--branch') {
+      branch = requireFlagValue(rawArgs, index, '--branch');
+      index += 1;
+      continue;
+    }
+    if (arg === '--state') {
+      state = requireFlagValue(rawArgs, index, '--state');
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown heartbeat option: ${arg}`);
+  }
+
+  if (!branch) {
+    throw new Error('heartbeat requires --branch <agent/...>');
+  }
+
+  return { branch, state };
+}
+
 function hook(rawArgs, deps) {
   const {
     extractTargetedArgs,
@@ -55,6 +89,36 @@ function internal(rawArgs, deps) {
   } = deps;
 
   const [subcommand, assetKey, ...rest] = rawArgs;
+  if (subcommand === 'heartbeat') {
+    const { target, passthrough } = extractTargetedArgs([assetKey, ...rest].filter(Boolean));
+    const repoRoot = resolveRepoRoot(target);
+    const options = parseHeartbeatArgs(passthrough);
+    const heartbeatArgs = ['heartbeat', '--repo', repoRoot, '--branch', options.branch];
+    if (options.state) {
+      heartbeatArgs.push('--state', options.state);
+    }
+    const result = runPackageAsset('sessionState', heartbeatArgs, { cwd: repoRoot });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exitCode = result.status;
+    return;
+  }
+  if (subcommand === 'stop-session') {
+    const { target, passthrough } = extractTargetedArgs([assetKey, ...rest].filter(Boolean));
+    const repoRoot = resolveRepoRoot(target);
+    const options = parseHeartbeatArgs(passthrough);
+    const result = runPackageAsset('sessionState', [
+      'terminate',
+      '--repo',
+      repoRoot,
+      '--branch',
+      options.branch,
+    ], { cwd: repoRoot });
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exitCode = result.status;
+    return;
+  }
   if (subcommand !== 'run-shell') {
     throw new Error(`Unknown internal command: ${subcommand || '(missing)'}`);
   }

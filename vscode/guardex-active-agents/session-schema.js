@@ -13,8 +13,12 @@ const MANAGED_WORKTREE_ROOTS = [
 const MAX_CHANGED_PATH_PREVIEW = 3;
 const ACTIVE_SESSIONS_FILTER_PREFIX = ACTIVE_SESSIONS_RELATIVE_DIR.split(path.sep).join('/');
 const LOCK_FILE_FILTER_PATH = LOCK_FILE_RELATIVE.split(path.sep).join('/');
+const MANAGED_WORKTREE_FILTER_PREFIXES = MANAGED_WORKTREE_ROOTS
+  .map((relativeRoot) => relativeRoot.split(path.sep).join('/').replace(/\/+$/, ''));
 const IDLE_ACTIVITY_WINDOW_MS = 2 * 60 * 1000;
 const STALLED_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
+const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+const ADVISORY_SESSION_STATES = new Set(['working', 'thinking', 'idle']);
 const BLOCKING_GIT_STATES = [
   {
     label: 'Rebase in progress.',
@@ -48,6 +52,11 @@ function normalizeTaskMode(value) {
 function normalizeOpenSpecTier(value) {
   const normalized = toNonEmptyString(value).toUpperCase();
   return ['T0', 'T1', 'T2', 'T3'].includes(normalized) ? normalized : '';
+}
+
+function normalizeAdvisoryState(value, fallback = 'working') {
+  const normalized = toNonEmptyString(value).toLowerCase();
+  return ADVISORY_SESSION_STATES.has(normalized) ? normalized : fallback;
 }
 
 function sanitizeBranchForFile(branch) {
@@ -212,6 +221,9 @@ function parseRepoChangeLine(repoRoot, line) {
     || normalizedRelativePath.startsWith(`${LOCK_FILE_FILTER_PATH}/`)
     || normalizedRelativePath === ACTIVE_SESSIONS_FILTER_PREFIX
     || normalizedRelativePath.startsWith(`${ACTIVE_SESSIONS_FILTER_PREFIX}/`)
+    || MANAGED_WORKTREE_FILTER_PREFIXES.some((prefix) => (
+      normalizedRelativePath === prefix || normalizedRelativePath.startsWith(`${prefix}/`)
+    ))
   ) {
     return null;
   }
@@ -323,6 +335,23 @@ function deriveSessionActivity(session, options = {}) {
   const now = Number.isFinite(options.now) ? options.now : Date.now();
   const pid = toPositiveInteger(session?.pid);
   const pidAlive = pid ? isPidAlive(pid) : null;
+  const heartbeatAt = normalizeIsoString(session?.lastHeartbeatAt);
+  const heartbeatMs = Date.parse(heartbeatAt);
+  if (heartbeatAt && Number.isFinite(heartbeatMs) && now - heartbeatMs > HEARTBEAT_STALE_MS) {
+    return {
+      activityKind: 'dead',
+      activityLabel: 'dead',
+      activityCountLabel: '',
+      activitySummary: `Heartbeat stale for ${formatElapsedFrom(heartbeatAt, now)}.`,
+      changeCount: 0,
+      changedPaths: [],
+      worktreeChangedPaths: [],
+      pidAlive,
+      lastFileActivityAt: '',
+      lastFileActivityLabel: '',
+    };
+  }
+
   const blockingLabel = deriveBlockingGitLabel(session.worktreePath);
   if (blockingLabel) {
     return {
@@ -332,6 +361,7 @@ function deriveSessionActivity(session, options = {}) {
       activitySummary: blockingLabel,
       changeCount: 0,
       changedPaths: [],
+      worktreeChangedPaths: [],
       pidAlive,
       lastFileActivityAt: '',
       lastFileActivityLabel: '',
@@ -346,6 +376,7 @@ function deriveSessionActivity(session, options = {}) {
       activitySummary: 'Recorded PID is not alive.',
       changeCount: 0,
       changedPaths: [],
+      worktreeChangedPaths: [],
       pidAlive,
       lastFileActivityAt: '',
       lastFileActivityLabel: '',
@@ -361,6 +392,7 @@ function deriveSessionActivity(session, options = {}) {
       activitySummary: 'Worktree activity unavailable.',
       changeCount: 0,
       changedPaths: [],
+      worktreeChangedPaths: [],
       pidAlive,
       lastFileActivityAt: '',
       lastFileActivityLabel: '',
@@ -368,6 +400,10 @@ function deriveSessionActivity(session, options = {}) {
   }
 
   if (worktreeChangedPaths.length > 0) {
+    const worktreeRelativePaths = [...new Set(worktreeChangedPaths
+      .map((relativePath) => normalizeRelativePath(relativePath))
+      .filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right));
     const changedPaths = [...new Set(worktreeChangedPaths
       .map((relativePath) => normalizeRelativePath(
         path.relative(session.repoRoot, path.resolve(session.worktreePath, relativePath)),
@@ -382,6 +418,7 @@ function deriveSessionActivity(session, options = {}) {
       activitySummary: previewChangedPaths(worktreeChangedPaths),
       changeCount: worktreeChangedPaths.length,
       changedPaths,
+      worktreeChangedPaths: worktreeRelativePaths,
       pidAlive,
       lastFileActivityAt: '',
       lastFileActivityLabel: '',
@@ -407,6 +444,7 @@ function deriveSessionActivity(session, options = {}) {
       activitySummary: `Worktree clean. No file activity for ${lastFileActivityLabel}.`,
       changeCount: 0,
       changedPaths: [],
+      worktreeChangedPaths: [],
       pidAlive,
       lastFileActivityAt,
       lastFileActivityLabel,
@@ -424,6 +462,7 @@ function deriveSessionActivity(session, options = {}) {
         : 'Worktree clean.',
     changeCount: 0,
     changedPaths: [],
+    worktreeChangedPaths: [],
     pidAlive,
     lastFileActivityAt,
     lastFileActivityLabel,
@@ -436,6 +475,7 @@ function buildSessionRecord(input) {
   const branch = toNonEmptyString(input.branch);
   const pid = toPositiveInteger(input.pid);
   const startedAt = input.startedAt ? new Date(input.startedAt) : new Date();
+  const lastHeartbeatAt = input.lastHeartbeatAt ? new Date(input.lastHeartbeatAt) : new Date();
 
   if (!branch) {
     throw new Error('branch is required');
@@ -452,6 +492,9 @@ function buildSessionRecord(input) {
   if (Number.isNaN(startedAt.getTime())) {
     throw new Error('startedAt must be a valid date');
   }
+  if (Number.isNaN(lastHeartbeatAt.getTime())) {
+    throw new Error('lastHeartbeatAt must be a valid date');
+  }
 
   return {
     schemaVersion: SESSION_SCHEMA_VERSION,
@@ -467,6 +510,8 @@ function buildSessionRecord(input) {
     openspecTier: normalizeOpenSpecTier(input.openspecTier),
     taskRoutingReason: toNonEmptyString(input.taskRoutingReason),
     startedAt: startedAt.toISOString(),
+    lastHeartbeatAt: lastHeartbeatAt.toISOString(),
+    state: normalizeAdvisoryState(input.state),
   };
 }
 
@@ -487,9 +532,17 @@ function normalizeSessionRecord(input, options = {}) {
   const branch = toNonEmptyString(input.branch);
   const worktreePath = toNonEmptyString(input.worktreePath);
   const startedAt = new Date(input.startedAt);
+  const lastHeartbeatAt = new Date(input.lastHeartbeatAt || input.startedAt);
   const pid = toPositiveInteger(input.pid);
 
-  if (!repoRoot || !branch || !worktreePath || !pid || Number.isNaN(startedAt.getTime())) {
+  if (
+    !repoRoot
+    || !branch
+    || !worktreePath
+    || !pid
+    || Number.isNaN(startedAt.getTime())
+    || Number.isNaN(lastHeartbeatAt.getTime())
+  ) {
     return null;
   }
 
@@ -507,9 +560,12 @@ function normalizeSessionRecord(input, options = {}) {
     openspecTier: normalizeOpenSpecTier(input.openspecTier),
     taskRoutingReason: toNonEmptyString(input.taskRoutingReason),
     startedAt: startedAt.toISOString(),
+    lastHeartbeatAt: lastHeartbeatAt.toISOString(),
+    state: normalizeAdvisoryState(input.state, 'idle'),
     filePath: toNonEmptyString(options.filePath),
     label: deriveSessionLabel(branch, worktreePath),
     changedPaths: [],
+    worktreeChangedPaths: [],
     sourceKind: 'active-session',
     telemetryUpdatedAt: '',
     telemetrySource: '',
@@ -646,9 +702,12 @@ function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options =
     openspecTier: '',
     taskRoutingReason: '',
     startedAt,
+    lastHeartbeatAt: '',
+    state: '',
     filePath: path.join(worktreePath, AGENT_WORKTREE_LOCK_FILE),
     label,
     changedPaths: [],
+    worktreeChangedPaths: [],
     sourceKind: 'worktree-lock',
     telemetryUpdatedAt: telemetryUpdatedAt || startedAt,
     telemetrySource: toNonEmptyString(lockPayload?.source, 'worktree-lock'),

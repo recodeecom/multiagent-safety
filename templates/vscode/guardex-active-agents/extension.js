@@ -27,14 +27,14 @@ const UPDATE_LATER_ACTION = 'Later';
 const SESSION_ACTIVITY_GROUPS = [
   { kind: 'blocked', label: 'BLOCKED' },
   { kind: 'working', label: 'WORKING NOW' },
-  { kind: 'idle', label: 'IDLE' },
+  { kind: 'idle', label: 'THINKING' },
   { kind: 'stalled', label: 'STALLED' },
   { kind: 'dead', label: 'DEAD' },
 ];
 const SESSION_ACTIVITY_ICON_IDS = {
   blocked: 'warning',
-  working: 'edit',
-  idle: 'loading~spin',
+  working: 'loading~spin',
+  idle: 'comment-discussion',
   stalled: 'clock',
   dead: 'error',
 };
@@ -265,8 +265,9 @@ class RepoItem extends vscode.TreeItem {
     if (workingCount > 0) {
       descriptionParts.push(`${workingCount} working`);
     }
-    if (changes.length > 0) {
-      descriptionParts.push(`${changes.length} changed`);
+    const changedCount = countChangedPaths(repoRoot, sessions, changes);
+    if (changedCount > 0) {
+      descriptionParts.push(`${changedCount} changed`);
     }
     this.description = descriptionParts.join(' · ');
     this.tooltip = [
@@ -315,6 +316,7 @@ class SessionItem extends vscode.TreeItem {
         ? `Changed ${session.activityCountLabel}: ${session.activitySummary}`
         : session.activitySummary,
       `Locks ${lockCount}`,
+      session.conflictCount > 0 ? `Conflicts ${session.conflictCount}` : '',
       Number.isInteger(session.pid) && session.pid > 0
         ? session.pidAlive === false
           ? `PID ${session.pid} not alive`
@@ -441,24 +443,27 @@ async function stopSession(session, refresh) {
     showSessionMessage('Cannot stop session: missing pid.');
     return;
   }
+  if (!session?.branch) {
+    showSessionMessage('Cannot stop session: missing branch name.');
+    return;
+  }
 
   const confirmed = await vscode.window.showWarningMessage(
     `Stop ${sessionDisplayLabel(session)}?`,
-    { modal: true, detail: `Send SIGTERM to pid ${pid}.` },
+    { modal: true, detail: `Ask gx to send SIGTERM to pid ${pid}.` },
     'Stop',
   );
   if (confirmed !== 'Stop') {
     return;
   }
 
-  try {
-    process.kill(pid, 'SIGTERM');
-    refresh();
-  } catch (error) {
-    showSessionMessage(
-      `Failed to stop session ${sessionDisplayLabel(session)}: ${error?.message || String(error)}`,
-    );
-  }
+  runSessionTerminalCommand(
+    session,
+    'Stop',
+    'debug-stop',
+    `gx internal stop-session --branch ${shellQuote(session.branch)}`,
+  );
+  refresh();
 }
 
 async function openSessionDiff(session) {
@@ -684,9 +689,12 @@ async function maybeAutoUpdateActiveAgentsExtension(context) {
 }
 
 function decorateSession(session, lockRegistry) {
+  const touchedChanges = buildSessionTouchedChanges(session, lockRegistry);
   return {
     ...session,
     lockCount: lockRegistry.countsByBranch.get(session.branch) || 0,
+    touchedChanges,
+    conflictCount: touchedChanges.filter((change) => change.hasForeignLock).length,
   };
 }
 
@@ -698,6 +706,28 @@ function decorateChange(change, lockRegistry, owningBranch) {
     lockOwnerBranch,
     hasForeignLock: Boolean(lockOwnerBranch) && (!owningBranch || lockOwnerBranch !== owningBranch),
   };
+}
+
+function buildSessionTouchedChanges(session, lockRegistry) {
+  const changedPaths = Array.isArray(session.worktreeChangedPaths)
+    ? session.worktreeChangedPaths
+    : [];
+  return [...new Set(changedPaths.map(normalizeRelativePath).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right))
+    .map((relativePath) => {
+      const lockEntry = lockRegistry.entriesByPath.get(relativePath);
+      const lockOwnerBranch = lockEntry?.branch || '';
+      return {
+        relativePath,
+        absolutePath: path.join(session.worktreePath, relativePath),
+        originalPath: '',
+        statusCode: 'M',
+        statusLabel: 'M',
+        statusText: 'Touched',
+        lockOwnerBranch,
+        hasForeignLock: Boolean(lockOwnerBranch) && lockOwnerBranch !== session.branch,
+      };
+    });
 }
 
 function isPathWithin(parentPath, targetPath) {
@@ -876,6 +906,31 @@ function countWorkingSessions(sessions) {
   return sessions.filter((session) => session.activityKind === 'working').length;
 }
 
+function countChangedPaths(repoRoot, sessions, changes) {
+  const changedKeys = new Set();
+
+  for (const change of changes || []) {
+    if (change?.relativePath) {
+      changedKeys.add(normalizeRelativePath(change.relativePath));
+    }
+  }
+
+  for (const session of sessions || []) {
+    for (const change of session.touchedChanges || []) {
+      const absolutePath = change?.absolutePath
+        || path.join(session.worktreePath || '', change?.relativePath || '');
+      const normalizedRelativePath = absolutePath && isPathWithin(repoRoot, absolutePath)
+        ? normalizeRelativePath(path.relative(repoRoot, absolutePath))
+        : `${session.branch}:${normalizeRelativePath(change?.relativePath)}`;
+      if (normalizedRelativePath) {
+        changedKeys.add(normalizedRelativePath);
+      }
+    }
+  }
+
+  return changedKeys.size;
+}
+
 function buildGroupedChangeTreeNodes(sessions, changes) {
   const changesBySession = new Map();
   const sessionByChangedPath = new Map();
@@ -1049,7 +1104,10 @@ function buildActiveAgentGroupNodes(sessions) {
   for (const group of SESSION_ACTIVITY_GROUPS) {
     const groupSessions = sessions
       .filter((session) => session.activityKind === group.kind)
-      .map((session) => new SessionItem(session));
+      .map((session) => new SessionItem(
+        session,
+        buildChangeTreeNodes(session.touchedChanges || []),
+      ));
     if (groupSessions.length > 0) {
       groups.push(new SectionItem(group.label, groupSessions));
     }
@@ -1072,6 +1130,7 @@ class ActiveAgentsProvider {
       sessionCount: 0,
       workingCount: 0,
       deadCount: 0,
+      conflictCount: 0,
     };
   }
 
@@ -1118,7 +1177,7 @@ class ActiveAgentsProvider {
     this.setSelectedSession(nextSession || null);
   }
 
-  updateViewState(sessionCount, workingCount, deadCount) {
+  updateViewState(sessionCount, workingCount, deadCount, conflictCount = 0) {
     if (!this.treeView) {
       return;
     }
@@ -1128,7 +1187,10 @@ class ActiveAgentsProvider {
       sessionCount,
       workingCount,
       deadCount,
+      conflictCount,
     };
+    void vscode.commands.executeCommand('setContext', 'guardex.hasAgents', sessionCount > 0);
+    void vscode.commands.executeCommand('setContext', 'guardex.hasConflicts', conflictCount > 0);
     const badgeTooltipParts = [];
     if (activeCount > 0) {
       badgeTooltipParts.push(`${activeCount} active agent${activeCount === 1 ? '' : 's'}`);
@@ -1138,6 +1200,9 @@ class ActiveAgentsProvider {
     }
     if (workingCount > 0) {
       badgeTooltipParts.push(`${workingCount} working now`);
+    }
+    if (conflictCount > 0) {
+      badgeTooltipParts.push(`${conflictCount} conflict${conflictCount === 1 ? '' : 's'}`);
     }
 
     this.treeView.badge = sessionCount > 0
@@ -1162,8 +1227,12 @@ class ActiveAgentsProvider {
       (total, entry) => total + countSessionsByActivityKind(entry.sessions, 'dead'),
       0,
     );
+    const conflictCount = repoEntries.reduce(
+      (total, entry) => total + countEntryConflicts(entry),
+      0,
+    );
 
-    this.updateViewState(sessionCount, workingCount, deadCount);
+    this.updateViewState(sessionCount, workingCount, deadCount, conflictCount);
     this.decorationProvider?.updateSessions(repoEntries.flatMap((entry) => entry.sessions));
     this.decorationProvider?.updateLockEntries(repoEntries);
     return repoEntries;
@@ -1173,20 +1242,6 @@ class ActiveAgentsProvider {
     await this.syncRepoEntries();
     this.onDidChangeTreeDataEmitter.fire();
     this.decorationProvider?.refresh();
-  }
-
-  readLockRegistryForRepo(repoRoot) {
-    const lockRegistry = readLockRegistry(repoRoot);
-    this.lockRegistryByRepoRoot.set(repoRoot, lockRegistry);
-    return lockRegistry;
-  }
-
-  getLockRegistryForRepo(repoRoot) {
-    return this.lockRegistryByRepoRoot.get(repoRoot) || this.readLockRegistryForRepo(repoRoot);
-  }
-
-  refreshLockRegistryForFile(filePath) {
-    this.readLockRegistryForRepo(repoRootFromLockFile(filePath));
   }
 
   readLockRegistryForRepo(repoRoot) {
@@ -1248,6 +1303,15 @@ class ActiveAgentsProvider {
       };
     });
   }
+}
+
+function countEntryConflicts(entry) {
+  const sessionConflicts = entry.sessions.reduce(
+    (total, session) => total + (session.conflictCount || 0),
+    0,
+  );
+  const changeConflicts = entry.changes.filter((change) => change.hasForeignLock).length;
+  return sessionConflicts + changeConflicts;
 }
 
 class ActiveAgentsRefreshController {

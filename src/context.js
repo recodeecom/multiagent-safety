@@ -202,6 +202,7 @@ const PACKAGE_SCRIPT_ASSETS = {
   branchMerge: path.join(TEMPLATE_ROOT, 'scripts', 'agent-branch-merge.sh'),
   codexAgent: path.join(TEMPLATE_ROOT, 'scripts', 'codex-agent.sh'),
   reviewBot: path.join(TEMPLATE_ROOT, 'scripts', 'review-bot-watch.sh'),
+  sessionState: path.join(TEMPLATE_ROOT, 'scripts', 'agent-session-state.js'),
   worktreePrune: path.join(TEMPLATE_ROOT, 'scripts', 'agent-worktree-prune.sh'),
   lockTool: path.join(TEMPLATE_ROOT, 'scripts', 'agent-file-locks.py'),
   planInit: path.join(TEMPLATE_ROOT, 'scripts', 'openspec', 'init-plan-workspace.sh'),

@@ -6,6 +6,7 @@ const path = require('node:path');
 const cp = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
+const cliEntry = path.join(repoRoot, 'bin', 'multiagent-safety.js');
 const sessionScript = path.join(repoRoot, 'scripts', 'agent-session-state.js');
 const installScript = path.join(repoRoot, 'scripts', 'install-vscode-active-agents-extension.js');
 const extensionManifestPath = path.join(
@@ -564,12 +565,30 @@ test('agent-session-state writes and removes active session records', () => {
   assert.equal(parsed.taskMode, 'caveman');
   assert.equal(parsed.openspecTier, 'T1');
   assert.equal(parsed.taskRoutingReason, 'explicit lightweight prefix');
+  assert.equal(parsed.state, 'working');
+  assert.equal(typeof parsed.lastHeartbeatAt, 'string');
+  assert.ok(Date.parse(parsed.lastHeartbeatAt) >= Date.parse(parsed.startedAt));
 
   const sessions = sessionSchema.readActiveSessions(tempRoot);
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].label, 'agent__codex__demo-task');
   assert.equal(sessions[0].taskMode, 'caveman');
   assert.equal(sessions[0].openspecTier, 'T1');
+
+  const heartbeat = runNode(sessionScript, [
+    'heartbeat',
+    '--repo',
+    tempRoot,
+    '--branch',
+    branch,
+    '--state',
+    'thinking',
+  ]);
+  assert.equal(heartbeat.status, 0, heartbeat.stderr);
+  const heartbeatParsed = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(heartbeatParsed.branch, branch);
+  assert.equal(heartbeatParsed.state, 'thinking');
+  assert.ok(Date.parse(heartbeatParsed.lastHeartbeatAt) >= Date.parse(parsed.lastHeartbeatAt));
 
   const stop = runNode(sessionScript, [
     'stop',
@@ -580,6 +599,43 @@ test('agent-session-state writes and removes active session records', () => {
   ]);
   assert.equal(stop.status, 0, stop.stderr);
   assert.equal(fs.existsSync(sessionPath), false);
+});
+
+test('gx internal heartbeat refreshes active session records through the CLI', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-cli-heartbeat-'));
+  initGitRepo(tempRoot);
+  const branch = 'agent/codex/cli-heartbeat-task';
+  const worktreePath = path.join(tempRoot, '.omx', 'agent-worktrees', 'agent__codex__cli-heartbeat-task');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  const sessionPath = writeSessionRecord(tempRoot, sessionSchema.buildSessionRecord({
+    repoRoot: tempRoot,
+    branch,
+    taskName: 'cli-heartbeat-task',
+    agentName: 'codex',
+    worktreePath,
+    pid: process.pid,
+    cliName: 'codex',
+    state: 'working',
+  }));
+  const before = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+
+  const heartbeat = runNode(cliEntry, [
+    'internal',
+    'heartbeat',
+    '--target',
+    tempRoot,
+    '--branch',
+    branch,
+    '--state',
+    'idle',
+  ], { cwd: repoRoot });
+  assert.equal(heartbeat.status, 0, heartbeat.stderr);
+
+  const after = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(after.branch, branch);
+  assert.equal(after.taskName, before.taskName);
+  assert.equal(after.state, 'idle');
+  assert.ok(Date.parse(after.lastHeartbeatAt) >= Date.parse(before.lastHeartbeatAt));
 });
 
 test('session-schema ignores stale or invalid session records', () => {
@@ -643,6 +699,7 @@ test('session-schema falls back to managed worktree AGENT.lock telemetry when la
   fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
   runGit(worktreePath, ['add', 'tracked.txt']);
   runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\nchanged\n', 'utf8');
   writeWorktreeLock(worktreePath);
 
   const [session] = sessionSchema.readActiveSessions(tempRoot);
@@ -650,7 +707,8 @@ test('session-schema falls back to managed worktree AGENT.lock telemetry when la
   assert.equal(session.branch, 'agent/codex/live-lock-task');
   assert.equal(session.agentName, 'codex');
   assert.equal(session.taskName, 'Implement live worktree telemetry');
-  assert.equal(session.activityKind, 'idle');
+  assert.equal(session.activityKind, 'working');
+  assert.equal(session.activityCountLabel, '1 file');
   assert.equal(session.telemetrySource, 'recodee-live-telemetry');
   assert.equal(session.telemetryUpdatedAt, '2026-04-22T08:56:00.000Z');
 });
@@ -715,6 +773,7 @@ test('session-schema derives working activity from dirty sandbox worktrees', () 
   assert.equal(session.changeCount, 2);
   assert.equal(session.activityCountLabel, '2 files');
   assert.deepEqual(session.changedPaths, ['sandbox/new-file.txt', 'sandbox/tracked.txt']);
+  assert.deepEqual(session.worktreeChangedPaths, ['new-file.txt', 'tracked.txt']);
   assert.equal(session.activitySummary, 'new-file.txt, tracked.txt');
 });
 
@@ -797,6 +856,26 @@ test('session-schema derives dead activity when the recorded pid is not alive', 
   assert.equal(session.pidAlive, false);
 });
 
+test('session-schema derives dead activity when launcher heartbeat is stale', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-stale-heartbeat-'));
+  const worktreePath = path.join(tempRoot, 'sandbox');
+  const lastHeartbeatAt = '2026-04-22T10:00:00.000Z';
+  const session = sessionSchema.deriveSessionActivity(sessionSchema.buildSessionRecord({
+    repoRoot: tempRoot,
+    branch: 'agent/codex/stale-heartbeat-task',
+    taskName: 'stale-heartbeat-task',
+    agentName: 'codex',
+    worktreePath,
+    pid: process.pid,
+    cliName: 'codex',
+    startedAt: lastHeartbeatAt,
+    lastHeartbeatAt,
+  }), { now: Date.parse('2026-04-22T10:06:00.000Z') });
+
+  assert.equal(session.activityKind, 'dead');
+  assert.equal(session.activitySummary, 'Heartbeat stale for 6m 0s.');
+});
+
 test('session-schema derives repo change rows from root git status', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-root-status-'));
   initGitRepo(tempRoot);
@@ -806,6 +885,29 @@ test('session-schema derives repo change rows from root git status', () => {
 
   fs.writeFileSync(path.join(tempRoot, 'tracked.txt'), 'base\nchanged\n', 'utf8');
   fs.writeFileSync(path.join(tempRoot, 'new-file.txt'), 'new\n', 'utf8');
+  fs.mkdirSync(path.join(tempRoot, '.omx', 'agent-worktrees', 'agent__codex__sandbox'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRoot, '.omx', 'agent-worktrees', 'agent__codex__sandbox', 'sandbox.txt'),
+    'sandbox\n',
+    'utf8',
+  );
+  fs.mkdirSync(path.join(tempRoot, '.omc', 'agent-worktrees', 'agent__claude__sandbox'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRoot, '.omc', 'agent-worktrees', 'agent__claude__sandbox', 'sandbox.txt'),
+    'sandbox\n',
+    'utf8',
+  );
+  fs.mkdirSync(path.join(tempRoot, '.omx', 'state', 'active-sessions'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tempRoot, '.omx', 'state', 'active-sessions', 'agent__codex__sandbox.json'),
+    '{}\n',
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(tempRoot, '.omx', 'state', 'agent-file-locks.json'),
+    '{"locks":{}}\n',
+    'utf8',
+  );
 
   const changes = sessionSchema.readRepoChanges(tempRoot);
   assert.deepEqual(
@@ -897,6 +999,7 @@ test('active-agents extension auto-installs a newer workspace build and offers r
 
   const execCalls = [];
   const originalExecFile = cp.execFile;
+  let context;
   cp.execFile = (file, args, options, callback) => {
     execCalls.push({ file, args, options });
     callback(null, '[guardex-active-agents] ok\n', '');
@@ -906,7 +1009,7 @@ test('active-agents extension auto-installs a newer workspace build and offers r
     const { registrations, vscode } = createMockVscode(tempRoot);
     registrations.infoResponses.push('Reload Window');
     const extension = loadExtensionWithMockVscode(vscode);
-    const context = {
+    context = {
       subscriptions: [],
       extension: {
         packageJSON: {
@@ -936,6 +1039,9 @@ test('active-agents extension auto-installs a newer workspace build and offers r
     );
   } finally {
     cp.execFile = originalExecFile;
+    for (const subscription of context?.subscriptions ?? []) {
+      subscription.dispose?.();
+    }
   }
 });
 
@@ -1049,12 +1155,12 @@ test('active-agents extension groups live sessions under a repo node', async () 
   assert.equal(agentsSection.description, '1');
 
   const [idleSection] = await provider.getChildren(agentsSection);
-  assert.equal(idleSection.label, 'IDLE');
+  assert.equal(idleSection.label, 'THINKING');
 
   const [sessionItem] = await provider.getChildren(idleSection);
   assert.equal(sessionItem.label, 'live-task 🔒 0');
   assert.match(sessionItem.description, /^idle · \d+[smhd]/);
-  assert.equal(sessionItem.iconPath.id, 'loading~spin');
+  assert.equal(sessionItem.iconPath.id, 'comment-discussion');
   assert.equal(sessionItem.resourceUri.scheme, 'gitguardex-agent');
   assert.equal(
     sessionItem.resourceUri.toString(),
@@ -1065,6 +1171,14 @@ test('active-agents extension groups live sessions under a repo node', async () 
     tooltip: '1 active agent',
   });
   assert.equal(registrations.treeViews[0].message, undefined);
+  assert.equal(
+    registrations.executedCommands.some((entry) => (
+      entry.command === 'setContext'
+      && entry.args[0] === 'guardex.hasAgents'
+      && entry.args[1] === true
+    )),
+    true,
+  );
 
   for (const subscription of context.subscriptions) {
     subscription.dispose?.();
@@ -1292,7 +1406,11 @@ test('active-agents extension shows grouped repo changes beside active agents', 
   assert.equal(sessionItem.label, `${path.basename(worktreePath)} 🔒 0`);
   assert.match(sessionItem.description, /^working · 2 files · /);
   assert.match(sessionItem.tooltip, /Changed 2 files: src\/nested\.js, tracked\.txt/);
-  assert.equal(sessionItem.iconPath.id, 'edit');
+  assert.equal(sessionItem.iconPath.id, 'loading~spin');
+  const [activeFolderItem, activeTrackedItem] = await provider.getChildren(sessionItem);
+  assert.equal(activeFolderItem.label, 'src');
+  assert.equal(activeTrackedItem.label, 'tracked.txt');
+  assert.match(activeTrackedItem.tooltip, /^tracked\.txt\nStatus Touched\n/);
   assert.deepEqual(registrations.treeViews[0].badge, {
     value: 1,
     tooltip: '1 active agent · 1 working now',
@@ -1364,6 +1482,7 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
   assert.equal(repoItem.description, '1 active · 1 working · 1 changed');
 
   const [agentsSection] = await provider.getChildren(repoItem);
+  assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), ['ACTIVE AGENTS']);
   const [workingSection] = await provider.getChildren(agentsSection);
   const [sessionItem] = await provider.getChildren(workingSection);
   assert.equal(workingSection.label, 'WORKING NOW');
@@ -1389,6 +1508,7 @@ test('active-agents extension decorates sessions and repo changes from the lock 
   fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
   runGit(worktreePath, ['add', 'tracked.txt']);
   runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\nchanged\n', 'utf8');
 
   const branch = 'agent/codex/live-task';
   const sessionPath = sessionSchema.sessionFilePathForBranch(tempRoot, branch);
@@ -1421,6 +1541,11 @@ test('active-agents extension decorates sessions and repo changes from the lock 
         claimed_at: '2026-04-22T08:56:00.000Z',
         allow_delete: false,
       },
+      'tracked.txt': {
+        branch: 'agent/codex/other-task',
+        claimed_at: '2026-04-22T08:57:00.000Z',
+        allow_delete: false,
+      },
     },
   }, null, 2)}\n`, 'utf8');
 
@@ -1435,16 +1560,35 @@ test('active-agents extension decorates sessions and repo changes from the lock 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
   const [agentsSection, changesSection] = await provider.getChildren(repoItem);
-  const [idleSection] = await provider.getChildren(agentsSection);
-  const [sessionItem] = await provider.getChildren(idleSection);
+  assert.equal(repoItem.description, '1 active · 1 working · 2 changed');
+  const [workingSection] = await provider.getChildren(agentsSection);
+  const [sessionItem] = await provider.getChildren(workingSection);
   assert.equal(sessionItem.label, `${path.basename(worktreePath)} 🔒 1`);
   assert.match(sessionItem.tooltip, /Locks 1/);
+  assert.match(sessionItem.tooltip, /Conflicts 1/);
+
+  const [sessionChangeItem] = await provider.getChildren(sessionItem);
+  assert.equal(sessionChangeItem.label, 'tracked.txt');
+  assert.equal(sessionChangeItem.iconPath.id, 'warning');
+  assert.match(sessionChangeItem.tooltip, /Locked by agent\/codex\/other-task/);
 
   const [repoRootGroup] = await provider.getChildren(changesSection);
   const [changeItem] = await provider.getChildren(repoRootGroup);
   assert.equal(changeItem.label, 'root-file.txt');
   assert.equal(changeItem.iconPath.id, 'warning');
   assert.match(changeItem.tooltip, /Locked by agent\/codex\/other-task/);
+  assert.deepEqual(registrations.treeViews[0].badge, {
+    value: 1,
+    tooltip: '1 active agent · 1 working now · 2 conflicts',
+  });
+  assert.equal(
+    registrations.executedCommands.some((entry) => (
+      entry.command === 'setContext'
+      && entry.args[0] === 'guardex.hasConflicts'
+      && entry.args[1] === true
+    )),
+    true,
+  );
 
   for (const subscription of context.subscriptions) {
     subscription.dispose?.();
@@ -1653,13 +1797,13 @@ test('active-agents extension groups blocked, working, idle, stalled, and dead s
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
-  assert.equal(repoItem.description, '4 active · 1 dead · 1 working');
+  assert.equal(repoItem.description, '4 active · 1 dead · 1 working · 1 changed');
 
   const [agentsSection] = await provider.getChildren(repoItem);
   const [blockedSection, workingSection, idleSection, stalledSection, deadSection] = await provider.getChildren(agentsSection);
   assert.equal(blockedSection.label, 'BLOCKED');
   assert.equal(workingSection.label, 'WORKING NOW');
-  assert.equal(idleSection.label, 'IDLE');
+  assert.equal(idleSection.label, 'THINKING');
   assert.equal(stalledSection.label, 'STALLED');
   assert.equal(deadSection.label, 'DEAD');
 
@@ -1671,9 +1815,9 @@ test('active-agents extension groups blocked, working, idle, stalled, and dead s
   assert.match(blockedItem.description, /^blocked · \d+[smhd]/);
   assert.equal(blockedItem.iconPath.id, 'warning');
   assert.match(workingItem.description, /^working · 1 file · /);
-  assert.equal(workingItem.iconPath.id, 'edit');
+  assert.equal(workingItem.iconPath.id, 'loading~spin');
   assert.match(idleItem.description, /^idle · \d+[smhd]/);
-  assert.equal(idleItem.iconPath.id, 'loading~spin');
+  assert.equal(idleItem.iconPath.id, 'comment-discussion');
   assert.match(stalledItem.description, /^stalled · \d+[smhd]/);
   assert.equal(stalledItem.iconPath.id, 'clock');
   assert.match(deadItem.description, /^dead · \d+[smhd]/);
@@ -2090,38 +2234,37 @@ test('active-agents extension launches finish and sync commands in session termi
   }
 });
 
-test('active-agents extension confirms stop and sends SIGTERM to the session pid', async () => {
+test('active-agents extension confirms stop and routes termination through gx', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-stop-session-'));
+  const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-stop-worktree-'));
   const { registrations, vscode } = createMockVscode(tempRoot);
   const extension = loadExtensionWithMockVscode(vscode);
   const context = { subscriptions: [] };
-  let killed = null;
-  const originalKill = process.kill;
 
   vscode.window.showWarningMessage = async (...args) => {
     registrations.warningMessages.push(args);
     return 'Stop';
   };
-  process.kill = (pid, signal) => {
-    killed = { pid, signal };
-  };
 
-  try {
-    extension.activate(context);
-    const provider = registrations.providers[0].provider;
-    await flushAsyncWork();
-    provider.onDidChangeTreeDataEmitter.fireCount = 0;
+  extension.activate(context);
+  const provider = registrations.providers[0].provider;
+  await flushAsyncWork();
+  provider.onDidChangeTreeDataEmitter.fireCount = 0;
 
-    await registrations.commands.get('gitguardex.activeAgents.stopSession')({
-      label: 'live-task',
-      pid: 4242,
-    });
-    await flushAsyncWork();
-  } finally {
-    process.kill = originalKill;
-  }
+  await registrations.commands.get('gitguardex.activeAgents.stopSession')({
+    label: 'live-task',
+    branch: 'agent/codex/live-task',
+    worktreePath,
+    pid: 4242,
+  });
+  await flushAsyncWork();
 
-  assert.deepEqual(killed, { pid: 4242, signal: 'SIGTERM' });
+  assert.equal(registrations.terminals.length, 1);
+  assert.equal(registrations.terminals[0].options.cwd, worktreePath);
+  assert.equal(registrations.terminals[0].options.iconPath.id, 'debug-stop');
+  assert.deepEqual(registrations.terminals[0].sentTexts, [
+    { text: "gx internal stop-session --branch 'agent/codex/live-task'", addNewLine: true },
+  ]);
   assert.ok(registrations.providers[0].provider.onDidChangeTreeDataEmitter.fireCount >= 1);
   assert.equal(registrations.warningMessages.length, 1);
   assert.match(registrations.warningMessages[0][0], /Stop live-task\?/);

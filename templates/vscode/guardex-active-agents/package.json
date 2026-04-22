@@ -80,7 +80,7 @@
       "view/title": [
         {
           "command": "gitguardex.activeAgents.commitSelectedSession",
-          "when": "view == gitguardex.activeAgents",
+          "when": "view == gitguardex.activeAgents && guardex.hasAgents",
           "group": "navigation@1"
         },
         {

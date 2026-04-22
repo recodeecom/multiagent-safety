@@ -27,14 +27,14 @@ const UPDATE_LATER_ACTION = 'Later';
 const SESSION_ACTIVITY_GROUPS = [
   { kind: 'blocked', label: 'BLOCKED' },
   { kind: 'working', label: 'WORKING NOW' },
-  { kind: 'idle', label: 'IDLE' },
+  { kind: 'idle', label: 'THINKING' },
   { kind: 'stalled', label: 'STALLED' },
   { kind: 'dead', label: 'DEAD' },
 ];
 const SESSION_ACTIVITY_ICON_IDS = {
   blocked: 'warning',
-  working: 'edit',
-  idle: 'loading~spin',
+  working: 'loading~spin',
+  idle: 'comment-discussion',
   stalled: 'clock',
   dead: 'error',
 };
@@ -97,10 +97,83 @@ function sessionIdleDecoration(session, now = Date.now()) {
   return undefined;
 }
 
+function formatCountLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function sessionIdentityLabel(session) {
+  const agentName = typeof session?.agentName === 'string' ? session.agentName.trim() : '';
+  const taskName = typeof session?.taskName === 'string' ? session.taskName.trim() : '';
+  const label = typeof session?.label === 'string' ? session.label.trim() : '';
+
+  if (agentName && taskName) {
+    return `${agentName} · ${taskName}`;
+  }
+  if (agentName && label) {
+    return `${agentName} · ${label}`;
+  }
+
+  return agentName || taskName || label || 'session';
+}
+
+function sessionCommitPlaceholder(session) {
+  if (!session?.branch) {
+    return 'Pick an Active Agents session to commit its worktree.';
+  }
+
+  return `Commit ${sessionIdentityLabel(session)} on ${session.branch} · ${formatCountLabel(session.lockCount || 0, 'lock')} (Ctrl+Enter)`;
+}
+
+function agentNameFromBranch(branch) {
+  const segments = String(branch || '')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (segments[0] === 'agent' && segments[1]) {
+    return segments[1];
+  }
+  return segments[0] || 'lock';
+}
+
+function agentBadgeFromBranch(branch) {
+  const normalized = agentNameFromBranch(branch).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return normalized.slice(0, 2) || 'LK';
+}
+
+function buildActiveAgentsStatusSummary(summary) {
+  const activeCount = Math.max(0, (summary?.sessionCount || 0) - (summary?.deadCount || 0));
+  if (activeCount > 0) {
+    return `$(git-branch) ${formatCountLabel(activeCount, 'active agent')}`;
+  }
+  return `$(git-branch) ${formatCountLabel(summary?.sessionCount || 0, 'tracked session')}`;
+}
+
+function buildActiveAgentsStatusTooltip(selectedSession, summary) {
+  if (selectedSession?.branch) {
+    return [
+      selectedSession.branch,
+      sessionIdentityLabel(selectedSession),
+      formatCountLabel(selectedSession.lockCount || 0, 'lock'),
+      selectedSession.worktreePath,
+      'Click to open Source Control.',
+    ].filter(Boolean).join('\n');
+  }
+
+  const activeCount = Math.max(0, (summary?.sessionCount || 0) - (summary?.deadCount || 0));
+  return [
+    formatCountLabel(activeCount, 'active agent'),
+    formatCountLabel(summary?.workingCount || 0, 'working now session', 'working now sessions'),
+    summary?.deadCount ? formatCountLabel(summary.deadCount, 'dead session') : '',
+    'Click to open Source Control.',
+  ].filter(Boolean).join('\n');
+}
+
 class SessionDecorationProvider {
   constructor(nowProvider = () => Date.now()) {
     this.nowProvider = nowProvider;
     this.sessionsByUri = new Map();
+    this.lockEntriesByFileUri = new Map();
+    this.selectedBranch = '';
     this.onDidChangeFileDecorationsEmitter = new vscode.EventEmitter();
     this.onDidChangeFileDecorations = this.onDidChangeFileDecorationsEmitter.event;
   }
@@ -111,13 +184,54 @@ class SessionDecorationProvider {
     );
   }
 
+  updateLockEntries(repoEntries) {
+    const nextEntriesByUri = new Map();
+    for (const entry of repoEntries || []) {
+      for (const [relativePath, lockEntry] of entry.lockEntries || []) {
+        nextEntriesByUri.set(
+          vscode.Uri.file(path.join(entry.repoRoot, relativePath)).toString(),
+          { branch: lockEntry.branch },
+        );
+      }
+    }
+    this.lockEntriesByFileUri = nextEntriesByUri;
+  }
+
+  setSelectedBranch(branch) {
+    this.selectedBranch = typeof branch === 'string' ? branch.trim() : '';
+  }
+
   refresh() {
     this.onDidChangeFileDecorationsEmitter.fire();
   }
 
   provideFileDecoration(uri) {
     if (!uri || uri.scheme !== SESSION_DECORATION_SCHEME) {
-      return undefined;
+      if (!uri || uri.scheme !== 'file') {
+        return undefined;
+      }
+
+      const lockEntry = this.lockEntriesByFileUri.get(uri.toString());
+      if (!lockEntry?.branch) {
+        return undefined;
+      }
+
+      const ownsSelectedSession = Boolean(this.selectedBranch) && lockEntry.branch === this.selectedBranch;
+      return {
+        badge: agentBadgeFromBranch(lockEntry.branch),
+        tooltip: ownsSelectedSession
+          ? `Locked by selected session ${lockEntry.branch}`
+          : this.selectedBranch
+            ? `Locked by ${lockEntry.branch} (selected session: ${this.selectedBranch})`
+            : `Locked by ${lockEntry.branch}`,
+        color: new vscode.ThemeColor(
+          ownsSelectedSession
+            ? 'gitDecoration.modifiedResourceForeground'
+            : this.selectedBranch
+              ? 'list.errorForeground'
+              : 'list.warningForeground',
+        ),
+      };
     }
 
     return sessionIdleDecoration(this.sessionsByUri.get(uri.toString()), this.nowProvider());
@@ -151,8 +265,9 @@ class RepoItem extends vscode.TreeItem {
     if (workingCount > 0) {
       descriptionParts.push(`${workingCount} working`);
     }
-    if (changes.length > 0) {
-      descriptionParts.push(`${changes.length} changed`);
+    const changedCount = countChangedPaths(repoRoot, sessions, changes);
+    if (changedCount > 0) {
+      descriptionParts.push(`${changedCount} changed`);
     }
     this.description = descriptionParts.join(' · ');
     this.tooltip = [
@@ -201,6 +316,7 @@ class SessionItem extends vscode.TreeItem {
         ? `Changed ${session.activityCountLabel}: ${session.activitySummary}`
         : session.activitySummary,
       `Locks ${lockCount}`,
+      session.conflictCount > 0 ? `Conflicts ${session.conflictCount}` : '',
       Number.isInteger(session.pid) && session.pid > 0
         ? session.pidAlive === false
           ? `PID ${session.pid} not alive`
@@ -327,24 +443,27 @@ async function stopSession(session, refresh) {
     showSessionMessage('Cannot stop session: missing pid.');
     return;
   }
+  if (!session?.branch) {
+    showSessionMessage('Cannot stop session: missing branch name.');
+    return;
+  }
 
   const confirmed = await vscode.window.showWarningMessage(
     `Stop ${sessionDisplayLabel(session)}?`,
-    { modal: true, detail: `Send SIGTERM to pid ${pid}.` },
+    { modal: true, detail: `Ask gx to send SIGTERM to pid ${pid}.` },
     'Stop',
   );
   if (confirmed !== 'Stop') {
     return;
   }
 
-  try {
-    process.kill(pid, 'SIGTERM');
-    refresh();
-  } catch (error) {
-    showSessionMessage(
-      `Failed to stop session ${sessionDisplayLabel(session)}: ${error?.message || String(error)}`,
-    );
-  }
+  runSessionTerminalCommand(
+    session,
+    'Stop',
+    'debug-stop',
+    `gx internal stop-session --branch ${shellQuote(session.branch)}`,
+  );
+  refresh();
 }
 
 async function openSessionDiff(session) {
@@ -570,9 +689,12 @@ async function maybeAutoUpdateActiveAgentsExtension(context) {
 }
 
 function decorateSession(session, lockRegistry) {
+  const touchedChanges = buildSessionTouchedChanges(session, lockRegistry);
   return {
     ...session,
     lockCount: lockRegistry.countsByBranch.get(session.branch) || 0,
+    touchedChanges,
+    conflictCount: touchedChanges.filter((change) => change.hasForeignLock).length,
   };
 }
 
@@ -584,6 +706,28 @@ function decorateChange(change, lockRegistry, owningBranch) {
     lockOwnerBranch,
     hasForeignLock: Boolean(lockOwnerBranch) && (!owningBranch || lockOwnerBranch !== owningBranch),
   };
+}
+
+function buildSessionTouchedChanges(session, lockRegistry) {
+  const changedPaths = Array.isArray(session.worktreeChangedPaths)
+    ? session.worktreeChangedPaths
+    : [];
+  return [...new Set(changedPaths.map(normalizeRelativePath).filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right))
+    .map((relativePath) => {
+      const lockEntry = lockRegistry.entriesByPath.get(relativePath);
+      const lockOwnerBranch = lockEntry?.branch || '';
+      return {
+        relativePath,
+        absolutePath: path.join(session.worktreePath, relativePath),
+        originalPath: '',
+        statusCode: 'M',
+        statusLabel: 'M',
+        statusText: 'Touched',
+        lockOwnerBranch,
+        hasForeignLock: Boolean(lockOwnerBranch) && lockOwnerBranch !== session.branch,
+      };
+    });
 }
 
 function isPathWithin(parentPath, targetPath) {
@@ -762,6 +906,31 @@ function countWorkingSessions(sessions) {
   return sessions.filter((session) => session.activityKind === 'working').length;
 }
 
+function countChangedPaths(repoRoot, sessions, changes) {
+  const changedKeys = new Set();
+
+  for (const change of changes || []) {
+    if (change?.relativePath) {
+      changedKeys.add(normalizeRelativePath(change.relativePath));
+    }
+  }
+
+  for (const session of sessions || []) {
+    for (const change of session.touchedChanges || []) {
+      const absolutePath = change?.absolutePath
+        || path.join(session.worktreePath || '', change?.relativePath || '');
+      const normalizedRelativePath = absolutePath && isPathWithin(repoRoot, absolutePath)
+        ? normalizeRelativePath(path.relative(repoRoot, absolutePath))
+        : `${session.branch}:${normalizeRelativePath(change?.relativePath)}`;
+      if (normalizedRelativePath) {
+        changedKeys.add(normalizedRelativePath);
+      }
+    }
+  }
+
+  return changedKeys.size;
+}
+
 function buildGroupedChangeTreeNodes(sessions, changes) {
   const changesBySession = new Map();
   const sessionByChangedPath = new Map();
@@ -935,7 +1104,10 @@ function buildActiveAgentGroupNodes(sessions) {
   for (const group of SESSION_ACTIVITY_GROUPS) {
     const groupSessions = sessions
       .filter((session) => session.activityKind === group.kind)
-      .map((session) => new SessionItem(session));
+      .map((session) => new SessionItem(
+        session,
+        buildChangeTreeNodes(session.touchedChanges || []),
+      ));
     if (groupSessions.length > 0) {
       groups.push(new SectionItem(group.label, groupSessions));
     }
@@ -954,6 +1126,12 @@ class ActiveAgentsProvider {
     this.treeView = null;
     this.lockRegistryByRepoRoot = new Map();
     this.selectedSession = null;
+    this.viewSummary = {
+      sessionCount: 0,
+      workingCount: 0,
+      deadCount: 0,
+      conflictCount: 0,
+    };
   }
 
   getTreeItem(element) {
@@ -974,6 +1152,7 @@ class ActiveAgentsProvider {
     const currentKey = sessionSelectionKey(this.selectedSession);
     const nextKey = sessionSelectionKey(nextSession);
     this.selectedSession = nextSession;
+    this.decorationProvider?.setSelectedBranch(nextSession?.branch || '');
     if (currentKey !== nextKey) {
       this.onDidChangeSelectedSessionEmitter.fire(this.selectedSession);
     }
@@ -981,6 +1160,10 @@ class ActiveAgentsProvider {
 
   getSelectedSession() {
     return this.selectedSession ? { ...this.selectedSession } : null;
+  }
+
+  getViewSummary() {
+    return { ...this.viewSummary };
   }
 
   syncSelectedSession(repoEntries) {
@@ -994,12 +1177,20 @@ class ActiveAgentsProvider {
     this.setSelectedSession(nextSession || null);
   }
 
-  updateViewState(sessionCount, workingCount, deadCount) {
+  updateViewState(sessionCount, workingCount, deadCount, conflictCount = 0) {
     if (!this.treeView) {
       return;
     }
 
     const activeCount = Math.max(0, sessionCount - deadCount);
+    this.viewSummary = {
+      sessionCount,
+      workingCount,
+      deadCount,
+      conflictCount,
+    };
+    void vscode.commands.executeCommand('setContext', 'guardex.hasAgents', sessionCount > 0);
+    void vscode.commands.executeCommand('setContext', 'guardex.hasConflicts', conflictCount > 0);
     const badgeTooltipParts = [];
     if (activeCount > 0) {
       badgeTooltipParts.push(`${activeCount} active agent${activeCount === 1 ? '' : 's'}`);
@@ -1009,6 +1200,9 @@ class ActiveAgentsProvider {
     }
     if (workingCount > 0) {
       badgeTooltipParts.push(`${workingCount} working now`);
+    }
+    if (conflictCount > 0) {
+      badgeTooltipParts.push(`${conflictCount} conflict${conflictCount === 1 ? '' : 's'}`);
     }
 
     this.treeView.badge = sessionCount > 0
@@ -1033,9 +1227,14 @@ class ActiveAgentsProvider {
       (total, entry) => total + countSessionsByActivityKind(entry.sessions, 'dead'),
       0,
     );
+    const conflictCount = repoEntries.reduce(
+      (total, entry) => total + countEntryConflicts(entry),
+      0,
+    );
 
-    this.updateViewState(sessionCount, workingCount, deadCount);
+    this.updateViewState(sessionCount, workingCount, deadCount, conflictCount);
     this.decorationProvider?.updateSessions(repoEntries.flatMap((entry) => entry.sessions));
+    this.decorationProvider?.updateLockEntries(repoEntries);
     return repoEntries;
   }
 
@@ -1043,20 +1242,6 @@ class ActiveAgentsProvider {
     await this.syncRepoEntries();
     this.onDidChangeTreeDataEmitter.fire();
     this.decorationProvider?.refresh();
-  }
-
-  readLockRegistryForRepo(repoRoot) {
-    const lockRegistry = readLockRegistry(repoRoot);
-    this.lockRegistryByRepoRoot.set(repoRoot, lockRegistry);
-    return lockRegistry;
-  }
-
-  getLockRegistryForRepo(repoRoot) {
-    return this.lockRegistryByRepoRoot.get(repoRoot) || this.readLockRegistryForRepo(repoRoot);
-  }
-
-  refreshLockRegistryForFile(filePath) {
-    this.readLockRegistryForRepo(repoRootFromLockFile(filePath));
   }
 
   readLockRegistryForRepo(repoRoot) {
@@ -1114,9 +1299,19 @@ class ActiveAgentsProvider {
         changes: readRepoChanges(repoRoot).map((change) => (
           decorateChange(change, lockRegistry, currentBranch)
         )),
+        lockEntries: Array.from(lockRegistry.entriesByPath.entries()),
       };
     });
   }
+}
+
+function countEntryConflicts(entry) {
+  const sessionConflicts = entry.sessions.reduce(
+    (total, session) => total + (session.conflictCount || 0),
+    0,
+  );
+  const changeConflicts = entry.changes.filter((change) => change.hasForeignLock).length;
+  return sessionConflicts + changeConflicts;
 }
 
 class ActiveAgentsRefreshController {
@@ -1198,6 +1393,9 @@ function activate(context) {
     'gitguardex.activeAgents.commitInput',
     'Active Agents Commit',
   );
+  const activeAgentsStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
+  activeAgentsStatusItem.name = 'GitGuardex Active Agents';
+  activeAgentsStatusItem.command = 'gitguardex.activeAgents.focus';
   provider.attachTreeView(treeView);
   const scheduleRefresh = () => refreshController.scheduleRefresh();
   const refresh = () => void refreshController.refreshNow();
@@ -1207,11 +1405,24 @@ function activate(context) {
   const updateCommitInput = (session) => {
     sourceControl.inputBox.enabled = true;
     sourceControl.inputBox.visible = true;
-    sourceControl.inputBox.placeholder = session?.label
-      ? `Commit ${session.label} (Ctrl+Enter)`
-      : 'Pick an Active Agents session to commit its worktree.';
+    sourceControl.inputBox.placeholder = sessionCommitPlaceholder(session);
+  };
+  const updateStatusBar = () => {
+    const selectedSession = provider.getSelectedSession();
+    const summary = provider.getViewSummary();
+    if ((summary.sessionCount || 0) <= 0) {
+      activeAgentsStatusItem.hide();
+      return;
+    }
+
+    activeAgentsStatusItem.text = selectedSession?.branch
+      ? `$(git-branch) ${sessionIdentityLabel(selectedSession)} · ${formatCountLabel(selectedSession.lockCount || 0, 'lock')}`
+      : buildActiveAgentsStatusSummary(summary);
+    activeAgentsStatusItem.tooltip = buildActiveAgentsStatusTooltip(selectedSession, summary);
+    activeAgentsStatusItem.show();
   };
   updateCommitInput(null);
+  updateStatusBar();
   const commitSelectedSession = async () => {
     const selectedSession = provider.getSelectedSession();
     if (!selectedSession?.worktreePath) {
@@ -1258,15 +1469,27 @@ function activate(context) {
     scheduleRefresh();
   };
 
-  provider.onDidChangeSelectedSession(updateCommitInput);
+  provider.onDidChangeSelectedSession((session) => {
+    updateCommitInput(session);
+    updateStatusBar();
+    decorationProvider.refresh();
+  });
+  provider.onDidChangeTreeData(() => {
+    updateCommitInput(provider.getSelectedSession());
+    updateStatusBar();
+  });
 
   context.subscriptions.push(
     treeView,
     sourceControl,
+    activeAgentsStatusItem,
     refreshController,
     vscode.window.registerFileDecorationProvider(decorationProvider),
     vscode.commands.registerCommand('gitguardex.activeAgents.startAgent', () => startAgentFromPrompt(refresh)),
     vscode.commands.registerCommand('gitguardex.activeAgents.refresh', refresh),
+    vscode.commands.registerCommand('gitguardex.activeAgents.focus', async () => {
+      await vscode.commands.executeCommand('workbench.view.scm');
+    }),
     vscode.commands.registerCommand('gitguardex.activeAgents.commitSelectedSession', commitSelectedSession),
     vscode.commands.registerCommand('gitguardex.activeAgents.openWorktree', async (session) => {
       if (!session?.worktreePath) {
