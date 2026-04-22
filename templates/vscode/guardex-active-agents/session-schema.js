@@ -19,6 +19,34 @@ const IDLE_ACTIVITY_WINDOW_MS = 2 * 60 * 1000;
 const STALLED_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
 const HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 const ADVISORY_SESSION_STATES = new Set(['working', 'thinking', 'idle']);
+const WORKTREE_ACTIVITY_CACHE_TTL_MS = 3_000;
+const MAX_WORKTREE_ACTIVITY_STAT_PATHS = 200;
+const WORKTREE_ACTIVITY_SKIP_PREFIXES = [
+  '.git/',
+  '.omx/',
+  '.omc/',
+  'node_modules/',
+  'dist/',
+  'build/',
+  'coverage/',
+  '.next/',
+  'out/',
+  'vendor/',
+];
+const WORKTREE_ACTIVITY_PRIORITY_PREFIXES = [
+  'src/',
+  'app/',
+  'apps/',
+  'lib/',
+  'packages/',
+  'scripts/',
+  'test/',
+  'tests/',
+  'vscode/',
+  'templates/',
+  'openspec/',
+  'docs/',
+];
 const BLOCKING_GIT_STATES = [
   {
     label: 'Rebase in progress.',
@@ -33,6 +61,7 @@ const BLOCKING_GIT_STATES = [
     markers: ['CHERRY_PICK_HEAD'],
   },
 ];
+const worktreeActivityCache = new Map();
 
 function toNonEmptyString(value, fallback = '') {
   const normalized = typeof value === 'string' ? value.trim() : String(value || '').trim();
@@ -306,14 +335,80 @@ function collectWorktreeTrackedPaths(worktreePath) {
     .sort((left, right) => left.localeCompare(right));
 }
 
-function deriveLatestWorktreeFileActivity(worktreePath) {
+function shouldSkipWorktreeActivityPath(relativePath) {
+  const normalized = normalizeRelativePath(relativePath);
+  if (!normalized || normalized === LOCK_FILE_RELATIVE || normalized === AGENT_WORKTREE_LOCK_FILE) {
+    return true;
+  }
+
+  return WORKTREE_ACTIVITY_SKIP_PREFIXES.some((prefix) => (
+    normalized === prefix.slice(0, -1) || normalized.startsWith(prefix)
+  ));
+}
+
+function worktreeActivityPathPriority(relativePath, recentPathsSet) {
+  if (recentPathsSet.has(relativePath)) {
+    return 0;
+  }
+  if (!relativePath.includes('/')) {
+    return 1;
+  }
+  if (WORKTREE_ACTIVITY_PRIORITY_PREFIXES.some((prefix) => relativePath.startsWith(prefix))) {
+    return 2;
+  }
+  return 3;
+}
+
+function collectWorktreeActivityCandidatePaths(worktreePath, trackedPaths) {
+  const recentPaths = runGitLines(worktreePath, ['log', '-1', '--name-only', '--pretty=format:', '--', '.']) || [];
+  const filteredRecentPaths = [...new Set(recentPaths.map(normalizeRelativePath).filter(Boolean))]
+    .filter((relativePath) => !shouldSkipWorktreeActivityPath(relativePath));
+  const recentPathSet = new Set(filteredRecentPaths);
+  const prioritizedTrackedPaths = trackedPaths
+    .map(normalizeRelativePath)
+    .filter(Boolean)
+    .filter((relativePath) => !shouldSkipWorktreeActivityPath(relativePath))
+    .sort((left, right) => {
+      const priorityDelta = worktreeActivityPathPriority(left, recentPathSet)
+        - worktreeActivityPathPriority(right, recentPathSet);
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      return left.localeCompare(right);
+    });
+
+  return [...new Set([...filteredRecentPaths, ...prioritizedTrackedPaths])]
+    .slice(0, MAX_WORKTREE_ACTIVITY_STAT_PATHS);
+}
+
+function clearWorktreeActivityCache(worktreePath = '') {
+  const normalizedWorktreePath = toNonEmptyString(worktreePath);
+  if (!normalizedWorktreePath) {
+    worktreeActivityCache.clear();
+    return;
+  }
+  worktreeActivityCache.delete(path.resolve(normalizedWorktreePath));
+}
+
+function deriveLatestWorktreeFileActivity(worktreePath, options = {}) {
+  const now = Number.isFinite(options.now) ? options.now : Date.now();
+  const useCache = options.useCache !== false;
+  const cacheKey = path.resolve(worktreePath);
+  if (useCache) {
+    const cached = worktreeActivityCache.get(cacheKey);
+    if (cached && (now - cached.checkedAtMs) < WORKTREE_ACTIVITY_CACHE_TTL_MS) {
+      return cached.latestMtimeMs;
+    }
+  }
+
   const trackedPaths = collectWorktreeTrackedPaths(worktreePath);
   if (!trackedPaths) {
     return null;
   }
 
+  const candidatePaths = collectWorktreeActivityCandidatePaths(worktreePath, trackedPaths);
   let latestMtimeMs = null;
-  for (const relativePath of trackedPaths) {
+  for (const relativePath of candidatePaths) {
     const absolutePath = path.join(worktreePath, relativePath);
     try {
       const stats = fs.statSync(absolutePath);
@@ -326,6 +421,13 @@ function deriveLatestWorktreeFileActivity(worktreePath) {
     } catch (_error) {
       continue;
     }
+  }
+
+  if (useCache) {
+    worktreeActivityCache.set(cacheKey, {
+      checkedAtMs: now,
+      latestMtimeMs,
+    });
   }
 
   return latestMtimeMs;
@@ -404,6 +506,7 @@ function deriveSessionActivity(session, options = {}) {
       .map((relativePath) => normalizeRelativePath(relativePath))
       .filter(Boolean))]
       .sort((left, right) => left.localeCompare(right));
+    clearWorktreeActivityCache(session.worktreePath);
     const changedPaths = [...new Set(worktreeChangedPaths
       .map((relativePath) => normalizeRelativePath(
         path.relative(session.repoRoot, path.resolve(session.worktreePath, relativePath)),
@@ -425,7 +528,10 @@ function deriveSessionActivity(session, options = {}) {
     };
   }
 
-  const latestFileActivityMs = deriveLatestWorktreeFileActivity(session.worktreePath);
+  const latestFileActivityMs = deriveLatestWorktreeFileActivity(session.worktreePath, {
+    now,
+    useCache: options.useCache,
+  });
   const lastFileActivityAt = Number.isFinite(latestFileActivityMs)
     ? new Date(latestFileActivityMs).toISOString()
     : '';
@@ -841,6 +947,7 @@ module.exports = {
   SESSION_SCHEMA_VERSION,
   activeSessionsDirForRepo,
   buildSessionRecord,
+  clearWorktreeActivityCache,
   collectWorktreeChangedPaths,
   collectWorktreeTrackedPaths,
   deriveBlockingGitLabel,

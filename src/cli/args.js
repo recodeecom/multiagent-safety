@@ -271,6 +271,7 @@ function parseAgentsArgs(rawArgs) {
     reviewIntervalSeconds: 30,
     cleanupIntervalSeconds: 60,
     idleMinutes: DEFAULT_SHADOW_CLEANUP_IDLE_MINUTES,
+    pid: null,
   };
 
   for (let index = 0; index < rest.length; index += 1) {
@@ -314,11 +315,27 @@ function parseAgentsArgs(rawArgs) {
       index += 1;
       continue;
     }
+    if (arg === '--pid') {
+      const next = rest[index + 1];
+      if (!next) {
+        throw new Error('--pid requires a positive integer value');
+      }
+      const parsedValue = Number.parseInt(next, 10);
+      if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+        throw new Error('--pid must be a positive integer');
+      }
+      options.pid = parsedValue;
+      index += 1;
+      continue;
+    }
     throw new Error(`Unknown option: ${arg}`);
   }
 
   if (!['start', 'stop', 'status'].includes(options.subcommand)) {
     throw new Error(`Unknown agents subcommand: ${options.subcommand}`);
+  }
+  if (options.pid !== null && options.subcommand !== 'stop') {
+    throw new Error('--pid is only supported with `gx agents stop`');
   }
 
   return options;

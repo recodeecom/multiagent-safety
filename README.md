@@ -340,6 +340,7 @@ gx sync
 ```sh
 gx agents start           # review monitor + stale cleanup
 gx agents stop
+gx agents stop --pid 12345
 gx agents status
 
 # tuning

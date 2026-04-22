@@ -286,4 +286,39 @@ test('agents cleanup bot defaults to a 60-minute idle threshold', () => {
   assert.equal(waitForPidExit(state.cleanup.pid), true, 'cleanup bot pid should exit after stop');
 });
 
+test('agents stop --pid stops a running process without repo bot state', async () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  const child = cp.spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000);'], {
+    cwd: repoDir,
+    stdio: 'ignore',
+  });
+  const exitPromise = new Promise((resolve) => {
+    child.once('exit', (code, signal) => resolve({ code, signal }));
+  });
+
+  const childPid = Number.parseInt(String(child.pid || ''), 10);
+  assert.equal(Number.isInteger(childPid) && childPid > 0, true, 'child process should expose a pid');
+  assert.equal(isPidAlive(childPid), true, 'child process should be alive before stop');
+
+  try {
+    const result = runNode(['agents', 'stop', '--target', repoDir, '--pid', String(childPid)], repoDir);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.match(result.stdout, new RegExp(`Stopped agent pid ${childPid} \\((stopped|not-running)\\)\\.`));
+    const exitRecord = await Promise.race([
+      exitPromise,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('child process did not emit exit after stop --pid')), 3_000);
+      }),
+    ]);
+    assert.ok(exitRecord.signal === 'SIGTERM' || exitRecord.signal === 'SIGKILL' || exitRecord.code === 0);
+  } finally {
+    if (isPidAlive(childPid)) {
+      process.kill(childPid, 'SIGTERM');
+      waitForPidExit(childPid);
+    }
+  }
+});
+
 });

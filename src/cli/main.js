@@ -2219,10 +2219,15 @@ function processAlive(pid) {
   }
   try {
     process.kill(normalizedPid, 0);
-    return true;
   } catch (_error) {
     return false;
   }
+
+  const state = readProcessState(normalizedPid);
+  if (state.startsWith('Z')) {
+    return false;
+  }
+  return true;
 }
 
 function sleepSeconds(seconds) {
@@ -2234,6 +2239,14 @@ function sleepSeconds(seconds) {
 
 function readProcessCommand(pid) {
   const result = run('ps', ['-o', 'command=', '-p', String(pid)]);
+  if (isSpawnFailure(result) || result.status !== 0) {
+    return '';
+  }
+  return String(result.stdout || '').trim();
+}
+
+function readProcessState(pid) {
+  const result = run('ps', ['-o', 'stat=', '-p', String(pid)]);
   if (isSpawnFailure(result) || result.status !== 0) {
     return '';
   }
@@ -2431,6 +2444,16 @@ function agents(rawArgs) {
   }
 
   if (options.subcommand === 'stop') {
+    if (options.pid) {
+      const stopResult = stopAgentProcessByPid(options.pid);
+      const success = ['stopped', 'not-running'].includes(stopResult.status);
+      console.log(
+        `[${TOOL_NAME}] Stopped agent pid ${options.pid} (${stopResult.status}).`,
+      );
+      process.exitCode = success ? 0 : 1;
+      return;
+    }
+
     const existingState = readAgentsState(repoRoot);
     if (!existingState) {
       console.log(`[${TOOL_NAME}] Repo agents are not running for ${repoRoot}.`);

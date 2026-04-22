@@ -24,6 +24,7 @@ const ACTIVE_AGENTS_MANIFEST_RELATIVE = path.join('vscode', 'guardex-active-agen
 const ACTIVE_AGENTS_INSTALL_SCRIPT_RELATIVE = path.join('scripts', 'install-vscode-active-agents-extension.js');
 const RELOAD_WINDOW_ACTION = 'Reload Window';
 const UPDATE_LATER_ACTION = 'Later';
+const REFRESH_POLL_INTERVAL_MS = 30_000;
 const SESSION_ACTIVITY_GROUPS = [
   { kind: 'blocked', label: 'BLOCKED' },
   { kind: 'working', label: 'WORKING NOW' },
@@ -293,7 +294,7 @@ class SessionItem extends vscode.TreeItem {
   constructor(session, items = []) {
     const lockCount = Number.isFinite(session.lockCount) ? session.lockCount : 0;
     super(
-      `${session.label} 🔒 ${lockCount}`,
+      session.label,
       items.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
     );
     this.session = session;
@@ -304,6 +305,9 @@ class SessionItem extends vscode.TreeItem {
       descriptionParts.push(session.activityCountLabel);
     }
     descriptionParts.push(session.elapsedLabel || formatElapsedFrom(session.startedAt));
+    if (lockCount > 0) {
+      descriptionParts.push(`${lockCount} $(lock)`);
+    }
     this.description = descriptionParts.join(' · ');
     const tooltipLines = [
       session.branch,
@@ -437,6 +441,20 @@ function syncSession(session) {
   runSessionTerminalCommand(session, 'Sync', 'sync', 'gx sync');
 }
 
+function execFileAsync(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    cp.execFile(command, args, options, (error, stdout = '', stderr = '') => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
 async function stopSession(session, refresh) {
   const pid = Number(session?.pid);
   if (!Number.isInteger(pid) || pid <= 0) {
@@ -450,20 +468,69 @@ async function stopSession(session, refresh) {
 
   const confirmed = await vscode.window.showWarningMessage(
     `Stop ${sessionDisplayLabel(session)}?`,
-    { modal: true, detail: `Ask gx to send SIGTERM to pid ${pid}.` },
+    { modal: true, detail: `Run gx agents stop --pid ${pid}.` },
     'Stop',
   );
   if (confirmed !== 'Stop') {
     return;
   }
 
-  runSessionTerminalCommand(
-    session,
-    'Stop',
-    'debug-stop',
-    `gx internal stop-session --branch ${shellQuote(session.branch)}`,
-  );
-  refresh();
+  try {
+    const commandCwd = session?.repoRoot || sessionWorktreePath(session) || process.cwd();
+    const args = ['agents', 'stop', '--pid', String(pid)];
+    if (session?.repoRoot) {
+      args.push('--target', session.repoRoot);
+    }
+    await execFileAsync('gx', args, {
+      cwd: commandCwd,
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    refresh();
+  } catch (error) {
+    showSessionMessage(
+      `Failed to stop session ${sessionDisplayLabel(session)}: ${formatGitCommandFailure(error)}`,
+    );
+  }
+}
+
+function sessionChangedPaths(session) {
+  const directPaths = Array.isArray(session?.changedPaths)
+    ? session.changedPaths.map(normalizeRelativePath).filter(Boolean)
+    : [];
+  if (directPaths.length > 0) {
+    return [...new Set(directPaths)];
+  }
+  if (!session?.repoRoot || !session?.branch) {
+    return [];
+  }
+
+  const liveSession = readActiveSessions(session.repoRoot)
+    .find((entry) => sessionSelectionKey(entry) === sessionSelectionKey(session));
+  return Array.isArray(liveSession?.changedPaths)
+    ? [...new Set(liveSession.changedPaths.map(normalizeRelativePath).filter(Boolean))]
+    : [];
+}
+
+async function pickSessionDiffPath(session) {
+  const changedPaths = sessionChangedPaths(session);
+  if (changedPaths.length === 0) {
+    return '';
+  }
+  if (changedPaths.length === 1 || !vscode.window.showQuickPick) {
+    return changedPaths[0];
+  }
+
+  const picks = changedPaths.map((relativePath) => ({
+    label: path.basename(relativePath),
+    description: relativePath,
+    relativePath,
+  }));
+  const selection = await vscode.window.showQuickPick(picks, {
+    placeHolder: `Select a changed file for ${sessionDisplayLabel(session)}`,
+    ignoreFocusOut: true,
+  });
+  return selection?.relativePath || '';
 }
 
 async function openSessionDiff(session) {
@@ -472,27 +539,24 @@ async function openSessionDiff(session) {
     return;
   }
 
-  let diffOutput = '';
-  try {
-    diffOutput = cp.execFileSync('git', ['-C', worktreePath, 'diff'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-  } catch (error) {
-    const detail = [
-      error?.stdout,
-      error?.stderr,
-      error?.message,
-    ].find((value) => typeof value === 'string' && value.trim().length > 0) || 'git diff failed.';
-    showSessionMessage(`Failed to open diff for ${sessionDisplayLabel(session)}: ${detail.trim()}`);
+  const relativePath = await pickSessionDiffPath(session);
+  if (!relativePath) {
+    showSessionMessage(`No changed files to diff for ${sessionDisplayLabel(session)}.`);
     return;
   }
 
-  const document = await vscode.workspace.openTextDocument({
-    language: 'diff',
-    content: diffOutput,
-  });
-  await vscode.window.showTextDocument(document, { preview: false });
+  const repoRoot = session?.repoRoot || worktreePath;
+  const absolutePath = path.resolve(repoRoot, relativePath);
+  const resourceUri = vscode.Uri.file(absolutePath);
+  try {
+    await vscode.commands.executeCommand('git.openChange', resourceUri);
+  } catch (error) {
+    if (fs.existsSync(absolutePath)) {
+      await vscode.commands.executeCommand('vscode.open', resourceUri);
+      return;
+    }
+    showSessionMessage(`Failed to open diff for ${sessionDisplayLabel(session)}: ${formatGitCommandFailure(error)}`);
+  }
 }
 
 function repoRootFromSessionFile(filePath) {
@@ -1461,7 +1525,7 @@ function activate(context) {
     command: 'gitguardex.activeAgents.commitSelectedSession',
     title: 'Commit Selected Session',
   };
-  const interval = setInterval(refresh, 5_000);
+  const interval = setInterval(refresh, REFRESH_POLL_INTERVAL_MS);
   const refreshLockRegistry = (uri) => {
     if (uri?.fsPath) {
       provider.refreshLockRegistryForFile(uri.fsPath);
