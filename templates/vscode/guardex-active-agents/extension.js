@@ -913,6 +913,20 @@ class ActiveAgentsProvider {
     this.readLockRegistryForRepo(repoRootFromLockFile(filePath));
   }
 
+  readLockRegistryForRepo(repoRoot) {
+    const lockRegistry = readLockRegistry(repoRoot);
+    this.lockRegistryByRepoRoot.set(repoRoot, lockRegistry);
+    return lockRegistry;
+  }
+
+  getLockRegistryForRepo(repoRoot) {
+    return this.lockRegistryByRepoRoot.get(repoRoot) || this.readLockRegistryForRepo(repoRoot);
+  }
+
+  refreshLockRegistryForFile(filePath) {
+    this.readLockRegistryForRepo(repoRootFromLockFile(filePath));
+  }
+
   async getChildren(element) {
     if (element instanceof RepoItem) {
       const sectionItems = [

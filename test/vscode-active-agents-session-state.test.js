@@ -1460,6 +1460,180 @@ test('active-agents extension asks for a session before committing', async () =>
   }
 });
 
+test('active-agents extension decorates sessions and repo changes from the lock registry', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-lock-decorations-'));
+  initGitRepo(tempRoot);
+  fs.writeFileSync(path.join(tempRoot, 'root-file.txt'), 'base\n', 'utf8');
+  runGit(tempRoot, ['add', 'root-file.txt']);
+  runGit(tempRoot, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(tempRoot, 'root-file.txt'), 'base\nchanged\n', 'utf8');
+
+  const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-lock-worktree-'));
+  initGitRepo(worktreePath);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'tracked.txt']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+
+  const branch = 'agent/codex/live-task';
+  const sessionPath = sessionSchema.sessionFilePathForBranch(tempRoot, branch);
+  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+  fs.writeFileSync(
+    sessionPath,
+    `${JSON.stringify(sessionSchema.buildSessionRecord({
+      repoRoot: tempRoot,
+      branch,
+      taskName: 'live-task',
+      agentName: 'codex',
+      worktreePath,
+      pid: process.pid,
+      cliName: 'codex',
+    }), null, 2)}\n`,
+    'utf8',
+  );
+
+  const lockPath = path.join(tempRoot, '.omx', 'state', 'agent-file-locks.json');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, `${JSON.stringify({
+    locks: {
+      'owned-file.txt': {
+        branch,
+        claimed_at: '2026-04-22T08:55:00.000Z',
+        allow_delete: false,
+      },
+      'root-file.txt': {
+        branch: 'agent/codex/other-task',
+        claimed_at: '2026-04-22T08:56:00.000Z',
+        allow_delete: false,
+      },
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async () => [{ fsPath: sessionPath }];
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+
+  const provider = registrations.providers[0].provider;
+  const [repoItem] = await provider.getChildren();
+  const [agentsSection, changesSection] = await provider.getChildren(repoItem);
+  const [thinkingSection] = await provider.getChildren(agentsSection);
+  const [sessionItem] = await provider.getChildren(thinkingSection);
+  assert.equal(sessionItem.label, `${path.basename(worktreePath)} 🔒 1`);
+  assert.match(sessionItem.tooltip, /Locks 1/);
+
+  const [changeItem] = await provider.getChildren(changesSection);
+  assert.equal(changeItem.label, 'root-file.txt');
+  assert.equal(changeItem.iconPath.id, 'warning');
+  assert.match(changeItem.tooltip, /Locked by agent\/codex\/other-task/);
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
+test('active-agents extension re-reads lock state on watcher events instead of every tree load', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-lock-watch-'));
+  const branch = 'agent/codex/live-task';
+  const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-lock-watch-worktree-'));
+  initGitRepo(worktreePath);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'tracked.txt']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+
+  const sessionPath = sessionSchema.sessionFilePathForBranch(tempRoot, branch);
+  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+  fs.writeFileSync(
+    sessionPath,
+    `${JSON.stringify(sessionSchema.buildSessionRecord({
+      repoRoot: tempRoot,
+      branch,
+      taskName: 'live-task',
+      agentName: 'codex',
+      worktreePath,
+      pid: process.pid,
+      cliName: 'codex',
+    }), null, 2)}\n`,
+    'utf8',
+  );
+
+  const lockPath = path.join(tempRoot, '.omx', 'state', 'agent-file-locks.json');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, `${JSON.stringify({
+    locks: {
+      'owned-file.txt': {
+        branch,
+        claimed_at: '2026-04-22T08:57:00.000Z',
+        allow_delete: false,
+      },
+    },
+  }, null, 2)}\n`, 'utf8');
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async () => [{ fsPath: sessionPath }];
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  const originalReadFileSync = fs.readFileSync;
+  let lockReadCount = 0;
+  fs.readFileSync = function patchedReadFileSync(filePath, ...args) {
+    if (path.resolve(String(filePath)) === lockPath) {
+      lockReadCount += 1;
+    }
+    return originalReadFileSync.call(this, filePath, ...args);
+  };
+
+  try {
+    extension.activate(context);
+
+    const provider = registrations.providers[0].provider;
+    const lockWatcher = registrations.watchers.find((watcher) => watcher.pattern === '**/.omx/state/agent-file-locks.json');
+    assert.ok(lockWatcher, 'expected lock watcher registration');
+
+    const [repoItem] = await provider.getChildren();
+    const [agentsSection] = await provider.getChildren(repoItem);
+    const [thinkingSection] = await provider.getChildren(agentsSection);
+    const [sessionItem] = await provider.getChildren(thinkingSection);
+    assert.equal(sessionItem.label, `${path.basename(worktreePath)} 🔒 1`);
+    assert.equal(lockReadCount, 1);
+
+    await provider.getChildren();
+    assert.equal(lockReadCount, 1);
+
+    fs.writeFileSync(lockPath, `${JSON.stringify({
+      locks: {
+        'owned-file.txt': {
+          branch,
+          claimed_at: '2026-04-22T08:57:00.000Z',
+          allow_delete: false,
+        },
+        'second-owned-file.txt': {
+          branch,
+          claimed_at: '2026-04-22T08:58:00.000Z',
+          allow_delete: false,
+        },
+      },
+    }, null, 2)}\n`, 'utf8');
+    lockWatcher.fireChange({ fsPath: lockPath });
+    assert.equal(lockReadCount, 2);
+
+    const [updatedRepoItem] = await provider.getChildren();
+    const [updatedAgentsSection] = await provider.getChildren(updatedRepoItem);
+    const [updatedThinkingSection] = await provider.getChildren(updatedAgentsSection);
+    const [updatedSessionItem] = await provider.getChildren(updatedThinkingSection);
+    assert.equal(updatedSessionItem.label, `${path.basename(worktreePath)} 🔒 2`);
+
+    await provider.getChildren();
+    assert.equal(lockReadCount, 2);
+  } finally {
+    fs.readFileSync = originalReadFileSync;
+    for (const subscription of context.subscriptions) {
+      subscription.dispose?.();
+    }
+  }
+});
+
 test('active-agents extension launches finish and sync commands in session terminals', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-inline-actions-'));
   const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-inline-worktree-'));
