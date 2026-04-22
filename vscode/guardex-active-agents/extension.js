@@ -20,6 +20,10 @@ const SESSION_SCAN_EXCLUDE_GLOB = '**/{node_modules,.git,.omx/agent-worktrees,.o
 const WORKTREE_LOCK_SCAN_EXCLUDE_GLOB = '**/{node_modules,.git}/**';
 const SESSION_SCAN_LIMIT = 200;
 const REFRESH_DEBOUNCE_MS = 250;
+const ACTIVE_AGENTS_MANIFEST_RELATIVE = path.join('vscode', 'guardex-active-agents', 'package.json');
+const ACTIVE_AGENTS_INSTALL_SCRIPT_RELATIVE = path.join('scripts', 'install-vscode-active-agents-extension.js');
+const RELOAD_WINDOW_ACTION = 'Reload Window';
+const UPDATE_LATER_ACTION = 'Later';
 const SESSION_ACTIVITY_GROUPS = [
   { kind: 'blocked', label: 'BLOCKED' },
   { kind: 'working', label: 'WORKING NOW' },
@@ -448,6 +452,120 @@ function readCurrentBranch(repoRoot) {
     }).trim();
   } catch (_error) {
     return '';
+  }
+}
+
+function parseSimpleSemver(version) {
+  const parts = String(version || '')
+    .split('.')
+    .map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+    return null;
+  }
+  return parts;
+}
+
+function compareSimpleSemver(left, right) {
+  const leftParts = parseSimpleSemver(left);
+  const rightParts = parseSimpleSemver(right);
+  if (!leftParts || !rightParts) {
+    return 0;
+  }
+
+  for (let index = 0; index < leftParts.length; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return leftParts[index] - rightParts[index];
+    }
+  }
+
+  return 0;
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function resolveActiveAgentsAutoUpdateCandidate(installedVersion) {
+  const candidates = [];
+
+  for (const workspaceFolder of vscode.workspace.workspaceFolders || []) {
+    const repoRoot = workspaceFolder?.uri?.fsPath;
+    if (!repoRoot) {
+      continue;
+    }
+
+    const manifestPath = path.join(repoRoot, ACTIVE_AGENTS_MANIFEST_RELATIVE);
+    const installScriptPath = path.join(repoRoot, ACTIVE_AGENTS_INSTALL_SCRIPT_RELATIVE);
+    if (!fs.existsSync(manifestPath) || !fs.existsSync(installScriptPath)) {
+      continue;
+    }
+
+    const manifest = readJsonFile(manifestPath);
+    const nextVersion = typeof manifest?.version === 'string' ? manifest.version.trim() : '';
+    if (!nextVersion || compareSimpleSemver(nextVersion, installedVersion) <= 0) {
+      continue;
+    }
+
+    candidates.push({ repoRoot, installScriptPath, version: nextVersion });
+  }
+
+  candidates.sort((left, right) => compareSimpleSemver(right.version, left.version));
+  return candidates[0] || null;
+}
+
+function runActiveAgentsInstallScript(repoRoot, installScriptPath) {
+  return new Promise((resolve, reject) => {
+    cp.execFile(
+      process.execPath,
+      [installScriptPath],
+      { cwd: repoRoot, encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(String(stderr || stdout || error.message || '').trim() || 'install failed'));
+          return;
+        }
+        resolve({ stdout, stderr });
+      },
+    );
+  });
+}
+
+async function maybeAutoUpdateActiveAgentsExtension(context) {
+  const installedVersion = typeof context?.extension?.packageJSON?.version === 'string'
+    ? context.extension.packageJSON.version.trim()
+    : '';
+  if (!installedVersion) {
+    return;
+  }
+
+  const candidate = resolveActiveAgentsAutoUpdateCandidate(installedVersion);
+  if (!candidate) {
+    return;
+  }
+
+  try {
+    await runActiveAgentsInstallScript(candidate.repoRoot, candidate.installScriptPath);
+  } catch (error) {
+    const failure = typeof error?.message === 'string' && error.message.trim()
+      ? error.message.trim()
+      : 'install failed';
+    vscode.window.showWarningMessage?.(
+      `GitGuardex Active Agents could not auto-update to ${candidate.version}: ${failure}`,
+    );
+    return;
+  }
+
+  const selection = await vscode.window.showInformationMessage?.(
+    `GitGuardex Active Agents updated to ${candidate.version}. Reload Window to use the newest companion.`,
+    RELOAD_WINDOW_ACTION,
+    UPDATE_LATER_ACTION,
+  );
+  if (selection === RELOAD_WINDOW_ACTION) {
+    await vscode.commands.executeCommand('workbench.action.reloadWindow');
   }
 }
 
@@ -1190,6 +1308,7 @@ function activate(context) {
     ...bindRefreshWatcher(worktreeLockWatcher, scheduleRefresh),
   );
   void refreshController.refreshNow();
+  void maybeAutoUpdateActiveAgentsExtension(context);
 }
 
 function deactivate() {}
