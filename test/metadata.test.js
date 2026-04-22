@@ -156,10 +156,11 @@ test('package manifest ships the extracted src runtime', () => {
   assert.match(pkg.files.join('\n'), /^src$/m);
 });
 
-test('doctor CLI parser stays in src/cli args while dead legacy audit stubs stay removed from main runtime', () => {
+test('doctor CLI parser stays in src/cli args while the main doctor command stays routable and dead legacy audit stubs stay removed', () => {
   const argsSource = fs.readFileSync(path.join(repoRoot, 'src', 'cli', 'args.js'), 'utf8');
   const cliSource = fs.readFileSync(path.join(repoRoot, 'src', 'cli', 'main.js'), 'utf8');
   assert.match(argsSource, /function parseDoctorArgs\(rawArgs(?:, options = \{\})?\)/);
+  assert.match(cliSource, /function doctor\(rawArgs\)/);
   assert.doesNotMatch(cliSource, /function doctorAudit\(rawArgs\)/);
   assert.doesNotMatch(cliSource, /function installMany\(rawArgs\)/);
   assert.doesNotMatch(cliSource, /function initWorkspace\(rawArgs\)/);

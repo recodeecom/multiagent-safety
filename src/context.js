@@ -71,7 +71,7 @@ const REQUIRED_SYSTEM_TOOLS = [
   },
 ];
 const MAINTAINER_RELEASE_REPO = path.resolve(
-  process.env.GUARDEX_RELEASE_REPO || path.resolve(PACKAGE_ROOT),
+  process.env.GUARDEX_RELEASE_REPO || PACKAGE_ROOT,
 );
 const NPM_BIN = process.env.GUARDEX_NPM_BIN || 'npm';
 const OPENSPEC_BIN = process.env.GUARDEX_OPENSPEC_BIN || 'openspec';
@@ -242,9 +242,17 @@ const GITIGNORE_MARKER_START = '# multiagent-safety:START';
 const GITIGNORE_MARKER_END = '# multiagent-safety:END';
 const CODEX_WORKTREE_RELATIVE_DIR = path.join('.omx', 'agent-worktrees');
 const CLAUDE_WORKTREE_RELATIVE_DIR = path.join('.omc', 'agent-worktrees');
+const SHARED_VSCODE_SETTINGS_RELATIVE = path.posix.join('.vscode', 'settings.json');
+const REPO_SCAN_IGNORED_FOLDERS_SETTING = 'git.repositoryScanIgnoredFolders';
 const AGENT_WORKTREE_RELATIVE_DIRS = [
   CODEX_WORKTREE_RELATIVE_DIR,
   CLAUDE_WORKTREE_RELATIVE_DIR,
+];
+const MANAGED_REPO_SCAN_IGNORED_FOLDERS = [
+  '.omx/agent-worktrees',
+  '**/.omx/agent-worktrees',
+  '.omc/agent-worktrees',
+  '**/.omc/agent-worktrees',
 ];
 const MANAGED_GITIGNORE_PATHS = [
   '.omx/',
@@ -483,7 +491,10 @@ module.exports = {
   GITIGNORE_MARKER_END,
   CODEX_WORKTREE_RELATIVE_DIR,
   CLAUDE_WORKTREE_RELATIVE_DIR,
+  SHARED_VSCODE_SETTINGS_RELATIVE,
+  REPO_SCAN_IGNORED_FOLDERS_SETTING,
   AGENT_WORKTREE_RELATIVE_DIRS,
+  MANAGED_REPO_SCAN_IGNORED_FOLDERS,
   MANAGED_GITIGNORE_PATHS,
   REPO_SCAFFOLD_DIRECTORIES,
   OMX_SCAFFOLD_DIRECTORIES,

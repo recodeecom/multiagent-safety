@@ -48,13 +48,17 @@ const {
   AGENTS_MARKER_END,
   GITIGNORE_MARKER_START,
   GITIGNORE_MARKER_END,
+  SHARED_VSCODE_SETTINGS_RELATIVE,
+  REPO_SCAN_IGNORED_FOLDERS_SETTING,
   AGENT_WORKTREE_RELATIVE_DIRS,
+  MANAGED_REPO_SCAN_IGNORED_FOLDERS,
   MANAGED_GITIGNORE_PATHS,
   REPO_SCAFFOLD_DIRECTORIES,
   OMX_SCAFFOLD_DIRECTORIES,
   OMX_SCAFFOLD_FILES,
   TARGETED_FORCEABLE_MANAGED_PATHS,
   DEPRECATED_COMMAND_ALIASES,
+  envFlagIsTruthy,
   defaultAgentWorktreeRelativeDir,
   AI_SETUP_PROMPT,
   AI_SETUP_COMMANDS,
@@ -122,15 +126,6 @@ const {
 let sandboxApi;
 let toolchainApi;
 let finishApi;
-
-const SHARED_VSCODE_SETTINGS_RELATIVE = path.posix.join('.vscode', 'settings.json');
-const REPO_SCAN_IGNORED_FOLDERS_SETTING = 'git.repositoryScanIgnoredFolders';
-const MANAGED_REPO_SCAN_IGNORED_FOLDERS = [
-  '.omx/agent-worktrees',
-  '**/.omx/agent-worktrees',
-  '.omc/agent-worktrees',
-  '**/.omc/agent-worktrees',
-];
 
 function getSandboxApi() {
   if (!sandboxApi) {
@@ -1078,6 +1073,10 @@ function protectedBaseSandboxBranchPrefix() {
 
 function protectedBaseSandboxWorktreePath(repoRoot, branchName) {
   return path.join(repoRoot, defaultAgentWorktreeRelativeDir(), branchName.replace(/\//g, '__'));
+}
+
+function gitRefExists(repoRoot, ref) {
+  return run('git', ['-C', repoRoot, 'show-ref', '--verify', '--quiet', ref]).status === 0;
 }
 
 function resolveProtectedBaseSandboxStartRef(repoRoot, baseBranch) {
@@ -3273,11 +3272,11 @@ function parseNpmVersionOutput(stdout) {
 }
 
 function checkForGuardexUpdate() {
-  if (parseBooleanLike(process.env.GUARDEX_SKIP_UPDATE_CHECK) === true) {
+  if (envFlagIsTruthy(process.env.GUARDEX_SKIP_UPDATE_CHECK)) {
     return { checked: false, reason: 'disabled' };
   }
 
-  const forceCheck = parseBooleanLike(process.env.GUARDEX_FORCE_UPDATE_CHECK) === true;
+  const forceCheck = envFlagIsTruthy(process.env.GUARDEX_FORCE_UPDATE_CHECK);
   if (!forceCheck && !isInteractiveTerminal()) {
     return { checked: false, reason: 'non-interactive' };
   }
@@ -3397,12 +3396,11 @@ function restartIntoUpdatedGuardex(expectedVersion) {
 }
 
 function checkForOpenSpecPackageUpdate() {
-  if (parseBooleanLike(process.env.GUARDEX_SKIP_OPENSPEC_UPDATE_CHECK) === true) {
+  if (envFlagIsTruthy(process.env.GUARDEX_SKIP_OPENSPEC_UPDATE_CHECK)) {
     return { checked: false, reason: 'disabled' };
   }
 
-  const forceCheck =
-    parseBooleanLike(process.env.GUARDEX_FORCE_OPENSPEC_UPDATE_CHECK) === true;
+  const forceCheck = envFlagIsTruthy(process.env.GUARDEX_FORCE_OPENSPEC_UPDATE_CHECK);
   if (!forceCheck && !isInteractiveTerminal()) {
     return { checked: false, reason: 'non-interactive' };
   }
@@ -3625,10 +3623,6 @@ function askGlobalInstallForMissing(options, missingPackages, missingLocalTools)
 
 function installGlobalToolchain(options) {
   return getToolchainApi().installGlobalToolchain(options);
-}
-
-function gitRefExists(repoRoot, refName) {
-  return gitRun(repoRoot, ['show-ref', '--verify', '--quiet', refName], { allowFailure: true }).status === 0;
 }
 
 function findStaleLockPaths(repoRoot, locks) {
@@ -4915,16 +4909,9 @@ function setup(rawArgs) {
       dryRun: perRepoOptions.dryRun,
     });
     printScanResult(scanResult, false);
-    if (autoFinishSummary.enabled) {
-      console.log(
-        `[${TOOL_NAME}] Auto-finish sweep (base=${currentBaseBranch}): attempted=${autoFinishSummary.attempted}, completed=${autoFinishSummary.completed}, skipped=${autoFinishSummary.skipped}, failed=${autoFinishSummary.failed}`,
-      );
-      for (const detail of autoFinishSummary.details) {
-        console.log(`[${TOOL_NAME}]   ${detail}`);
-      }
-    } else if (autoFinishSummary.details.length > 0) {
-      console.log(`[${TOOL_NAME}] ${autoFinishSummary.details[0]}`);
-    }
+    printAutoFinishSummary(autoFinishSummary, {
+      baseBranch: currentBaseBranch,
+    });
     printSetupRepoHints(scanResult.repoRoot, currentBaseBranch, repoLabel);
 
     aggregateErrors += scanResult.errors;
