@@ -647,6 +647,11 @@ npm pack --dry-run
 <details>
 <summary><strong>v7.x</strong></summary>
 
+### v7.0.21
+- Bumped `@imdeadpool/guardex` from `7.0.20` to `7.0.21` so npm can publish the next release from the current merged mainline.
+- Keep the release scoped to version and release metadata only; the package payload stays the same as the verified `main` branch contents.
+- Published-release automation will pick up this new package version once the matching GitHub release is created.
+
 ### v7.0.20
 - The VS Code Active Agents tree now exposes worktree-owned SCM changes and lock ownership directly, so operators can see which sandbox owns a dirty file before they act.
 - Guardex now keeps merged cleanup evidence truthful by recording final cleanup proof only after the merge and cleanup state is actually available.
