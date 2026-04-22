@@ -4,7 +4,8 @@ const TASK_SIZE_UPPER_BOUNDS = {
   'large-change': 8_000_000,
 };
 
-const TASK_SIZE_VALUES = new Set(Object.keys(TASK_SIZE_UPPER_BOUNDS));
+const TASK_SIZE_VALUES = Object.keys(TASK_SIZE_UPPER_BOUNDS);
+const TASK_SIZE_SET = new Set(TASK_SIZE_VALUES);
 const FRAGMENTATION_PRESET_SCORES = {
   clean: 0,
   'few-extra-checks': 5,
@@ -32,6 +33,50 @@ const DRIVER_LABELS = {
   finishPath: 'finish-path discipline',
   postProof: 'post-proof drift',
 };
+const LABEL_BANDS = [
+  { max: 15, label: 'Healthy' },
+  { max: 30, label: 'Mildly fragmented' },
+  { max: 50, label: 'Inefficient' },
+  { max: 75, label: 'Runaway' },
+  { max: 100, label: 'Catastrophic' },
+];
+const SESSION_SEVERITY_SUBCOMMAND = 'session-severity';
+const SESSION_SEVERITY_USAGE_ARGS = [
+  `--task-size <${TASK_SIZE_VALUES.join('|')}>`,
+  '--tokens <count>',
+  '--exec-count <count>',
+  '--write-stdin-count <count>',
+  '--completion-before-tail <yes|no>',
+  '[--expected-bound <count>]',
+  `[--fragmentation <${Object.keys(FRAGMENTATION_PRESET_SCORES).join('|')}|0-25>]`,
+  `[--finish-path <${Object.keys(FINISH_PATH_PRESET_SCORES).join('|')}|0-15>]`,
+  `[--post-proof <${Object.keys(POST_PROOF_PRESET_SCORES).join('|')}|0-15>]`,
+  '[--json]',
+].join(' ');
+const SESSION_SEVERITY_COMMAND_TAIL = `${SESSION_SEVERITY_SUBCOMMAND} ${SESSION_SEVERITY_USAGE_ARGS}`;
+const SESSION_SEVERITY_EXAMPLE_ARGS = [
+  '--task-size',
+  'narrow-patch',
+  '--tokens',
+  '3850000',
+  '--exec-count',
+  '18',
+  '--write-stdin-count',
+  '6',
+  '--completion-before-tail',
+  'yes',
+  '--fragmentation',
+  '14',
+  '--finish-path',
+  '6',
+  '--post-proof',
+  '4',
+];
+const SESSION_SEVERITY_EXAMPLE_TAIL = `${SESSION_SEVERITY_SUBCOMMAND} ${SESSION_SEVERITY_EXAMPLE_ARGS.join(' ')}`;
+
+function formatInteger(value) {
+  return Number(value).toLocaleString('en-US');
+}
 
 function parseRequiredPositiveInteger(name, rawValue, { allowZero = true } = {}) {
   const parsed = Number.parseInt(String(rawValue || ''), 10);
@@ -58,8 +103,8 @@ function clampScore(value, min, max) {
 
 function parseTaskSize(rawTaskSize) {
   const normalized = String(rawTaskSize || '').trim();
-  if (!TASK_SIZE_VALUES.has(normalized)) {
-    throw new Error(`--task-size must be one of: ${Array.from(TASK_SIZE_VALUES).join(', ')}`);
+  if (!TASK_SIZE_SET.has(normalized)) {
+    throw new Error(`--task-size must be one of: ${TASK_SIZE_VALUES.join(', ')}`);
   }
   return normalized;
 }
@@ -123,11 +168,7 @@ function scorePostProof(completionBeforeTail, override) {
 }
 
 function labelForTotal(total) {
-  if (total <= 15) return 'Healthy';
-  if (total <= 30) return 'Mildly fragmented';
-  if (total <= 50) return 'Inefficient';
-  if (total <= 75) return 'Runaway';
-  return 'Catastrophic';
+  return LABEL_BANDS.find((band) => total <= band.max)?.label || LABEL_BANDS[LABEL_BANDS.length - 1].label;
 }
 
 function buildSessionSeverityReport(options) {
@@ -205,9 +246,37 @@ function renderSessionSeverityReport(report) {
   ].join('\n');
 }
 
+function renderSessionSeverityHelpDetails() {
+  const taskSizeDefaults = TASK_SIZE_VALUES
+    .map((taskSize) => `${taskSize}=${formatInteger(TASK_SIZE_UPPER_BOUNDS[taskSize])}`)
+    .join(', ');
+  const labelBands = LABEL_BANDS
+    .map((band, index) => {
+      const min = index === 0 ? 0 : LABEL_BANDS[index - 1].max + 1;
+      return `${band.label}=${min}-${band.max}`;
+    })
+    .join(', ');
+  return [`Task-size defaults: ${taskSizeDefaults}`, `Label bands: ${labelBands}`].join('\n');
+}
+
+function renderSessionSeverityCommand(toolName) {
+  return `${toolName} report ${SESSION_SEVERITY_COMMAND_TAIL}`;
+}
+
+function renderSessionSeverityExample(toolName) {
+  return `${toolName} report ${SESSION_SEVERITY_EXAMPLE_TAIL}`;
+}
+
 module.exports = {
+  LABEL_BANDS,
+  SESSION_SEVERITY_COMMAND_TAIL,
+  SESSION_SEVERITY_EXAMPLE_ARGS,
+  SESSION_SEVERITY_EXAMPLE_TAIL,
   TASK_SIZE_UPPER_BOUNDS,
   buildSessionSeverityReport,
   renderSessionSeverityReport,
+  renderSessionSeverityHelpDetails,
+  renderSessionSeverityCommand,
+  renderSessionSeverityExample,
   labelForTotal,
 };

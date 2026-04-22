@@ -60,6 +60,7 @@ const {
   sanitizeSlug,
   defineSpawnSuite,
 } = require('./helpers/install-test-helpers');
+const sessionSeverityReport = require('../src/report/session-severity');
 
 defineSpawnSuite('report integration suite', () => {
 
@@ -101,26 +102,7 @@ exit 1
 
 test('report session-severity prints the weighted rubric summary', () => {
   const repoDir = initRepo();
-  const result = runNode([
-    'report',
-    'session-severity',
-    '--task-size',
-    'narrow-patch',
-    '--tokens',
-    '3850000',
-    '--exec-count',
-    '18',
-    '--write-stdin-count',
-    '6',
-    '--completion-before-tail',
-    'yes',
-    '--fragmentation',
-    '14',
-    '--finish-path',
-    '6',
-    '--post-proof',
-    '4',
-  ], repoDir);
+  const result = runNode(['report', 'session-severity', ...sessionSeverityReport.SESSION_SEVERITY_EXAMPLE_ARGS], repoDir);
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Score 44\/100 — Inefficient\./);
@@ -128,6 +110,19 @@ test('report session-severity prints the weighted rubric summary', () => {
   assert.match(result.stdout, /Secondaries: write_stdin churn, cost vs expected scope, finish-path discipline, post-proof drift\./);
   assert.match(result.stdout, /A\. Cost vs expected scope: 10/);
   assert.match(result.stdout, /Total: 44/);
+});
+
+test('report help reuses the shared session-severity contract text', () => {
+  const repoDir = initRepo();
+  const result = runNode(['report', 'help'], repoDir);
+  const helpDetailLines = sessionSeverityReport.renderSessionSeverityHelpDetails().split('\n');
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, new RegExp(escapeRegexLiteral(sessionSeverityReport.SESSION_SEVERITY_COMMAND_TAIL)));
+  assert.match(result.stdout, new RegExp(escapeRegexLiteral(sessionSeverityReport.SESSION_SEVERITY_EXAMPLE_TAIL)));
+  for (const line of helpDetailLines) {
+    assert.match(result.stdout, new RegExp(escapeRegexLiteral(line)));
+  }
 });
 
 test('report session-severity emits structured JSON when requested', () => {

@@ -2431,15 +2431,20 @@ function report(rawArgs) {
   const options = parseReportArgs(rawArgs);
   const subcommand = options.subcommand || 'help';
   if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    const sessionSeverityHelpDetails = sessionSeverityReport.renderSessionSeverityHelpDetails()
+      .split('\n')
+      .map((line) => `    ${line}`)
+      .join('\n');
     console.log(
       `${TOOL_NAME} report commands:\n` +
       `  ${TOOL_NAME} report scorecard [--target <path>] [--repo github.com/<owner>/<repo>] [--scorecard-json <file>] [--output-dir <path>] [--date YYYY-MM-DD] [--dry-run] [--json]\n` +
-      `  ${TOOL_NAME} report session-severity --task-size <narrow-patch|medium-change|large-change> --tokens <count> --exec-count <count> --write-stdin-count <count> --completion-before-tail <yes|no> [--expected-bound <count>] [--fragmentation <preset|0-25>] [--finish-path <preset|0-15>] [--post-proof <preset|0-15>] [--json]\n` +
+      `  ${sessionSeverityReport.renderSessionSeverityCommand(TOOL_NAME)}\n` +
+      `${sessionSeverityHelpDetails}\n` +
       `\n` +
       `Examples:\n` +
       `  ${TOOL_NAME} report scorecard --repo github.com/recodeecom/multiagent-safety\n` +
       `  ${TOOL_NAME} report scorecard --scorecard-json ./scorecard.json --date 2026-04-10\n` +
-      `  ${TOOL_NAME} report session-severity --task-size narrow-patch --tokens 3850000 --exec-count 18 --write-stdin-count 6 --completion-before-tail yes --fragmentation 14 --finish-path 6 --post-proof 4`,
+      `  ${sessionSeverityReport.renderSessionSeverityExample(TOOL_NAME)}`,
     );
     process.exitCode = 0;
     return;
