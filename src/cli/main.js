@@ -5,6 +5,7 @@ const sandboxModule = require('../sandbox');
 const toolchainModule = require('../toolchain');
 const finishCommands = require('../finish');
 const doctorModule = require('../doctor');
+const sessionSeverityReport = require('../report/session-severity');
 const {
   fs,
   path,
@@ -2433,11 +2434,25 @@ function report(rawArgs) {
     console.log(
       `${TOOL_NAME} report commands:\n` +
       `  ${TOOL_NAME} report scorecard [--target <path>] [--repo github.com/<owner>/<repo>] [--scorecard-json <file>] [--output-dir <path>] [--date YYYY-MM-DD] [--dry-run] [--json]\n` +
+      `  ${TOOL_NAME} report session-severity --task-size <narrow-patch|medium-change|large-change> --tokens <count> --exec-count <count> --write-stdin-count <count> --completion-before-tail <yes|no> [--expected-bound <count>] [--fragmentation <preset|0-25>] [--finish-path <preset|0-15>] [--post-proof <preset|0-15>] [--json]\n` +
       `\n` +
       `Examples:\n` +
       `  ${TOOL_NAME} report scorecard --repo github.com/recodeecom/multiagent-safety\n` +
-      `  ${TOOL_NAME} report scorecard --scorecard-json ./scorecard.json --date 2026-04-10`,
+      `  ${TOOL_NAME} report scorecard --scorecard-json ./scorecard.json --date 2026-04-10\n` +
+      `  ${TOOL_NAME} report session-severity --task-size narrow-patch --tokens 3850000 --exec-count 18 --write-stdin-count 6 --completion-before-tail yes --fragmentation 14 --finish-path 6 --post-proof 4`,
     );
+    process.exitCode = 0;
+    return;
+  }
+
+  if (subcommand === 'session-severity') {
+    const payload = sessionSeverityReport.buildSessionSeverityReport(options);
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      process.exitCode = 0;
+      return;
+    }
+    console.log(sessionSeverityReport.renderSessionSeverityReport(payload));
     process.exitCode = 0;
     return;
   }

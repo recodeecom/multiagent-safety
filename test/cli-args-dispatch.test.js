@@ -15,6 +15,7 @@ const {
   parseSetupArgs,
   parseDoctorArgs,
   parseAgentsArgs,
+  parseReportArgs,
   parseCleanupArgs,
   parseMergeArgs,
   parseFinishArgs,
@@ -111,6 +112,43 @@ test('parseAgentsArgs applies interval overrides and validates the subcommand', 
   });
 });
 
+test('parseReportArgs accepts the session-severity flag set', () => {
+  const options = parseReportArgs([
+    'session-severity',
+    '--task-size',
+    'medium-change',
+    '--tokens',
+    '2100000',
+    '--exec-count',
+    '12',
+    '--write-stdin-count',
+    '4',
+    '--completion-before-tail',
+    'no',
+    '--expected-bound',
+    '4000000',
+    '--fragmentation',
+    '10',
+    '--finish-path',
+    'late-decision',
+    '--post-proof',
+    'heavy-tail',
+    '--json',
+  ]);
+
+  assert.equal(options.subcommand, 'session-severity');
+  assert.equal(options.taskSize, 'medium-change');
+  assert.equal(options.tokens, '2100000');
+  assert.equal(options.execCount, '12');
+  assert.equal(options.writeStdinCount, '4');
+  assert.equal(options.completionBeforeTail, 'no');
+  assert.equal(options.expectedBound, '4000000');
+  assert.equal(options.fragmentation, '10');
+  assert.equal(options.finishPath, 'late-decision');
+  assert.equal(options.postProof, 'heavy-tail');
+  assert.equal(options.json, true);
+});
+
 test('parseCleanupArgs defaults idle minutes when watch mode is enabled', () => {
   const options = parseCleanupArgs(['--watch']);
   assert.equal(options.watch, true);
@@ -178,6 +216,7 @@ test('shared context keeps the drift-prone help text, gitignore paths, and relea
   assert.ok(MANAGED_GITIGNORE_PATHS.includes('!.vscode/'));
   assert.ok(MANAGED_GITIGNORE_PATHS.includes('.vscode/*'));
   assert.ok(MANAGED_GITIGNORE_PATHS.includes('!.vscode/settings.json'));
+  assert.match(descriptions.get('report'), /session severity/);
   assert.equal(MAINTAINER_RELEASE_REPO, repoRoot);
 });
 

@@ -361,7 +361,7 @@ const CLI_COMMAND_DESCRIPTIONS = [
   ['release', 'Create or update the current GitHub release with README-generated notes'],
   ['agents', 'Start/stop repo-scoped review + cleanup bots'],
   ['prompt', 'Print AI setup checklist or named slices (--exec, --part, --list-parts, --snippet)'],
-  ['report', 'Security/safety reports (e.g. OpenSSF scorecard)'],
+  ['report', 'Security/safety reports (e.g. OpenSSF scorecard, session severity)'],
   ['help', 'Show this help output'],
   ['version', 'Print GitGuardex version'],
 ];

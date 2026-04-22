@@ -349,6 +349,15 @@ function parseReportArgs(rawArgs) {
     scorecardJson: '',
     outputDir: '',
     date: '',
+    taskSize: '',
+    tokens: '',
+    execCount: '',
+    writeStdinCount: '',
+    completionBeforeTail: '',
+    expectedBound: '',
+    fragmentation: '',
+    finishPath: '',
+    postProof: '',
     dryRun: false,
     json: false,
   };
@@ -387,6 +396,69 @@ function parseReportArgs(rawArgs) {
       const next = rawArgs[index + 1];
       if (!next) throw new Error('--date requires a YYYY-MM-DD value');
       options.date = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--task-size') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--task-size requires a value');
+      options.taskSize = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--tokens') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--tokens requires a value');
+      options.tokens = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--exec-count') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--exec-count requires a value');
+      options.execCount = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--write-stdin-count') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--write-stdin-count requires a value');
+      options.writeStdinCount = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--completion-before-tail') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--completion-before-tail requires yes or no');
+      options.completionBeforeTail = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--expected-bound') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--expected-bound requires a value');
+      options.expectedBound = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--fragmentation') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--fragmentation requires a value');
+      options.fragmentation = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--finish-path') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--finish-path requires a value');
+      options.finishPath = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--post-proof') {
+      const next = rawArgs[index + 1];
+      if (!next) throw new Error('--post-proof requires a value');
+      options.postProof = next;
       index += 1;
       continue;
     }

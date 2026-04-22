@@ -99,4 +99,67 @@ exit 1
   assert.match(remediation, /Verification loop/);
 });
 
+test('report session-severity prints the weighted rubric summary', () => {
+  const repoDir = initRepo();
+  const result = runNode([
+    'report',
+    'session-severity',
+    '--task-size',
+    'narrow-patch',
+    '--tokens',
+    '3850000',
+    '--exec-count',
+    '18',
+    '--write-stdin-count',
+    '6',
+    '--completion-before-tail',
+    'yes',
+    '--fragmentation',
+    '14',
+    '--finish-path',
+    '6',
+    '--post-proof',
+    '4',
+  ], repoDir);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Score 44\/100 — Inefficient\./);
+  assert.match(result.stdout, /Primary: turn fragmentation\./);
+  assert.match(result.stdout, /Secondaries: write_stdin churn, cost vs expected scope, finish-path discipline, post-proof drift\./);
+  assert.match(result.stdout, /A\. Cost vs expected scope: 10/);
+  assert.match(result.stdout, /Total: 44/);
+});
+
+test('report session-severity emits structured JSON when requested', () => {
+  const repoDir = initRepo();
+  const result = runNode([
+    'report',
+    'session-severity',
+    '--task-size',
+    'medium-change',
+    '--tokens',
+    '2100000',
+    '--exec-count',
+    '12',
+    '--write-stdin-count',
+    '4',
+    '--completion-before-tail',
+    'no',
+    '--fragmentation',
+    '10',
+    '--finish-path',
+    '10',
+    '--post-proof',
+    '10',
+    '--json',
+  ], repoDir);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.taskSize, 'medium-change');
+  assert.equal(payload.scores.total, 40);
+  assert.equal(payload.label, 'Inefficient');
+  assert.equal(payload.primaryDriver, 'turn fragmentation');
+});
+
 });
