@@ -1,20 +1,44 @@
-# GitGuardex — Guardian T-Rex for your repo
+<p align="center">
+  <img alt="gitguardex logo" src="./logo.png" width="260">
+</p>
 
-[![npm version](https://img.shields.io/npm/v/%40imdeadpool%2Fguardex?label=npm&color=cb3837&logo=npm)](https://www.npmjs.com/package/@imdeadpool/guardex)
-[![npm downloads](https://img.shields.io/npm/dm/%40imdeadpool%2Fguardex?label=downloads&color=0b76c5)](https://www.npmjs.com/package/@imdeadpool/guardex)
-[![GitHub stars](https://img.shields.io/github/stars/recodeee/gitguardex?label=stars&color=d4ac0d)](https://github.com/recodeee/gitguardex/stargazers)
-[![License](https://img.shields.io/npm/l/%40imdeadpool%2Fguardex?label=License&color=97ca00)](./LICENSE)
+<h1 align="center">gitguardex</h1>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/recodeee/gitguardex/ci.yml?branch=main&label=CI)](https://github.com/recodeee/gitguardex/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/actions/workflow/status/recodeee/gitguardex/release.yml?label=Release)](https://github.com/recodeee/gitguardex/actions/workflows/release.yml)
-[![CodeQL](https://img.shields.io/github/actions/workflow/status/recodeee/gitguardex/codeql.yml?branch=main&label=CodeQL)](https://github.com/recodeee/gitguardex/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/recodeee/gitguardex/badge)](https://securityscorecards.dev/viewer/?uri=github.com/recodeee/gitguardex)
+<p align="center">
+  guardian t-rex for multi-agent repos
+</p>
 
-[about_description.txt](./about_description.txt)
+<p align="center">
+  isolated worktrees, file locks, and PR-only merges for codex, claude, and human teammates
+</p>
 
-Guardian T-Rex for your multi-agent repo. Isolated worktrees, file locks, and PR-only merges stop parallel Codex & Claude agents from overwriting each other's work. Auto-wires Oh My Codex, Oh My Claude, OpenSpec, and Caveman.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@imdeadpool/guardex"><img alt="npm version" src="https://img.shields.io/npm/v/%40imdeadpool%2Fguardex?label=npm&style=flat-square&color=cb3837&logo=npm&logoColor=white"></a>
+  <a href="https://github.com/recodeee/gitguardex/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/recodeee/gitguardex?label=stars&style=flat-square&color=d4ac0d"></a>
+  <a href="https://github.com/recodeee/gitguardex/commits/main"><img alt="last commit" src="https://img.shields.io/github/last-commit/recodeee/gitguardex?label=last%20commit&style=flat-square&color=7aa2f7"></a>
+  <a href="./LICENSE"><img alt="license" src="https://img.shields.io/npm/l/%40imdeadpool%2Fguardex?label=license&style=flat-square&color=97ca00"></a>
+</p>
 
-**GitGuardex is a safety layer for parallel agent work in git repos.** If you're running more than one Codex or Claude agent on the same codebase, this is what keeps them from deleting each other's work.
+<p align="center">
+  <a href="./about_description.txt">About</a> •
+  <a href="#install">Install</a> •
+  <a href="#what-it-does">What it does</a> •
+  <a href="#daily-workflow">Workflow</a> •
+  <a href="#how-it-works-in-vs-code">VS Code</a> •
+  <a href="#commands">Commands</a>
+</p>
+
+<p align="center">
+  <strong>guard many agent. keep one repo clean.</strong>
+</p>
+
+<p align="center">
+  GitGuardex is a safety layer for parallel agent work in git repos. Every task gets an isolated
+  worktree, claimed files, and a PR-only finish path instead of one shared checkout where agents
+  stomp each other.
+</p>
+
+---
 
 > [!WARNING]
 > Not affiliated with OpenAI, Anthropic, or Codex. Not an official tool.
@@ -36,6 +60,7 @@ I was running ~30 Codex agents in parallel and hit a wall: they kept working on 
 
 GitGuardex exists to stop that loop. Every agent gets its own worktree, claims the files it's touching, and can't clobber files another agent has claimed. Your local branch stays clean; agents stay in their lanes.
 
+## Install
 
 <p align="center">
   <img alt="Install GitGuardex" src="https://raw.githubusercontent.com/recodeee/gitguardex/main/docs/images/install-hero.svg" width="680">
