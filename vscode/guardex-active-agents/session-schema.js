@@ -35,6 +35,16 @@ function toPositiveInteger(value) {
   return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
 }
 
+function normalizeTaskMode(value) {
+  const normalized = toNonEmptyString(value).toLowerCase();
+  return normalized === 'caveman' || normalized === 'omx' ? normalized : '';
+}
+
+function normalizeOpenSpecTier(value) {
+  const normalized = toNonEmptyString(value).toUpperCase();
+  return ['T0', 'T1', 'T2', 'T3'].includes(normalized) ? normalized : '';
+}
+
 function sanitizeBranchForFile(branch) {
   const normalized = toNonEmptyString(branch, 'session');
   return normalized.replace(/[^a-zA-Z0-9._-]+/g, '__').replace(/^_+|_+$/g, '') || 'session';
@@ -420,6 +430,9 @@ function buildSessionRecord(input) {
     worktreePath,
     pid,
     cliName: toNonEmptyString(input.cliName, 'codex'),
+    taskMode: normalizeTaskMode(input.taskMode),
+    openspecTier: normalizeOpenSpecTier(input.openspecTier),
+    taskRoutingReason: toNonEmptyString(input.taskRoutingReason),
     startedAt: startedAt.toISOString(),
   };
 }
@@ -456,6 +469,9 @@ function normalizeSessionRecord(input, options = {}) {
     worktreePath: path.resolve(worktreePath),
     pid,
     cliName: toNonEmptyString(input.cliName, 'codex'),
+    taskMode: normalizeTaskMode(input.taskMode),
+    openspecTier: normalizeOpenSpecTier(input.openspecTier),
+    taskRoutingReason: toNonEmptyString(input.taskRoutingReason),
     startedAt: startedAt.toISOString(),
     filePath: toNonEmptyString(options.filePath),
     label: deriveSessionLabel(branch, worktreePath),

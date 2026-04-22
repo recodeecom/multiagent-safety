@@ -233,6 +233,86 @@ test('agent-branch-start links dependency node_modules directories into new work
 });
 
 
+test('agent-branch-start honors T1 notes-only OpenSpec scaffolding', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runBranchStart(['--tier', 'T1', 'simple: tighten copy', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\[agent-branch-start\] OpenSpec tier: T1/);
+  assert.match(result.stdout, /\[agent-branch-start\] OpenSpec plan: skipped by tier T1/);
+
+  const createdWorktree = extractCreatedWorktree(result.stdout);
+  const changeSlug = extractOpenSpecChangeSlug(result.stdout);
+  const changeDir = path.join(createdWorktree, 'openspec', 'changes', changeSlug);
+
+  assert.doesNotMatch(createdWorktree, /masterplan/);
+  assert.equal(fs.existsSync(path.join(changeDir, '.openspec.yaml')), true, '.openspec.yaml missing');
+  assert.equal(fs.existsSync(path.join(changeDir, 'notes.md')), true, 'notes.md missing');
+  assert.equal(fs.existsSync(path.join(changeDir, 'proposal.md')), false, 'proposal.md should be absent for T1');
+  assert.equal(fs.existsSync(path.join(changeDir, 'tasks.md')), false, 'tasks.md should be absent for T1');
+  assert.equal(
+    fs.existsSync(path.join(createdWorktree, 'openspec', 'plan', changeSlug)),
+    false,
+    'T1 branch start should not create a plan workspace',
+  );
+});
+
+
+test('agent-branch-start honors T2 full change scaffolding without a plan workspace', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runBranchStart(['--tier', 'T2', 'improve-routing-decider', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\[agent-branch-start\] OpenSpec tier: T2/);
+  assert.match(result.stdout, /\[agent-branch-start\] OpenSpec plan: skipped by tier T2/);
+
+  const createdWorktree = extractCreatedWorktree(result.stdout);
+  const changeSlug = extractOpenSpecChangeSlug(result.stdout);
+  const changeDir = path.join(createdWorktree, 'openspec', 'changes', changeSlug);
+
+  assert.doesNotMatch(createdWorktree, /masterplan/);
+  assert.equal(fs.existsSync(path.join(changeDir, '.openspec.yaml')), true, '.openspec.yaml missing');
+  assert.equal(fs.existsSync(path.join(changeDir, 'proposal.md')), true, 'proposal.md missing');
+  assert.equal(fs.existsSync(path.join(changeDir, 'tasks.md')), true, 'tasks.md missing');
+  assert.equal(
+    fs.existsSync(path.join(changeDir, 'specs', 'improve-routing-decider', 'spec.md')),
+    true,
+    'spec.md missing',
+  );
+  assert.equal(
+    fs.existsSync(path.join(createdWorktree, 'openspec', 'plan', changeSlug)),
+    false,
+    'T2 branch start should not create a plan workspace',
+  );
+});
+
+
 test('protect command manages configured protected branches', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);

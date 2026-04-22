@@ -89,7 +89,7 @@ test('codex-agent launches codex inside a fresh sandbox worktree and keeps branc
 
   const cwdMarker = path.join(repoDir, '.codex-agent-cwd');
   const argsMarker = path.join(repoDir, '.codex-agent-args');
-  const launch = runCodexAgent(['launch-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'], repoDir, {
+  const launch = runCodexAgent(['--tier', 'T3', 'launch-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'], repoDir, {
     PATH: `${fakeBin}:${process.env.PATH}`,
     GUARDEX_TEST_CODEX_CWD: cwdMarker,
     GUARDEX_TEST_CODEX_ARGS: argsMarker,
@@ -141,6 +141,73 @@ test('codex-agent launches codex inside a fresh sandbox worktree and keeps branc
 });
 
 
+test('codex-agent routes lightweight tasks to caveman T1 with notes-only OpenSpec', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+
+  const setupResult = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(setupResult.status, 0, setupResult.stderr || setupResult.stdout);
+  let result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-fake-codex-lightweight-'));
+  const fakeCodexPath = path.join(fakeBin, 'codex');
+  fs.writeFileSync(
+    fakeCodexPath,
+    `#!/usr/bin/env bash\n` +
+      `pwd > "${'${GUARDEX_TEST_CODEX_CWD}'}"\n` +
+      `echo "$@" > "${'${GUARDEX_TEST_CODEX_ARGS}'}"\n` +
+      `printf '%s' "${'${GUARDEX_TASK_MODE}'}" > "${'${GUARDEX_TEST_TASK_MODE}'}"\n` +
+      `printf '%s' "${'${GUARDEX_OPENSPEC_TIER}'}" > "${'${GUARDEX_TEST_TASK_TIER}'}"\n` +
+      `printf '%s' "${'${GUARDEX_TASK_ROUTING_REASON}'}" > "${'${GUARDEX_TEST_TASK_REASON}'}"\n`,
+    'utf8',
+  );
+  fs.chmodSync(fakeCodexPath, 0o755);
+
+  const cwdMarker = path.join(repoDir, '.codex-agent-cwd-lightweight');
+  const argsMarker = path.join(repoDir, '.codex-agent-args-lightweight');
+  const modeMarker = path.join(repoDir, '.codex-agent-mode-lightweight');
+  const tierMarker = path.join(repoDir, '.codex-agent-tier-lightweight');
+  const reasonMarker = path.join(repoDir, '.codex-agent-reason-lightweight');
+  const launch = runCodexAgent(['simple: tighten copy', 'planner', 'dev', '--model', 'gpt-5.4-mini'], repoDir, {
+    PATH: `${fakeBin}:${process.env.PATH}`,
+    GUARDEX_TEST_CODEX_CWD: cwdMarker,
+    GUARDEX_TEST_CODEX_ARGS: argsMarker,
+    GUARDEX_TEST_TASK_MODE: modeMarker,
+    GUARDEX_TEST_TASK_TIER: tierMarker,
+    GUARDEX_TEST_TASK_REASON: reasonMarker,
+  });
+  assert.equal(launch.status, 0, launch.stderr || launch.stdout);
+  assert.match(launch.stdout, /\[codex-agent\] Task routing: caveman \/ T1 \(notes-only OpenSpec\) \(explicit lightweight prefix\)/);
+  assert.doesNotMatch(launch.stdout, /\[codex-agent\] OpenSpec plan workspace:/);
+
+  const launchedCwd = fs.readFileSync(cwdMarker, 'utf8').trim();
+  const launchedBranch = extractCreatedBranch(launch.stdout);
+  const changeSlug = sanitizeSlug(launchedBranch, 'simple-tighten-copy');
+  const changeDir = path.join(launchedCwd, 'openspec', 'changes', changeSlug);
+  const launchedArgs = fs.readFileSync(argsMarker, 'utf8').trim();
+
+  assert.doesNotMatch(launchedCwd, /masterplan/);
+  assert.match(launchedArgs, /--model gpt-5\.4-mini/);
+  assert.equal(fs.readFileSync(modeMarker, 'utf8'), 'caveman');
+  assert.equal(fs.readFileSync(tierMarker, 'utf8'), 'T1');
+  assert.match(fs.readFileSync(reasonMarker, 'utf8'), /explicit lightweight prefix/);
+  assert.equal(fs.existsSync(path.join(changeDir, '.openspec.yaml')), true, '.openspec.yaml missing');
+  assert.equal(fs.existsSync(path.join(changeDir, 'notes.md')), true, 'notes.md missing');
+  assert.equal(fs.existsSync(path.join(changeDir, 'proposal.md')), false, 'proposal.md should be absent for T1');
+  assert.equal(fs.existsSync(path.join(changeDir, 'tasks.md')), false, 'tasks.md should be absent for T1');
+  assert.equal(
+    fs.existsSync(path.join(launchedCwd, 'openspec', 'plan', changeSlug)),
+    false,
+    'T1 codex-agent launch should not create a plan workspace',
+  );
+});
+
+
 test('codex-agent ignores stale repo-local starter shims and keeps the visible checkout stable', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
@@ -179,7 +246,7 @@ test('codex-agent ignores stale repo-local starter shims and keeps the visible c
 
   const cwdMarker = path.join(repoDir, '.codex-agent-cwd-fallback');
   const argsMarker = path.join(repoDir, '.codex-agent-args-fallback');
-  const launch = runCodexAgent(['fallback-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'], repoDir, {
+  const launch = runCodexAgent(['--tier', 'T3', 'fallback-task', 'planner', 'dev', '--model', 'gpt-5.4-mini'], repoDir, {
     PATH: `${fakeBin}:${process.env.PATH}`,
     GUARDEX_TEST_CODEX_CWD: cwdMarker,
     GUARDEX_TEST_CODEX_ARGS: argsMarker,

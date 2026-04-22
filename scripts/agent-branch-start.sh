@@ -14,6 +14,7 @@ OPENSPEC_PLAN_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_PLAN_SLUG:-}"
 OPENSPEC_CHANGE_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CHANGE_SLUG:-}"
 OPENSPEC_CAPABILITY_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CAPABILITY_SLUG:-}"
 OPENSPEC_MASTERPLAN_LABEL_RAW="${GUARDEX_OPENSPEC_MASTERPLAN_LABEL-masterplan}"
+OPENSPEC_TIER_RAW="${GUARDEX_OPENSPEC_TIER:-T3}"
 PRINT_NAME_ONLY=0
 POSITIONAL_ARGS=()
 
@@ -54,8 +55,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --tier)
-      # Accepted for CLAUDE.md compatibility; scaffold size is not yet wired
-      # through this script. Consume the value so callers can pass it.
+      OPENSPEC_TIER_RAW="${2:-$OPENSPEC_TIER_RAW}"
       shift 2
       ;;
     --in-place|--allow-in-place)
@@ -246,11 +246,45 @@ normalize_bool() {
 
 OPENSPEC_AUTO_INIT="$(normalize_bool "$OPENSPEC_AUTO_INIT_RAW" "1")"
 
+normalize_tier() {
+  local raw="${1:-}"
+  local fallback="${2:-T3}"
+  local upper
+  upper="$(printf '%s' "$raw" | tr '[:lower:]' '[:upper:]')"
+  case "$upper" in
+    T0|T1|T2|T3) printf '%s' "$upper" ;;
+    '') printf '%s' "$fallback" ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! OPENSPEC_TIER="$(normalize_tier "$OPENSPEC_TIER_RAW" "T3")"; then
+  echo "[agent-branch-start] Unsupported OpenSpec tier: ${OPENSPEC_TIER_RAW}" >&2
+  exit 1
+fi
+
+OPENSPEC_SKIP_CHANGE=0
+OPENSPEC_SKIP_PLAN=0
+OPENSPEC_MINIMAL=0
+case "$OPENSPEC_TIER" in
+  T0)
+    OPENSPEC_SKIP_CHANGE=1
+    OPENSPEC_SKIP_PLAN=1
+    ;;
+  T1)
+    OPENSPEC_SKIP_PLAN=1
+    OPENSPEC_MINIMAL=1
+    ;;
+  T2)
+    OPENSPEC_SKIP_PLAN=1
+    ;;
+esac
+
 resolve_openspec_masterplan_label() {
   local raw="${OPENSPEC_MASTERPLAN_LABEL_RAW:-}"
   local label
 
-  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ -z "$raw" ]]; then
+  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]] || [[ -z "$raw" ]]; then
     printf ''
     return 0
   fi
@@ -404,7 +438,7 @@ initialize_openspec_plan_workspace() {
   local worktree="$2"
   local plan_slug="$3"
 
-  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]]; then
+  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]]; then
     return 0
   fi
 
@@ -430,14 +464,15 @@ initialize_openspec_change_workspace() {
   local change_slug="$3"
   local capability_slug="$4"
 
-  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]]; then
+  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ "$OPENSPEC_SKIP_CHANGE" -eq 1 ]]; then
     return 0
   fi
 
   local init_output=""
   if ! init_output="$(
     cd "$worktree"
-    run_guardex_cli internal run-shell changeInit "$change_slug" "$capability_slug" 2>&1
+    GUARDEX_OPENSPEC_MINIMAL="$OPENSPEC_MINIMAL" \
+      run_guardex_cli internal run-shell changeInit "$change_slug" "$capability_slug" 2>&1
   )"; then
     printf '%s\n' "$init_output" >&2
     echo "[agent-branch-start] OpenSpec workspace initialization failed for change '${change_slug}'." >&2
@@ -599,8 +634,17 @@ fi
 
 echo "[agent-branch-start] Created branch: ${branch_name}"
 echo "[agent-branch-start] Worktree: ${worktree_path}"
-echo "[agent-branch-start] OpenSpec change: openspec/changes/${openspec_change_slug}"
-echo "[agent-branch-start] OpenSpec plan: openspec/plan/${openspec_plan_slug}"
+echo "[agent-branch-start] OpenSpec tier: ${OPENSPEC_TIER}"
+if [[ "$OPENSPEC_SKIP_CHANGE" -eq 1 ]]; then
+  echo "[agent-branch-start] OpenSpec change: skipped by tier ${OPENSPEC_TIER}"
+else
+  echo "[agent-branch-start] OpenSpec change: openspec/changes/${openspec_change_slug}"
+fi
+if [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]]; then
+  echo "[agent-branch-start] OpenSpec plan: skipped by tier ${OPENSPEC_TIER}"
+else
+  echo "[agent-branch-start] OpenSpec plan: openspec/plan/${openspec_plan_slug}"
+fi
 echo "[agent-branch-start] Next steps:"
 echo "  cd \"${worktree_path}\""
 echo "  gx locks claim --branch \"${branch_name}\" <file...>"

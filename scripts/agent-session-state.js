@@ -23,7 +23,7 @@ const sessionSchema = resolveSessionSchemaModule();
 function usage() {
   return (
     'Usage:\n' +
-    '  node scripts/agent-session-state.js start --repo <path> --branch <name> --task <task> --agent <agent> --worktree <path> --pid <pid> --cli <name>\n' +
+    '  node scripts/agent-session-state.js start --repo <path> --branch <name> --task <task> --agent <agent> --worktree <path> --pid <pid> --cli <name> [--task-mode <caveman|omx>] [--openspec-tier <T0|T1|T2|T3>] [--routing-reason <text>]\n' +
     '  node scripts/agent-session-state.js stop --repo <path> --branch <name>\n'
   );
 }
@@ -65,6 +65,9 @@ function writeSessionRecord(options) {
     worktreePath: requireOption(options, 'worktree'),
     pid: requireOption(options, 'pid'),
     cliName: requireOption(options, 'cli'),
+    taskMode: options['task-mode'],
+    openspecTier: options['openspec-tier'],
+    taskRoutingReason: options['routing-reason'],
   });
 
   const targetPath = sessionSchema.sessionFilePathForBranch(repoRoot, branch);

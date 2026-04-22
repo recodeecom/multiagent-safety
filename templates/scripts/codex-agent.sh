@@ -17,6 +17,13 @@ OPENSPEC_PLAN_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_PLAN_SLUG:-}"
 OPENSPEC_CHANGE_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CHANGE_SLUG:-}"
 OPENSPEC_CAPABILITY_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CAPABILITY_SLUG:-}"
 OPENSPEC_MASTERPLAN_LABEL_RAW="${GUARDEX_OPENSPEC_MASTERPLAN_LABEL-masterplan}"
+OPENSPEC_TIER_RAW="${GUARDEX_OPENSPEC_TIER:-}"
+OPENSPEC_TIER=""
+OPENSPEC_SKIP_CHANGE=0
+OPENSPEC_SKIP_PLAN=0
+OPENSPEC_MINIMAL=0
+TASK_MODE=""
+TASK_ROUTING_REASON=""
 
 run_guardex_cli() {
   if [[ -n "$CLI_ENTRY" ]]; then
@@ -48,6 +55,117 @@ normalize_bool() {
   esac
 }
 
+normalize_tier() {
+  local raw="${1:-}"
+  local fallback="${2:-T2}"
+  local upper
+  upper="$(printf '%s' "$raw" | tr '[:lower:]' '[:upper:]')"
+  case "$upper" in
+    T0|T1|T2|T3) printf '%s' "$upper" ;;
+    '') printf '%s' "$fallback" ;;
+    *) return 1 ;;
+  esac
+}
+
+string_contains_any() {
+  local haystack="$1"
+  shift
+  local needle
+  for needle in "$@"; do
+    if [[ "$haystack" == *"$needle"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+string_has_lightweight_prefix() {
+  local text="$1"
+  local prefix
+  for prefix in "quick:" "simple:" "tiny:" "minor:" "small:" "just:" "only:"; do
+    if [[ "$text" == "$prefix"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+derive_task_mode_from_tier() {
+  case "$1" in
+    T0|T1) printf 'caveman' ;;
+    T2|T3) printf 'omx' ;;
+    *) return 1 ;;
+  esac
+}
+
+apply_openspec_tier() {
+  OPENSPEC_SKIP_CHANGE=0
+  OPENSPEC_SKIP_PLAN=0
+  OPENSPEC_MINIMAL=0
+  case "$1" in
+    T0)
+      OPENSPEC_SKIP_CHANGE=1
+      OPENSPEC_SKIP_PLAN=1
+      ;;
+    T1)
+      OPENSPEC_SKIP_PLAN=1
+      OPENSPEC_MINIMAL=1
+      ;;
+    T2)
+      OPENSPEC_SKIP_PLAN=1
+      ;;
+  esac
+}
+
+decide_task_routing() {
+  local task_lower
+  task_lower="$(printf '%s' "$TASK_NAME" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ -n "$OPENSPEC_TIER_RAW" ]]; then
+    if ! OPENSPEC_TIER="$(normalize_tier "$OPENSPEC_TIER_RAW" "T2")"; then
+      echo "[codex-agent] Unsupported OpenSpec tier: ${OPENSPEC_TIER_RAW}" >&2
+      return 1
+    fi
+    TASK_ROUTING_REASON="explicit tier override"
+  elif string_has_lightweight_prefix "$task_lower"; then
+    OPENSPEC_TIER="T1"
+    TASK_ROUTING_REASON="explicit lightweight prefix"
+  elif string_contains_any "$task_lower" \
+    "ralph" "autopilot" "ultrawork" "ultraqa" "ralplan" "deep interview" "ouroboros" \
+    "migration" "refactor" "architecture" "re-architect" "cross-cutting" "multi-agent" \
+    "multiagent" "parallel" "orchestr" "release" "zero-copy" "install surface" "workflow"
+  then
+    OPENSPEC_TIER="T3"
+    TASK_ROUTING_REASON="plan-heavy or orchestration-heavy task wording"
+  elif string_contains_any "$task_lower" \
+    "typo" "spelling" "comment-only" "comment only" "format-only" "format only" \
+    "whitespace" "one-liner" "one liner" "version bump" "bump version" \
+    "single-file" "single file"
+  then
+    OPENSPEC_TIER="T1"
+    TASK_ROUTING_REASON="small bounded maintenance wording"
+  else
+    OPENSPEC_TIER="T2"
+    TASK_ROUTING_REASON="default behavior-change route"
+  fi
+
+  if ! TASK_MODE="$(derive_task_mode_from_tier "$OPENSPEC_TIER")"; then
+    echo "[codex-agent] Unsupported task mode tier: ${OPENSPEC_TIER}" >&2
+    return 1
+  fi
+  apply_openspec_tier "$OPENSPEC_TIER"
+}
+
+describe_task_routing() {
+  case "$OPENSPEC_TIER" in
+    T0) printf 'caveman / T0 (no OpenSpec scaffold)' ;;
+    T1) printf 'caveman / T1 (notes-only OpenSpec)' ;;
+    T2) printf 'omx / T2 (change workspace only)' ;;
+    T3) printf 'omx / T3 (change plus plan workspace)' ;;
+    *) printf 'unknown / %s' "${OPENSPEC_TIER:-unset}" ;;
+  esac
+}
+
 AUTO_FINISH="$(normalize_bool "$AUTO_FINISH_RAW" "1")"
 AUTO_REVIEW_ON_CONFLICT="$(normalize_bool "$AUTO_REVIEW_ON_CONFLICT_RAW" "1")"
 AUTO_CLEANUP="$(normalize_bool "$AUTO_CLEANUP_RAW" "1")"
@@ -58,7 +176,7 @@ resolve_openspec_masterplan_label() {
   local raw="${OPENSPEC_MASTERPLAN_LABEL_RAW:-}"
   local label
 
-  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ -z "$raw" ]]; then
+  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]] || [[ -z "$raw" ]]; then
     printf ''
     return 0
   fi
@@ -84,6 +202,10 @@ while [[ $# -gt 0 ]]; do
     --base)
       BASE_BRANCH="${2:-$BASE_BRANCH}"
       BASE_BRANCH_EXPLICIT=1
+      shift 2
+      ;;
+    --tier)
+      OPENSPEC_TIER_RAW="${2:-$OPENSPEC_TIER_RAW}"
       shift 2
       ;;
     --codex-bin)
@@ -148,6 +270,10 @@ done
 
 if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -z "$BASE_BRANCH" ]]; then
   echo "[codex-agent] --base requires a non-empty branch name." >&2
+  exit 1
+fi
+
+if ! decide_task_routing; then
   exit 1
 fi
 
@@ -393,7 +519,7 @@ start_sandbox_fallback() {
   printf '[agent-branch-start] Worktree: %s\n' "$worktree_path"
 }
 
-start_args=("$TASK_NAME" "$AGENT_NAME")
+start_args=(--tier "$OPENSPEC_TIER" "$TASK_NAME" "$AGENT_NAME")
 if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 ]]; then
   start_args+=("$BASE_BRANCH")
 fi
@@ -487,7 +613,10 @@ record_active_session_state() {
     --agent "$AGENT_NAME" \
     --worktree "$wt" \
     --pid "$$" \
-    --cli "$CODEX_BIN"
+    --cli "$CODEX_BIN" \
+    --task-mode "$TASK_MODE" \
+    --openspec-tier "$OPENSPEC_TIER" \
+    --routing-reason "$TASK_ROUTING_REASON"
 }
 
 clear_active_session_state() {
@@ -545,6 +674,7 @@ print_takeover_prompt() {
   finish_cmd="gx branch finish --branch \"${branch}\" --base ${base_branch} --via-pr --wait-for-merge --cleanup"
 
   echo "[codex-agent] Takeover sandbox: ${wt}"
+  echo "[codex-agent] Takeover routing: $(describe_task_routing) (${TASK_ROUTING_REASON})"
   echo "[codex-agent] Takeover prompt: Continue \`${change_slug}\` on branch \`${branch}\`. Work inside \`${wt}\`, review \`${change_artifact}\`, continue from the current state instead of creating a new sandbox, and when the work is done run \`${finish_cmd}\`."
 }
 
@@ -594,7 +724,7 @@ ensure_openspec_plan_workspace() {
   local wt="$1"
   local branch="$2"
 
-  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]]; then
+  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]]; then
     return 0
   fi
 
@@ -619,7 +749,7 @@ ensure_openspec_change_workspace() {
   local wt="$1"
   local branch="$2"
 
-  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]]; then
+  if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]] || [[ "$OPENSPEC_SKIP_CHANGE" -eq 1 ]]; then
     return 0
   fi
 
@@ -628,7 +758,8 @@ ensure_openspec_change_workspace() {
   capability_slug="$(resolve_openspec_capability_slug)"
   if ! init_output="$(
     cd "$wt"
-    run_guardex_cli internal run-shell changeInit "$change_slug" "$capability_slug" 2>&1
+    GUARDEX_OPENSPEC_MINIMAL="$OPENSPEC_MINIMAL" \
+      run_guardex_cli internal run-shell changeInit "$change_slug" "$capability_slug" 2>&1
   )"; then
     printf '%s\n' "$init_output" >&2
     echo "[codex-agent] OpenSpec workspace initialization failed for change '${change_slug}'." >&2
@@ -878,6 +1009,8 @@ if ! ensure_openspec_plan_workspace "$worktree_path" "$worktree_branch"; then
   exit 1
 fi
 
+echo "[codex-agent] Task routing: $(describe_task_routing) (${TASK_ROUTING_REASON})"
+
 active_session_recorded=0
 cleanup_active_session_state_on_exit() {
   set +e
@@ -894,7 +1027,10 @@ trap cleanup_active_session_state_on_exit EXIT INT TERM
 echo "[codex-agent] Launching ${CODEX_BIN} in sandbox: $worktree_path"
 cd "$worktree_path"
 set +e
-"$CODEX_BIN" "$@"
+GUARDEX_TASK_MODE="$TASK_MODE" \
+GUARDEX_OPENSPEC_TIER="$OPENSPEC_TIER" \
+GUARDEX_TASK_ROUTING_REASON="$TASK_ROUTING_REASON" \
+  "$CODEX_BIN" "$@"
 codex_exit="$?"
 set -e
 

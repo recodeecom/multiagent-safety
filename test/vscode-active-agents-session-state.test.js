@@ -383,6 +383,12 @@ test('agent-session-state writes and removes active session records', () => {
     String(process.pid),
     '--cli',
     'codex',
+    '--task-mode',
+    'caveman',
+    '--openspec-tier',
+    'T1',
+    '--routing-reason',
+    'explicit lightweight prefix',
   ]);
   assert.equal(start.status, 0, start.stderr);
 
@@ -395,10 +401,15 @@ test('agent-session-state writes and removes active session records', () => {
   assert.equal(parsed.taskName, 'demo-task');
   assert.equal(parsed.agentName, 'codex');
   assert.equal(parsed.worktreePath, worktreePath);
+  assert.equal(parsed.taskMode, 'caveman');
+  assert.equal(parsed.openspecTier, 'T1');
+  assert.equal(parsed.taskRoutingReason, 'explicit lightweight prefix');
 
   const sessions = sessionSchema.readActiveSessions(tempRoot);
   assert.equal(sessions.length, 1);
   assert.equal(sessions[0].label, 'agent__codex__demo-task');
+  assert.equal(sessions[0].taskMode, 'caveman');
+  assert.equal(sessions[0].openspecTier, 'T1');
 
   const stop = runNode(sessionScript, [
     'stop',
