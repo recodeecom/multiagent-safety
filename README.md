@@ -672,6 +672,11 @@ npm pack --dry-run
 <details>
 <summary><strong>v7.x</strong></summary>
 
+### v7.0.24
+- Bumped `@imdeadpool/guardex` from `7.0.23` to `7.0.24` so GitHub Releases and the npm publish retry can advance together after `v7.0.23` landed on GitHub but not on npm.
+- Release verification no longer loses its base ref on tag-triggered runs, so the publish workflow keeps the history it needs before packing and publish checks.
+- Keep the release scoped to version and release automation metadata only; the packaged Guardex CLI payload stays aligned with the already-verified `main` branch contents.
+
 ### v7.0.23
 - Bumped `@imdeadpool/guardex` from `7.0.22` to `7.0.23` so GitHub release and npm can advance together after `7.0.22` reached npm without a matching published GitHub release.
 - Active Agents stays easier to scan and more truthful: the package repo remains the canonical source, inspect/install paths stay loadable across VS Code churn, and session rows group under worktrees with clearer merged-cleanup truth.
