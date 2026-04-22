@@ -5,7 +5,12 @@ const path = require('node:path');
 
 const {
   DEFAULT_SHADOW_CLEANUP_IDLE_MINUTES,
+  MANAGED_GITIGNORE_PATHS,
+  CLI_COMMAND_DESCRIPTIONS,
+  MAINTAINER_RELEASE_REPO,
+  toDestinationPath,
 } = require('../src/context');
+const scaffold = require('../src/scaffold');
 const {
   parseSetupArgs,
   parseDoctorArgs,
@@ -164,12 +169,36 @@ test('dispatch helpers preserve suggestion, alias, deprecation, and flag extract
   );
 });
 
-test('cli main no longer keeps local copies of extracted parser and dispatch helpers', () => {
+test('shared context keeps the drift-prone help text, gitignore paths, and release repo root', () => {
+  const descriptions = new Map(CLI_COMMAND_DESCRIPTIONS);
+
+  assert.match(descriptions.get('setup'), /--current/);
+  assert.match(descriptions.get('doctor'), /--current/);
+  assert.ok(MANAGED_GITIGNORE_PATHS.includes('!.vscode/'));
+  assert.ok(MANAGED_GITIGNORE_PATHS.includes('.vscode/*'));
+  assert.ok(MANAGED_GITIGNORE_PATHS.includes('!.vscode/settings.json'));
+  assert.equal(MAINTAINER_RELEASE_REPO, repoRoot);
+});
+
+test('scaffold reuses the shared destination-path helper from context', () => {
+  assert.equal(scaffold.toDestinationPath, toDestinationPath);
+  assert.equal(scaffold.toDestinationPath('github/pull.yml.example'), '.github/pull.yml.example');
+});
+
+test('cli main no longer keeps local copies of extracted shared helpers or dead cleanup code', () => {
   const source = fs.readFileSync(path.join(repoRoot, 'src', 'cli', 'main.js'), 'utf8');
 
+  assert.match(source, /require\('\.\.\/context'\)/);
+  assert.match(source, /require\('\.\.\/output'\)/);
+  assert.match(source, /require\('\.\.\/scaffold'\)/);
   assert.match(source, /require\('\.\/args'\)/);
   assert.match(source, /require\('\.\/dispatch'\)/);
   assert.match(source, /require\('\.\.\/git'\)/);
+  assert.doesNotMatch(source, /const TOOL_NAME = 'gitguardex';/);
+  assert.doesNotMatch(source, /const MAINTAINER_RELEASE_REPO = path\.resolve\(/);
+  assert.doesNotMatch(source, /function envFlagIsTruthy\(raw\)/);
+  assert.doesNotMatch(source, /function isClaudeCodeSession\(env = process\.env\)/);
+  assert.doesNotMatch(source, /function defaultAgentWorktreeRelativeDir\(env = process\.env\)/);
   assert.doesNotMatch(source, /function parseDoctorArgs\(rawArgs\)/);
   assert.doesNotMatch(source, /function parseSetupArgs\(rawArgs, defaults\)/);
   assert.doesNotMatch(source, /function parseCleanupArgs\(rawArgs\)/);
@@ -182,4 +211,17 @@ test('cli main no longer keeps local copies of extracted parser and dispatch hel
   assert.doesNotMatch(source, /function normalizeCommandOrThrow\(command\)/);
   assert.doesNotMatch(source, /function warnDeprecatedAlias\(aliasName\)/);
   assert.doesNotMatch(source, /function extractFlag\(args, \.\.\.names\)/);
+  assert.doesNotMatch(source, /function runtimeVersion\(\)/);
+  assert.doesNotMatch(source, /function usage\(options = \{\}\)/);
+  assert.doesNotMatch(source, /function toDestinationPath\(relativeTemplatePath\)/);
+  assert.doesNotMatch(source, /function printOperations\(title, payload, dryRun = false\)/);
+  assert.doesNotMatch(source, /function printStandaloneOperations\(title, rootLabel, operations, dryRun = false\)/);
+  assert.doesNotMatch(source, /function promptYesNo\(question, defaultYes = true\)/);
+  assert.doesNotMatch(source, /function envFlagEnabled\(name\)/);
+  assert.doesNotMatch(source, /function installMany\(rawArgs\)/);
+  assert.doesNotMatch(source, /function initWorkspace\(rawArgs\)/);
+  assert.doesNotMatch(source, /function doctorAudit\(rawArgs\)/);
+  assert.doesNotMatch(source, /function syncDoctorLocalSupportFiles\(repoRoot, dryRun\)/);
+  assert.equal((source.match(/function gitRefExists\(/g) || []).length, 1);
+  assert.equal((source.match(/Auto-finish flow failed for sandbox branch/g) || []).length, 1);
 });

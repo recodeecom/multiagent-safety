@@ -249,6 +249,9 @@ const AGENT_WORKTREE_RELATIVE_DIRS = [
 const MANAGED_GITIGNORE_PATHS = [
   '.omx/',
   '.omc/',
+  '!.vscode/',
+  '.vscode/*',
+  '!.vscode/settings.json',
   'scripts/agent-session-state.js',
   'scripts/guardex-docker-loader.sh',
   'scripts/guardex-env.sh',

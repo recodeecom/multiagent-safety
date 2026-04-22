@@ -3,31 +3,10 @@ const {
   path,
   TOOL_NAME,
   SHORT_TOOL_NAME,
+  toDestinationPath,
   EXECUTABLE_RELATIVE_PATHS,
   CRITICAL_GUARDRAIL_PATHS,
 } = require('../context');
-
-function toDestinationPath(relativeTemplatePath) {
-  if (relativeTemplatePath.startsWith('scripts/')) {
-    return relativeTemplatePath;
-  }
-  if (relativeTemplatePath.startsWith('githooks/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('codex/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('claude/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('github/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('vscode/')) {
-    return relativeTemplatePath;
-  }
-  throw new Error(`Unsupported template path: ${relativeTemplatePath}`);
-}
 
 function ensureParentDir(repoRoot, filePath, dryRun) {
   if (dryRun) return;

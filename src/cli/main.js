@@ -1,13 +1,65 @@
 #!/usr/bin/env node
 
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const cp = require('node:child_process');
 const hooksModule = require('../hooks');
 const sandboxModule = require('../sandbox');
 const toolchainModule = require('../toolchain');
 const finishModule = require('../finish');
+const {
+  fs,
+  path,
+  cp,
+  packageJson,
+  TOOL_NAME,
+  SHORT_TOOL_NAME,
+  OPENSPEC_PACKAGE,
+  NPX_BIN,
+  GUARDEX_HOME_DIR,
+  GLOBAL_TOOLCHAIN_SERVICES,
+  GLOBAL_TOOLCHAIN_PACKAGES,
+  OPTIONAL_LOCAL_COMPANION_TOOLS,
+  GH_BIN,
+  REQUIRED_SYSTEM_TOOLS,
+  MAINTAINER_RELEASE_REPO,
+  NPM_BIN,
+  OPENSPEC_BIN,
+  SCORECARD_BIN,
+  GIT_PROTECTED_BRANCHES_KEY,
+  GIT_BASE_BRANCH_KEY,
+  GIT_SYNC_STRATEGY_KEY,
+  GUARDEX_REPO_TOGGLE_ENV,
+  DEFAULT_PROTECTED_BRANCHES,
+  DEFAULT_BASE_BRANCH,
+  DEFAULT_SYNC_STRATEGY,
+  COMPOSE_HINT_FILES,
+  TEMPLATE_ROOT,
+  HOOK_NAMES,
+  TEMPLATE_FILES,
+  LEGACY_WORKFLOW_SHIM_SPECS,
+  LEGACY_MANAGED_REPO_FILES,
+  REQUIRED_MANAGED_REPO_FILES,
+  LEGACY_MANAGED_PACKAGE_SCRIPTS,
+  PACKAGE_SCRIPT_ASSETS,
+  USER_LEVEL_SKILL_ASSETS,
+  EXECUTABLE_RELATIVE_PATHS,
+  CRITICAL_GUARDRAIL_PATHS,
+  LOCK_FILE_RELATIVE,
+  AGENTS_BOTS_STATE_RELATIVE,
+  AGENTS_MARKER_START,
+  AGENTS_MARKER_END,
+  GITIGNORE_MARKER_START,
+  GITIGNORE_MARKER_END,
+  AGENT_WORKTREE_RELATIVE_DIRS,
+  MANAGED_GITIGNORE_PATHS,
+  REPO_SCAFFOLD_DIRECTORIES,
+  OMX_SCAFFOLD_DIRECTORIES,
+  OMX_SCAFFOLD_FILES,
+  TARGETED_FORCEABLE_MANAGED_PATHS,
+  DEPRECATED_COMMAND_ALIASES,
+  defaultAgentWorktreeRelativeDir,
+  AI_SETUP_PROMPT,
+  AI_SETUP_COMMANDS,
+  SCORECARD_RISK_BY_CHECK,
+} = require('../context');
 const {
   gitRun,
   resolveRepoRoot,
@@ -42,348 +94,43 @@ const {
   warnDeprecatedAlias,
   extractFlag,
 } = require('./dispatch');
+const {
+  runtimeVersion,
+  colorize,
+  colorizeDoctorOutput,
+  statusDot,
+  printToolLogsSummary,
+  usage,
+  formatElapsedDuration,
+  compactAutoFinishPathSegments,
+  detectRecoverableAutoFinishConflict,
+  printAutoFinishSummary,
+} = require('../output');
+const {
+  toDestinationPath,
+  ensureParentDir,
+  ensureExecutable,
+  isCriticalGuardrailPath,
+  shellSingleQuote,
+  renderShellDispatchShim,
+  renderPythonDispatchShim,
+  managedForceConflictMessage,
+  printOperations,
+  printStandaloneOperations,
+} = require('../scaffold');
 
 let sandboxApi;
 let toolchainApi;
 let finishApi;
 
-const PACKAGE_ROOT = path.resolve(__dirname, '../..');
-const CLI_ENTRY_PATH = path.join(PACKAGE_ROOT, 'bin', 'multiagent-safety.js');
-const packageJsonPath = path.join(PACKAGE_ROOT, 'package.json');
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-
-const TOOL_NAME = 'gitguardex';
-const SHORT_TOOL_NAME = 'gx';
-if (!process.env.GUARDEX_CLI_ENTRY) {
-  process.env.GUARDEX_CLI_ENTRY = CLI_ENTRY_PATH;
-}
-if (!process.env.GUARDEX_NODE_BIN) {
-  process.env.GUARDEX_NODE_BIN = process.execPath;
-}
-const LEGACY_NAMES = ['guardex', 'multiagent-safety'];
-const GLOBAL_INSTALL_COMMAND = `npm i -g ${packageJson.name}`;
-const OPENSPEC_PACKAGE = '@fission-ai/openspec';
-const OMC_PACKAGE = 'oh-my-claude-sisyphus';
-const OMC_REPO_URL = 'https://github.com/Yeachan-Heo/oh-my-claudecode';
-const CAVEMEM_PACKAGE = 'cavemem';
-const NPX_BIN = process.env.GUARDEX_NPX_BIN || 'npx';
-const GUARDEX_HOME_DIR = path.resolve(process.env.GUARDEX_HOME_DIR || os.homedir());
-const GLOBAL_TOOLCHAIN_SERVICES = [
-  { name: 'oh-my-codex', packageName: 'oh-my-codex' },
-  {
-    name: 'oh-my-claudecode',
-    packageName: OMC_PACKAGE,
-    dependencyUrl: OMC_REPO_URL,
-  },
-  { name: OPENSPEC_PACKAGE, packageName: OPENSPEC_PACKAGE },
-  { name: CAVEMEM_PACKAGE, packageName: CAVEMEM_PACKAGE },
-  {
-    name: '@imdeadpool/codex-account-switcher',
-    packageName: '@imdeadpool/codex-account-switcher',
-  },
-];
-const GLOBAL_TOOLCHAIN_PACKAGES = [
-  ...GLOBAL_TOOLCHAIN_SERVICES.map((service) => service.packageName),
-];
-const OPTIONAL_LOCAL_COMPANION_TOOLS = [
-  {
-    name: 'cavekit',
-    candidatePaths: [
-      '.cavekit/plugin.json',
-      '.codex/local-marketplaces/cavekit/.agents/plugins/marketplace.json',
-    ],
-    installCommand: `${NPX_BIN} skills add JuliusBrussee/cavekit`,
-    installArgs: ['skills', 'add', 'JuliusBrussee/cavekit'],
-  },
-  {
-    name: 'caveman',
-    candidatePaths: [
-      '.config/caveman/config.json',
-      '.cavekit/skills/caveman/SKILL.md',
-    ],
-    installCommand: `${NPX_BIN} skills add JuliusBrussee/caveman`,
-    installArgs: ['skills', 'add', 'JuliusBrussee/caveman'],
-  },
-];
-const GH_BIN = process.env.GUARDEX_GH_BIN || 'gh';
-const REQUIRED_SYSTEM_TOOLS = [
-  {
-    name: 'gh',
-    displayName: 'GitHub (gh)',
-    command: GH_BIN,
-    installHint: 'https://cli.github.com/',
-  },
-];
-const MAINTAINER_RELEASE_REPO = path.resolve(
-  process.env.GUARDEX_RELEASE_REPO || path.resolve(__dirname, '..'),
-);
-const NPM_BIN = process.env.GUARDEX_NPM_BIN || 'npm';
-const OPENSPEC_BIN = process.env.GUARDEX_OPENSPEC_BIN || 'openspec';
-const SCORECARD_BIN = process.env.GUARDEX_SCORECARD_BIN || 'scorecard';
-const GIT_PROTECTED_BRANCHES_KEY = 'multiagent.protectedBranches';
-const GIT_BASE_BRANCH_KEY = 'multiagent.baseBranch';
-const GIT_SYNC_STRATEGY_KEY = 'multiagent.sync.strategy';
-const GUARDEX_REPO_TOGGLE_ENV = 'GUARDEX_ON';
-const DEFAULT_PROTECTED_BRANCHES = ['dev', 'main', 'master'];
-const DEFAULT_BASE_BRANCH = 'dev';
-const DEFAULT_SYNC_STRATEGY = 'rebase';
-const COMPOSE_HINT_FILES = [
-  'docker-compose.yml',
-  'docker-compose.yaml',
-  'compose.yml',
-  'compose.yaml',
-];
-
-const TEMPLATE_ROOT = path.join(PACKAGE_ROOT, 'templates');
-
-const HOOK_NAMES = ['pre-commit', 'pre-push', 'post-merge', 'post-checkout'];
-
-const TEMPLATE_FILES = [
-  'scripts/agent-session-state.js',
-  'scripts/guardex-docker-loader.sh',
-  'scripts/guardex-env.sh',
-  'scripts/install-vscode-active-agents-extension.js',
-  'github/pull.yml.example',
-  'github/workflows/cr.yml',
-  'vscode/guardex-active-agents/package.json',
-  'vscode/guardex-active-agents/extension.js',
-  'vscode/guardex-active-agents/session-schema.js',
-  'vscode/guardex-active-agents/README.md',
-];
-
-const LEGACY_WORKFLOW_SHIM_SPECS = [
-  { relativePath: 'scripts/agent-branch-start.sh', kind: 'shell', command: ['branch', 'start'] },
-  { relativePath: 'scripts/agent-branch-finish.sh', kind: 'shell', command: ['branch', 'finish'] },
-  { relativePath: 'scripts/agent-branch-merge.sh', kind: 'shell', command: ['branch', 'merge'] },
-  { relativePath: 'scripts/codex-agent.sh', kind: 'shell', command: ['internal', 'run-shell', 'codexAgent'] },
-  { relativePath: 'scripts/review-bot-watch.sh', kind: 'shell', command: ['internal', 'run-shell', 'reviewBot'] },
-  { relativePath: 'scripts/agent-worktree-prune.sh', kind: 'shell', command: ['worktree', 'prune'] },
-  { relativePath: 'scripts/agent-file-locks.py', kind: 'python', command: ['locks'] },
-  { relativePath: 'scripts/openspec/init-plan-workspace.sh', kind: 'shell', command: ['internal', 'run-shell', 'planInit'] },
-  { relativePath: 'scripts/openspec/init-change-workspace.sh', kind: 'shell', command: ['internal', 'run-shell', 'changeInit'] },
-];
-
-const LEGACY_WORKFLOW_SHIMS = LEGACY_WORKFLOW_SHIM_SPECS.map((entry) => entry.relativePath);
-
-const MANAGED_TEMPLATE_DESTINATIONS = TEMPLATE_FILES.map((entry) => toDestinationPath(entry));
-const MANAGED_TEMPLATE_SCRIPT_FILES = MANAGED_TEMPLATE_DESTINATIONS.filter((entry) =>
-  entry.startsWith('scripts/'),
-);
-
-const LEGACY_MANAGED_REPO_FILES = [
-  ...LEGACY_WORKFLOW_SHIMS,
-  'scripts/agent-session-state.js',
-  'scripts/guardex-docker-loader.sh',
-  'scripts/install-vscode-active-agents-extension.js',
-  'scripts/guardex-env.sh',
-  'scripts/install-agent-git-hooks.sh',
-  '.githooks/pre-commit',
-  '.githooks/pre-push',
-  '.githooks/post-merge',
-  '.githooks/post-checkout',
-  '.codex/skills/gitguardex/SKILL.md',
-  '.codex/skills/guardex-merge-skills-to-dev/SKILL.md',
-  '.claude/commands/gitguardex.md',
-];
-
-const REQUIRED_MANAGED_REPO_FILES = [
-  ...MANAGED_TEMPLATE_DESTINATIONS,
-  ...HOOK_NAMES.map((entry) => path.posix.join('.githooks', entry)),
-  '.omx/state/agent-file-locks.json',
-];
-
-const LEGACY_MANAGED_PACKAGE_SCRIPTS = {
-  'agent:codex': 'bash ./scripts/codex-agent.sh',
-  'agent:branch:start': 'bash ./scripts/agent-branch-start.sh',
-  'agent:branch:finish': 'bash ./scripts/agent-branch-finish.sh',
-  'agent:branch:merge': 'bash ./scripts/agent-branch-merge.sh',
-  'agent:cleanup': 'gx cleanup',
-  'agent:hooks:install': 'bash ./scripts/install-agent-git-hooks.sh',
-  'agent:locks:claim': 'python3 ./scripts/agent-file-locks.py claim',
-  'agent:locks:allow-delete': 'python3 ./scripts/agent-file-locks.py allow-delete',
-  'agent:locks:release': 'python3 ./scripts/agent-file-locks.py release',
-  'agent:locks:status': 'python3 ./scripts/agent-file-locks.py status',
-  'agent:plan:init': 'bash ./scripts/openspec/init-plan-workspace.sh',
-  'agent:change:init': 'bash ./scripts/openspec/init-change-workspace.sh',
-  'agent:protect:list': 'gx protect list',
-  'agent:branch:sync': 'gx sync',
-  'agent:branch:sync:check': 'gx sync --check',
-  'agent:safety:setup': 'gx setup',
-  'agent:safety:scan': 'gx status --strict',
-  'agent:safety:fix': 'gx setup --repair',
-  'agent:safety:doctor': 'gx doctor',
-  'agent:docker:load': 'bash ./scripts/guardex-docker-loader.sh',
-  'agent:review:watch': 'bash ./scripts/review-bot-watch.sh',
-  'agent:finish': 'gx finish --all',
-};
-
-const PACKAGE_SCRIPT_ASSETS = {
-  branchStart: path.join(TEMPLATE_ROOT, 'scripts', 'agent-branch-start.sh'),
-  branchFinish: path.join(TEMPLATE_ROOT, 'scripts', 'agent-branch-finish.sh'),
-  branchMerge: path.join(TEMPLATE_ROOT, 'scripts', 'agent-branch-merge.sh'),
-  codexAgent: path.join(TEMPLATE_ROOT, 'scripts', 'codex-agent.sh'),
-  reviewBot: path.join(TEMPLATE_ROOT, 'scripts', 'review-bot-watch.sh'),
-  worktreePrune: path.join(TEMPLATE_ROOT, 'scripts', 'agent-worktree-prune.sh'),
-  lockTool: path.join(TEMPLATE_ROOT, 'scripts', 'agent-file-locks.py'),
-  planInit: path.join(TEMPLATE_ROOT, 'scripts', 'openspec', 'init-plan-workspace.sh'),
-  changeInit: path.join(TEMPLATE_ROOT, 'scripts', 'openspec', 'init-change-workspace.sh'),
-};
-
-const USER_LEVEL_SKILL_ASSETS = [
-  {
-    source: path.join(TEMPLATE_ROOT, 'codex', 'skills', 'gitguardex', 'SKILL.md'),
-    destination: path.join('.codex', 'skills', 'gitguardex', 'SKILL.md'),
-  },
-  {
-    source: path.join(TEMPLATE_ROOT, 'codex', 'skills', 'guardex-merge-skills-to-dev', 'SKILL.md'),
-    destination: path.join('.codex', 'skills', 'guardex-merge-skills-to-dev', 'SKILL.md'),
-  },
-  {
-    source: path.join(TEMPLATE_ROOT, 'claude', 'commands', 'gitguardex.md'),
-    destination: path.join('.claude', 'commands', 'gitguardex.md'),
-  },
-];
-
-const EXECUTABLE_RELATIVE_PATHS = new Set([
-  ...MANAGED_TEMPLATE_SCRIPT_FILES,
-  ...HOOK_NAMES.map((entry) => path.posix.join('.githooks', entry)),
-]);
-
-const CRITICAL_GUARDRAIL_PATHS = new Set([
-  'AGENTS.md',
-  ...HOOK_NAMES.map((entry) => path.posix.join('.githooks', entry)),
-  'scripts/guardex-env.sh',
-]);
-
-const LOCK_FILE_RELATIVE = '.omx/state/agent-file-locks.json';
-const AGENTS_BOTS_STATE_RELATIVE = '.omx/state/agents-bots.json';
-const AGENTS_MARKER_START = '<!-- multiagent-safety:START -->';
-const AGENTS_MARKER_END = '<!-- multiagent-safety:END -->';
-const GITIGNORE_MARKER_START = '# multiagent-safety:START';
-const GITIGNORE_MARKER_END = '# multiagent-safety:END';
-const CODEX_WORKTREE_RELATIVE_DIR = path.join('.omx', 'agent-worktrees');
-const CLAUDE_WORKTREE_RELATIVE_DIR = path.join('.omc', 'agent-worktrees');
 const SHARED_VSCODE_SETTINGS_RELATIVE = path.posix.join('.vscode', 'settings.json');
 const REPO_SCAN_IGNORED_FOLDERS_SETTING = 'git.repositoryScanIgnoredFolders';
-const AGENT_WORKTREE_RELATIVE_DIRS = [
-  CODEX_WORKTREE_RELATIVE_DIR,
-  CLAUDE_WORKTREE_RELATIVE_DIR,
-];
 const MANAGED_REPO_SCAN_IGNORED_FOLDERS = [
   '.omx/agent-worktrees',
   '**/.omx/agent-worktrees',
   '.omc/agent-worktrees',
   '**/.omc/agent-worktrees',
 ];
-const MANAGED_GITIGNORE_PATHS = [
-  '.omx/',
-  '.omc/',
-  '!.vscode/',
-  '.vscode/*',
-  '!.vscode/settings.json',
-  'scripts/agent-session-state.js',
-  'scripts/guardex-docker-loader.sh',
-  'scripts/guardex-env.sh',
-  'scripts/install-vscode-active-agents-extension.js',
-  '.githooks',
-  'oh-my-codex/',
-  LOCK_FILE_RELATIVE,
-];
-const REPO_SCAFFOLD_DIRECTORIES = ['bin'];
-const OMX_SCAFFOLD_DIRECTORIES = [
-  '.omx',
-  '.omx/state',
-  '.omx/logs',
-  '.omx/plans',
-  CODEX_WORKTREE_RELATIVE_DIR,
-  '.omc',
-  CLAUDE_WORKTREE_RELATIVE_DIR,
-];
-const OMX_SCAFFOLD_FILES = new Map([
-  ['.omx/notepad.md', '\n\n## WORKING MEMORY\n'],
-  ['.omx/project-memory.json', '{}\n'],
-]);
-const COMMAND_TYPO_ALIASES = new Map([
-  ['relaese', 'release'],
-  ['realaese', 'release'],
-  ['relase', 'release'],
-  ['setpu', 'setup'],
-  ['inti', 'init'],
-  ['intsall', 'install'],
-  ['docter', 'doctor'],
-  ['doctro', 'doctor'],
-  ['cleunup', 'cleanup'],
-  ['scna', 'scan'],
-]);
-const SUGGESTIBLE_COMMANDS = [
-  'status',
-  'setup',
-  'doctor',
-  'branch',
-  'locks',
-  'worktree',
-  'hook',
-  'migrate',
-  'install-agent-skills',
-  'agents',
-  'merge',
-  'finish',
-  'report',
-  'protect',
-  'sync',
-  'cleanup',
-  'prompt',
-  'help',
-  'version',
-  // deprecated aliases still routable with a warning
-  'init',
-  'install',
-  'fix',
-  'scan',
-  'review',
-  'copy-prompt',
-  'copy-commands',
-  'print-agents-snippet',
-  'release',
-];
-const CLI_COMMAND_DESCRIPTIONS = [
-  ['status', 'Show GitGuardex CLI + service health without modifying files'],
-  ['setup', 'Install, repair, and verify guardrails (flags: --repair, --install-only, --target)'],
-  ['doctor', 'Repair drift + verify (auto-sandboxes on protected main)'],
-  ['branch', 'CLI-owned branch workflow surface (start/finish/merge)'],
-  ['locks', 'CLI-owned file lock surface (claim/allow-delete/release/status/validate)'],
-  ['worktree', 'CLI-owned worktree cleanup surface (prune)'],
-  ['hook', 'Hook dispatch/install surface used by managed shims'],
-  ['migrate', 'Convert legacy repo-local installs to the zero-copy CLI-owned surface'],
-  ['install-agent-skills', 'Install Guardex Codex/Claude skills into the user home'],
-  ['protect', 'Manage protected branches (list/add/remove/set/reset)'],
-  ['merge', 'Create/reuse an integration lane and merge overlapping agent branches'],
-  ['sync', 'Sync agent branches with origin/<base>'],
-  ['finish', 'Commit + PR + merge completed agent branches (--all, --branch)'],
-  ['cleanup', 'Prune merged/stale agent branches and worktrees'],
-  ['release', 'Create or update the current GitHub release with README-generated notes'],
-  ['agents', 'Start/stop repo-scoped review + cleanup bots'],
-  ['prompt', 'Print AI setup checklist (--exec, --snippet)'],
-  ['report', 'Security/safety reports (e.g. OpenSSF scorecard)'],
-  ['help', 'Show this help output'],
-  ['version', 'Print GitGuardex version'],
-];
-const DEPRECATED_COMMAND_ALIASES = new Map([
-  ['init', { target: 'setup', hint: 'gx setup' }],
-  ['install', { target: 'setup', hint: 'gx setup --install-only' }],
-  ['fix', { target: 'setup', hint: 'gx setup --repair' }],
-  ['scan', { target: 'status', hint: 'gx status --strict' }],
-  ['copy-prompt', { target: 'prompt', hint: 'gx prompt' }],
-  ['copy-commands', { target: 'prompt', hint: 'gx prompt --exec' }],
-  ['print-agents-snippet', { target: 'prompt', hint: 'gx prompt --snippet' }],
-  ['review', { target: 'agents', hint: 'gx agents start (runs review + cleanup)' }],
-]);
-const AGENT_BOT_DESCRIPTIONS = [
-  ['agents', 'Start/stop review + cleanup bots for this repo'],
-];
-const DOCTOR_AUTO_FINISH_DETAIL_LIMIT = 6;
-const DOCTOR_AUTO_FINISH_BRANCH_LABEL_MAX = 72;
-const DOCTOR_AUTO_FINISH_MESSAGE_MAX = 160;
 
 function getSandboxApi() {
   if (!sandboxApi) {
@@ -465,114 +212,6 @@ function getFinishApi() {
   return finishApi;
 }
 
-function envFlagIsTruthy(raw) {
-  const lowered = String(raw || '').trim().toLowerCase();
-  return lowered === '1' || lowered === 'true' || lowered === 'yes' || lowered === 'on';
-}
-
-function isClaudeCodeSession(env = process.env) {
-  return envFlagIsTruthy(env.CLAUDECODE) || Boolean(env.CLAUDE_CODE_SESSION_ID);
-}
-
-function defaultAgentWorktreeRelativeDir(env = process.env) {
-  return isClaudeCodeSession(env) ? CLAUDE_WORKTREE_RELATIVE_DIR : CODEX_WORKTREE_RELATIVE_DIR;
-}
-
-const AI_SETUP_PROMPT = `GitGuardex (gx) setup checklist for Codex/Claude in this repo.
-
-1) Install:    ${GLOBAL_INSTALL_COMMAND} && gh --version
-2) Bootstrap:  gx setup
-3) Repair:     gx doctor
-4) Task loop:  gx branch start "<task>" "<agent>"
-               then gx locks claim --branch "<agent-branch>" <file...> -> gx branch finish
-5) Integrate:  gx merge --branch <agent-a> --branch <agent-b>
-6) Finish:     gx finish --all
-7) Cleanup:    gx cleanup
-8) OpenSpec:   /opsx:propose -> /opsx:apply -> /opsx:archive
-9) Optional:   gx protect add release staging
-10) Optional:  gx sync --check && gx sync
-11) Review bot: install https://github.com/apps/cr-gpt + set OPENAI_API_KEY
-12) Fork sync:  install https://github.com/apps/pull + cp .github/pull.yml.example .github/pull.yml
-`;
-
-const AI_SETUP_COMMANDS = `${GLOBAL_INSTALL_COMMAND}
-gh --version
-gx setup
-gx doctor
-gx branch start "<task>" "<agent>"
-gx locks claim --branch "<agent-branch>" <file...>
-gx merge --branch "<agent-a>" --branch "<agent-b>"
-gx finish --all
-gx cleanup
-gx protect add release staging
-gx sync --check && gx sync
-`;
-
-const SCORECARD_RISK_BY_CHECK = {
-  'Dangerous-Workflow': 'Critical',
-  'Code-Review': 'High',
-  Maintained: 'High',
-  'Binary-Artifacts': 'High',
-  'Dependency-Update-Tool': 'High',
-  'Token-Permissions': 'High',
-  Vulnerabilities: 'High',
-  'Branch-Protection': 'High',
-  Fuzzing: 'Medium',
-  'Pinned-Dependencies': 'Medium',
-  SAST: 'Medium',
-  'Security-Policy': 'Medium',
-  'CII-Best-Practices': 'Low',
-  Contributors: 'Low',
-  License: 'Low',
-};
-
-function runtimeVersion() {
-  return `${packageJson.name}/${packageJson.version} ${process.platform}-${process.arch} node-${process.version}`;
-}
-
-function supportsAnsiColors() {
-  const forced = String(process.env.FORCE_COLOR || '').trim().toLowerCase();
-  if (['0', 'false', 'no', 'off'].includes(forced)) {
-    return false;
-  }
-  if (forced.length > 0) {
-    return true;
-  }
-  if (process.env.NO_COLOR) {
-    return false;
-  }
-  return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
-}
-
-function colorize(text, colorCode) {
-  if (!supportsAnsiColors()) {
-    return text;
-  }
-  return `\u001B[${colorCode}m${text}\u001B[0m`;
-}
-
-function doctorOutputColorCode(status) {
-  const normalized = String(status || '').trim().toLowerCase();
-  if (['active', 'done', 'ok', 'safe', 'success'].includes(normalized)) {
-    return '32';
-  }
-  if (normalized === 'disabled') {
-    return '36';
-  }
-  if (['degraded', 'pending', 'skip', 'warn', 'warning'].includes(normalized)) {
-    return '33';
-  }
-  if (['error', 'fail', 'inactive', 'unsafe'].includes(normalized)) {
-    return '31';
-  }
-  return null;
-}
-
-function colorizeDoctorOutput(text, status) {
-  const colorCode = doctorOutputColorCode(status);
-  return colorCode ? colorize(text, colorCode) : text;
-}
-
 /**
  * @typedef {Object} AutoFinishSummary
  * @property {boolean} [enabled]
@@ -627,456 +266,6 @@ function colorizeDoctorOutput(text, status) {
  * @property {AutoFinishSummary} autoFinish
  * @property {string | null} sandboxLockContent
  */
-
-/**
- * @param {string | null | undefined} detail
- * @returns {string | null}
- */
-function detectAutoFinishDetailStatus(detail) {
-  const trimmed = String(detail || '').trim();
-  const match = trimmed.match(/^\[(\w+)\]/);
-  if (match) {
-    return match[1].toLowerCase();
-  }
-  if (/^Skipped\b/i.test(trimmed) || /^No local agent branches found\b/i.test(trimmed)) {
-    return 'skip';
-  }
-  return null;
-}
-
-/**
- * @param {AutoFinishSummary | null | undefined} summary
- * @returns {string | null}
- */
-function detectAutoFinishSummaryStatus(summary) {
-  if (!summary || summary.enabled === false) {
-    return detectAutoFinishDetailStatus(summary?.details?.[0]);
-  }
-  if ((summary.failed || 0) > 0) {
-    return 'fail';
-  }
-  if ((summary.completed || 0) > 0) {
-    return 'done';
-  }
-  if ((summary.skipped || 0) > 0) {
-    return 'skip';
-  }
-  return null;
-}
-
-function statusDot(status) {
-  if (status === 'active') {
-    return colorize('●', '32'); // green
-  }
-  if (status === 'inactive') {
-    return colorize('●', '31'); // red
-  }
-  if (status === 'disabled') {
-    return colorize('●', '36'); // cyan
-  }
-  return colorize('●', '33'); // yellow for degraded/unknown
-}
-
-function commandCatalogLines(indent = '  ') {
-  const maxCommandLength = CLI_COMMAND_DESCRIPTIONS.reduce(
-    (max, [command]) => Math.max(max, command.length),
-    0,
-  );
-  return CLI_COMMAND_DESCRIPTIONS.map(
-    ([command, description]) => `${indent}${command.padEnd(maxCommandLength + 2)}${description}`,
-  );
-}
-
-function agentBotCatalogLines(indent = '  ') {
-  const maxCommandLength = AGENT_BOT_DESCRIPTIONS.reduce(
-    (max, [command]) => Math.max(max, command.length),
-    0,
-  );
-  return AGENT_BOT_DESCRIPTIONS.map(
-    ([command, description]) => `${indent}${command.padEnd(maxCommandLength + 2)}${description}`,
-  );
-}
-
-function repoToggleLines(indent = '  ') {
-  return [
-    `${indent}Set repo-root .env: ${GUARDEX_REPO_TOGGLE_ENV}=0 disables Guardex, ${GUARDEX_REPO_TOGGLE_ENV}=1 enables it again`,
-  ];
-}
-
-function printToolLogsSummary() {
-  const usageLine = `    $ ${SHORT_TOOL_NAME} <command> [options]`;
-  const commandDetails = commandCatalogLines('    ');
-  const agentBotDetails = agentBotCatalogLines('    ');
-  const repoToggleDetails = repoToggleLines('    ');
-
-  if (!supportsAnsiColors()) {
-    console.log(`${TOOL_NAME}-tools logs:`);
-    console.log('  USAGE');
-    console.log(usageLine);
-    console.log('  COMMANDS');
-    for (const line of commandDetails) {
-      console.log(line);
-    }
-    console.log('  AGENT BOT');
-    for (const line of agentBotDetails) {
-      console.log(line);
-    }
-    console.log('  REPO TOGGLE');
-    for (const line of repoToggleDetails) {
-      console.log(line);
-    }
-    return;
-  }
-
-  const title = colorize(`${TOOL_NAME}-tools logs`, '1;36');
-  const usageHeader = colorize('USAGE', '1');
-  const commandsHeader = colorize('COMMANDS', '1');
-  const agentBotHeader = colorize('AGENT BOT', '1');
-  const repoToggleHeader = colorize('REPO TOGGLE', '1');
-  const pipe = colorize('│', '90');
-  const tee = colorize('├', '90');
-  const corner = colorize('└', '90');
-
-  console.log(`${title}:`);
-  console.log(`  ${tee}─ ${usageHeader}`);
-  console.log(`  ${pipe}${usageLine}`);
-  console.log(`  ${tee}─ ${commandsHeader}`);
-  for (const line of commandDetails) {
-    if (!line) {
-      console.log(`  ${pipe}`);
-      continue;
-    }
-    console.log(`  ${pipe}${line.slice(2)}`);
-  }
-  console.log(`  ${tee}─ ${agentBotHeader}`);
-  for (const line of agentBotDetails) {
-    if (!line) {
-      console.log(`  ${pipe}`);
-      continue;
-    }
-    console.log(`  ${pipe}${line.slice(2)}`);
-  }
-  console.log(`  ${tee}─ ${repoToggleHeader}`);
-  for (const line of repoToggleDetails) {
-    if (!line) {
-      console.log(`  ${pipe}`);
-      continue;
-    }
-    console.log(`  ${pipe}${line.slice(2)}`);
-  }
-  console.log(`  ${corner}─ ${colorize(`Try '${TOOL_NAME} doctor' for one-step repair + verification.`, '2')}`);
-}
-
-function usage(options = {}) {
-  const { outsideGitRepo = false } = options;
-
-  console.log(`A command-line tool that sets up hardened multi-agent safety for git repositories.
-
-VERSION
-  ${runtimeVersion()}
-
-USAGE
-  $ ${SHORT_TOOL_NAME} <command> [options]
-
-COMMANDS
-${commandCatalogLines().join('\n')}
-
-AGENT BOT
-${agentBotCatalogLines().join('\n')}
-
-REPO TOGGLE
-${repoToggleLines().join('\n')}
-
-NOTES
-  - No command = ${SHORT_TOOL_NAME} status. ${SHORT_TOOL_NAME} init is an alias of ${SHORT_TOOL_NAME} setup.
-  - Global installs need Y/N approval; GitHub CLI (gh) is required for PR automation.
-  - Target another repo: ${SHORT_TOOL_NAME} <cmd> --target <repo-path>.
-  - On protected main, setup/install/fix/doctor auto-sandbox via agent branch + PR flow.
-  - Run '${SHORT_TOOL_NAME} cleanup' to prune merged agent branches/worktrees.
-  - Legacy aliases: ${LEGACY_NAMES.join(', ')}.`);
-
-  if (outsideGitRepo) {
-    console.log(`
-[${TOOL_NAME}] No git repository detected in current directory.
-[${TOOL_NAME}] Start from a repo root, or pass an explicit target:
-  ${TOOL_NAME} setup --target <path-to-git-repo>
-  ${TOOL_NAME} doctor --target <path-to-git-repo>`);
-  }
-}
-
-function formatElapsedDuration(ms) {
-  const durationMs = Number.isFinite(ms) ? Math.max(0, ms) : 0;
-  if (durationMs < 1000) {
-    return `${Math.round(durationMs)}ms`;
-  }
-  if (durationMs < 10_000) {
-    return `${(durationMs / 1000).toFixed(1)}s`;
-  }
-  return `${Math.round(durationMs / 1000)}s`;
-}
-
-function truncateMiddle(value, maxLength) {
-  const text = String(value || '');
-  const limit = Number.isFinite(maxLength) ? Math.max(4, maxLength) : 0;
-  if (!limit || text.length <= limit) {
-    return text;
-  }
-
-  const visible = limit - 1;
-  const headLength = Math.ceil(visible / 2);
-  const tailLength = Math.floor(visible / 2);
-  return `${text.slice(0, headLength)}…${text.slice(text.length - tailLength)}`;
-}
-
-function truncateTail(value, maxLength) {
-  const text = String(value || '');
-  const limit = Number.isFinite(maxLength) ? Math.max(4, maxLength) : 0;
-  if (!limit || text.length <= limit) {
-    return text;
-  }
-  return `${text.slice(0, limit - 1)}…`;
-}
-
-function compactAutoFinishPathSegments(message) {
-  return String(message || '').replace(/\((\/[^)]+)\)/g, (_, rawPath) => {
-    if (
-      rawPath.includes(`${path.sep}.omx${path.sep}agent-worktrees${path.sep}`) ||
-      rawPath.includes(`${path.sep}.omc${path.sep}agent-worktrees${path.sep}`)
-    ) {
-      return `(${path.basename(rawPath)})`;
-    }
-    return `(${truncateMiddle(rawPath, 72)})`;
-  });
-}
-
-function detectRecoverableAutoFinishConflict(message) {
-  const text = String(message || '').trim();
-  if (!text) {
-    return null;
-  }
-
-  if (/rebase --continue/i.test(text) && /rebase --abort/i.test(text)) {
-    return {
-      rawLabel: 'auto-finish requires manual rebase.',
-      summary: 'manual rebase required in the source-probe worktree; run rebase --continue or rebase --abort',
-    };
-  }
-
-  if (/Rebase\/merge '.+' into '.+' and resolve conflicts before finishing\./i.test(text)) {
-    return {
-      rawLabel: 'auto-finish requires manual rebase or merge.',
-      summary: 'manual rebase or merge required before auto-finish can continue',
-    };
-  }
-
-  if (/Merge conflict detected while merging/i.test(text)) {
-    return {
-      rawLabel: 'auto-finish requires manual merge resolution.',
-      summary: 'manual merge resolution required before auto-finish can continue',
-    };
-  }
-
-  return null;
-}
-
-function summarizeAutoFinishDetail(detail) {
-  const trimmed = String(detail || '').trim();
-  const match = trimmed.match(/^\[(\w+)\]\s+([^:]+):\s*(.*)$/);
-  if (!match) {
-    return truncateTail(compactAutoFinishPathSegments(trimmed), DOCTOR_AUTO_FINISH_MESSAGE_MAX);
-  }
-
-  const [, status, rawBranch, rawMessage] = match;
-  const branch = truncateMiddle(rawBranch, DOCTOR_AUTO_FINISH_BRANCH_LABEL_MAX);
-  let message = String(rawMessage || '').trim();
-  const recoverableConflict = status === 'skip' ? detectRecoverableAutoFinishConflict(message) : null;
-
-  if (recoverableConflict) {
-    message = recoverableConflict.summary;
-  } else if (status === 'fail') {
-    message = message.replace(/^auto-finish failed\.?\s*/i, '');
-    if (/\[agent-sync-guard\]/.test(message) && /Resolve conflicts/i.test(message)) {
-      message = 'rebase conflict in finish flow; run rebase --continue or rebase --abort in the source-probe worktree';
-    } else if (/unable to compute ahead\/behind/i.test(message)) {
-      const aheadBehindMatch = message.match(/unable to compute ahead\/behind(?: \([^)]+\))?/i);
-      if (aheadBehindMatch) {
-        message = aheadBehindMatch[0];
-      }
-    } else if (/remote ref does not exist/i.test(message)) {
-      message = 'branch merged, but the remote ref was already removed during cleanup';
-    }
-  }
-
-  message = compactAutoFinishPathSegments(message)
-    .replace(/\s+\|\s+/g, '; ')
-    .trim();
-
-  return `[${status}] ${branch}: ${truncateTail(message, DOCTOR_AUTO_FINISH_MESSAGE_MAX)}`;
-}
-
-/**
- * @param {AutoFinishSummary | null | undefined} summary
- * @param {{ baseBranch?: string, verbose?: boolean, detailLimit?: number }} [options]
- */
-function printAutoFinishSummary(summary, options = {}) {
-  const enabled = Boolean(summary && summary.enabled);
-  const details = Array.isArray(summary && summary.details) ? summary.details : [];
-  const baseBranch = String(options.baseBranch || summary?.baseBranch || '').trim();
-  const verbose = Boolean(options.verbose);
-  const detailLimit = Number.isFinite(options.detailLimit)
-    ? Math.max(0, options.detailLimit)
-    : DOCTOR_AUTO_FINISH_DETAIL_LIMIT;
-
-  if (enabled) {
-    console.log(
-      colorizeDoctorOutput(
-        `[${TOOL_NAME}] Auto-finish sweep (base=${baseBranch}): attempted=${summary.attempted}, completed=${summary.completed}, skipped=${summary.skipped}, failed=${summary.failed}`,
-        detectAutoFinishSummaryStatus(summary),
-      ),
-    );
-    const visibleDetails = verbose ? details : details.slice(0, detailLimit).map(summarizeAutoFinishDetail);
-    for (const detail of visibleDetails) {
-      console.log(colorizeDoctorOutput(`[${TOOL_NAME}]   ${detail}`, detectAutoFinishDetailStatus(detail)));
-    }
-    if (!verbose && details.length > detailLimit) {
-      console.log(
-        colorizeDoctorOutput(
-          `[${TOOL_NAME}]   … ${details.length - detailLimit} more branch result(s). Re-run with --verbose-auto-finish for full details.`,
-          'warn',
-        ),
-      );
-    }
-    return;
-  }
-
-  if (details.length > 0) {
-    const detail = verbose ? details[0] : summarizeAutoFinishDetail(details[0]);
-    console.log(colorizeDoctorOutput(`[${TOOL_NAME}] ${detail}`, detectAutoFinishDetailStatus(detail)));
-  }
-}
-
-function toDestinationPath(relativeTemplatePath) {
-  if (relativeTemplatePath.startsWith('scripts/')) {
-    return relativeTemplatePath;
-  }
-  if (relativeTemplatePath.startsWith('githooks/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('codex/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('claude/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('github/')) {
-    return `.${relativeTemplatePath}`;
-  }
-  if (relativeTemplatePath.startsWith('vscode/')) {
-    return relativeTemplatePath;
-  }
-  throw new Error(`Unsupported template path: ${relativeTemplatePath}`);
-}
-
-function ensureParentDir(repoRoot, filePath, dryRun) {
-  if (dryRun) return;
-
-  const parentDir = path.dirname(filePath);
-  const relativeParentDir = path.relative(repoRoot, parentDir);
-  const segments = relativeParentDir.split(path.sep).filter(Boolean);
-  let currentPath = repoRoot;
-
-  for (const segment of segments) {
-    currentPath = path.join(currentPath, segment);
-    if (fs.existsSync(currentPath) && !fs.statSync(currentPath).isDirectory()) {
-      const blockingPath = path.relative(repoRoot, currentPath) || path.basename(currentPath);
-      const targetPath = path.relative(repoRoot, filePath) || path.basename(filePath);
-      throw new Error(
-        `Path conflict: ${blockingPath} exists as a file, but ${targetPath} needs it to be a directory. ` +
-        `Remove or rename ${blockingPath} and rerun '${SHORT_TOOL_NAME} setup'.`,
-      );
-    }
-  }
-
-  fs.mkdirSync(parentDir, { recursive: true });
-}
-
-function ensureExecutable(destinationPath, relativePath, dryRun) {
-  if (dryRun) return;
-  if (EXECUTABLE_RELATIVE_PATHS.has(relativePath)) {
-    fs.chmodSync(destinationPath, 0o755);
-  }
-}
-
-function isCriticalGuardrailPath(relativePath) {
-  return CRITICAL_GUARDRAIL_PATHS.has(relativePath);
-}
-
-function shellSingleQuote(value) {
-  return `'${String(value).replace(/'/g, `'\"'\"'`)}'`;
-}
-
-function renderShellDispatchShim(commandParts) {
-  const rendered = commandParts.map((part) => shellSingleQuote(part)).join(' ');
-  return (
-    '#!/usr/bin/env bash\n' +
-    'set -euo pipefail\n' +
-    '\n' +
-    'if [[ -n "${GUARDEX_CLI_ENTRY:-}" ]]; then\n' +
-    '  node_bin="${GUARDEX_NODE_BIN:-node}"\n' +
-    `  exec "$node_bin" "$GUARDEX_CLI_ENTRY" ${rendered} "$@"\n` +
-    'fi\n' +
-    '\n' +
-    'resolve_guardex_cli() {\n' +
-    '  if [[ -n "${GUARDEX_CLI_BIN:-}" ]]; then\n' +
-    '    printf \'%s\' "$GUARDEX_CLI_BIN"\n' +
-    '    return 0\n' +
-    '  fi\n' +
-    '  if command -v gx >/dev/null 2>&1; then\n' +
-    '    printf \'%s\' "gx"\n' +
-    '    return 0\n' +
-    '  fi\n' +
-    '  if command -v gitguardex >/dev/null 2>&1; then\n' +
-    '    printf \'%s\' "gitguardex"\n' +
-    '    return 0\n' +
-    '  fi\n' +
-    '  echo "[gitguardex-shim] Missing gx CLI in PATH." >&2\n' +
-    '  exit 1\n' +
-    '}\n' +
-    '\n' +
-    'cli_bin="$(resolve_guardex_cli)"\n' +
-    `exec "$cli_bin" ${rendered} "$@"\n`
-  );
-}
-
-function renderPythonDispatchShim(commandParts) {
-  return (
-    '#!/usr/bin/env python3\n' +
-    'import os\n' +
-    'import shutil\n' +
-    'import subprocess\n' +
-    'import sys\n' +
-    '\n' +
-    `COMMAND = ${JSON.stringify(commandParts)}\n` +
-    '\n' +
-    'entry = os.environ.get("GUARDEX_CLI_ENTRY")\n' +
-    'if entry:\n' +
-    '    node_bin = os.environ.get("GUARDEX_NODE_BIN") or shutil.which("node") or "node"\n' +
-    '    raise SystemExit(subprocess.call([node_bin, entry, *COMMAND, *sys.argv[1:]]))\n' +
-    'cli = os.environ.get("GUARDEX_CLI_BIN") or shutil.which("gx") or shutil.which("gitguardex")\n' +
-    'if not cli:\n' +
-    '    sys.stderr.write("[gitguardex-shim] Missing gx CLI in PATH.\\n")\n' +
-    '    raise SystemExit(1)\n' +
-    'raise SystemExit(subprocess.call([cli, *COMMAND, *sys.argv[1:]]))\n'
-  );
-}
-
-function managedForceConflictMessage(relativePath) {
-  return (
-    `Refusing to overwrite existing file without --force: ${relativePath}\n` +
-    `Use '--force ${relativePath}' to rewrite only this managed file, or '--force' to rewrite all managed files.`
-  );
-}
-
 function renderManagedFile(repoRoot, relativePath, content, options = {}) {
   const destinationPath = path.join(repoRoot, relativePath);
   const destinationExists = fs.existsSync(destinationPath);
@@ -1891,10 +1080,6 @@ function protectedBaseSandboxWorktreePath(repoRoot, branchName) {
   return path.join(repoRoot, defaultAgentWorktreeRelativeDir(), branchName.replace(/\//g, '__'));
 }
 
-function gitRefExists(repoRoot, ref) {
-  return run('git', ['-C', repoRoot, 'show-ref', '--verify', '--quiet', ref]).status === 0;
-}
-
 function resolveProtectedBaseSandboxStartRef(repoRoot, baseBranch) {
   run('git', ['-C', repoRoot, 'fetch', 'origin', baseBranch, '--quiet'], { timeout: 20_000 });
   if (gitRefExists(repoRoot, `refs/remotes/origin/${baseBranch}`)) {
@@ -2532,10 +1717,6 @@ function mergeDoctorSandboxRepairsBackToProtectedBase(options, blocked, metadata
   };
 }
 
-function syncDoctorLocalSupportFiles(repoRoot, dryRun) {
-  return [];
-}
-
 /**
  * @param {string} [note]
  * @returns {OperationResult}
@@ -2732,8 +1913,6 @@ function executeDoctorSandboxLifecycle(options, blocked, metadata) {
     execution.finish,
   );
 
-  syncDoctorLocalSupportFiles(blocked.repoRoot, dryRun);
-
   execution.omxScaffoldSync = summarizeDoctorOmxScaffoldSync(blocked.repoRoot, dryRun);
   execution.lockSync = syncDoctorLockRegistryAfterMerge(
     blocked.repoRoot,
@@ -2850,7 +2029,6 @@ function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult,
     if (execution.finish.stdout) process.stdout.write(execution.finish.stdout);
     if (execution.finish.stderr) process.stderr.write(execution.finish.stderr);
   } else if (execution.finish.status === 'failed') {
-    console.log(`[${TOOL_NAME}] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
     console.log(`[${TOOL_NAME}] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
     if (execution.finish.stdout) process.stdout.write(execution.finish.stdout);
     if (execution.finish.stderr) process.stderr.write(execution.finish.stderr);
@@ -3968,31 +3146,6 @@ function readSingleLineFromStdin() {
   }
 }
 
-function promptYesNo(question, defaultYes = true) {
-  const hint = defaultYes ? '[Y/n]' : '[y/N]';
-  while (true) {
-    process.stdout.write(`${question} ${hint} `);
-    const answer = readSingleLineFromStdin().trim().toLowerCase();
-
-    if (!answer) {
-      return defaultYes;
-    }
-    if (answer === 'y' || answer === 'yes') {
-      return true;
-    }
-    if (answer === 'n' || answer === 'no') {
-      return false;
-    }
-    process.stdout.write('Please answer with y or n.\n');
-  }
-}
-
-function envFlagEnabled(name) {
-  const raw = process.env[name];
-  if (raw == null) return false;
-  return ['1', 'true', 'yes', 'on'].includes(String(raw).trim().toLowerCase());
-}
-
 function parseAutoApproval(name) {
   const raw = process.env[name];
   if (raw == null) return null;
@@ -4120,11 +3273,11 @@ function parseNpmVersionOutput(stdout) {
 }
 
 function checkForGuardexUpdate() {
-  if (envFlagEnabled('GUARDEX_SKIP_UPDATE_CHECK')) {
+  if (parseBooleanLike(process.env.GUARDEX_SKIP_UPDATE_CHECK) === true) {
     return { checked: false, reason: 'disabled' };
   }
 
-  const forceCheck = envFlagEnabled('GUARDEX_FORCE_UPDATE_CHECK');
+  const forceCheck = parseBooleanLike(process.env.GUARDEX_FORCE_UPDATE_CHECK) === true;
   if (!forceCheck && !isInteractiveTerminal()) {
     return { checked: false, reason: 'non-interactive' };
   }
@@ -4244,11 +3397,12 @@ function restartIntoUpdatedGuardex(expectedVersion) {
 }
 
 function checkForOpenSpecPackageUpdate() {
-  if (envFlagEnabled('GUARDEX_SKIP_OPENSPEC_UPDATE_CHECK')) {
+  if (parseBooleanLike(process.env.GUARDEX_SKIP_OPENSPEC_UPDATE_CHECK) === true) {
     return { checked: false, reason: 'disabled' };
   }
 
-  const forceCheck = envFlagEnabled('GUARDEX_FORCE_OPENSPEC_UPDATE_CHECK');
+  const forceCheck =
+    parseBooleanLike(process.env.GUARDEX_FORCE_OPENSPEC_UPDATE_CHECK) === true;
   if (!forceCheck && !isInteractiveTerminal()) {
     return { checked: false, reason: 'non-interactive' };
   }
@@ -4755,21 +3909,6 @@ function runScanInternal(options) {
     guardexEnabled: true,
     guardexToggle,
   };
-}
-
-function printOperations(title, payload, dryRun = false) {
-  console.log(`[${TOOL_NAME}] ${title}: ${payload.repoRoot}`);
-  for (const operation of payload.operations) {
-    const note = operation.note ? ` (${operation.note})` : '';
-    console.log(`  - ${operation.status.padEnd(12)} ${operation.file}${note}`);
-  }
-  console.log(
-    `  - hooksPath    ${payload.hookResult.status} ${payload.hookResult.key}=${payload.hookResult.value}`,
-  );
-
-  if (dryRun) {
-    console.log(`[${TOOL_NAME}] Dry run complete. No files were modified.`);
-  }
 }
 
 function printScanResult(scan, json = false) {
@@ -6082,247 +5221,6 @@ function release(rawArgs) {
   process.exitCode = 0;
 }
 
-function installMany(rawArgs) {
-  const options = parseInstallManyArgs(rawArgs);
-  const targets = collectInstallManyTargets(options);
-
-  if (!targets.length) {
-    throw new Error('install-many did not find any targets to process.');
-  }
-
-  if (options.usedImplicitWorkspaceDefault) {
-    console.log(
-      `[multiagent-safety] No explicit targets provided. Defaulting to workspace scan: ${path.resolve(
-        options.workspace,
-      )} (max depth ${options.maxDepth})`,
-    );
-  }
-
-  console.log(
-    `[multiagent-safety] install-many starting for ${targets.length} target path(s)${
-      options.dryRun ? ' [dry-run]' : ''
-    }`,
-  );
-
-  let installed = 0;
-  let duplicateRepos = 0;
-  const seenRepoRoots = new Set();
-  const failures = [];
-
-  for (const targetPath of targets) {
-    let repoRoot;
-    try {
-      repoRoot = resolveRepoRoot(targetPath);
-    } catch (error) {
-      failures.push({ target: targetPath, message: error.message });
-      if (options.failFast) {
-        break;
-      }
-      continue;
-    }
-
-    if (seenRepoRoots.has(repoRoot)) {
-      duplicateRepos += 1;
-      console.log(`[multiagent-safety] Skipping duplicate repo target: ${targetPath} -> ${repoRoot}`);
-      continue;
-    }
-
-    seenRepoRoots.add(repoRoot);
-
-    try {
-      const report = installIntoRepoRoot(repoRoot, options);
-      printInstallReport(report);
-      installed += 1;
-    } catch (error) {
-      failures.push({ target: repoRoot, message: error.message });
-      if (options.failFast) {
-        break;
-      }
-    }
-  }
-
-  console.log(
-    `[multiagent-safety] install-many summary: installed=${installed}, failures=${failures.length}, duplicate-targets=${duplicateRepos}`,
-  );
-
-  if (failures.length > 0) {
-    console.error('[multiagent-safety] Failed targets:');
-    for (const failure of failures) {
-      console.error(`  - ${failure.target}`);
-      console.error(`    ${failure.message}`);
-    }
-    throw new Error(`install-many completed with ${failures.length} failure(s)`);
-  }
-
-  if (options.dryRun) {
-    console.log('[multiagent-safety] Dry run complete. No files were modified.');
-  } else {
-    console.log('[multiagent-safety] Installed multi-agent safety workflow across all targets.');
-  }
-}
-
-function initWorkspace(rawArgs) {
-  const options = parseInitWorkspaceArgs(rawArgs);
-  const resolvedWorkspace = path.resolve(options.workspace);
-  const repos = discoverGitRepos(resolvedWorkspace, options.maxDepth)
-    .map((repoPath) => path.resolve(repoPath))
-    .sort();
-
-  const outputPath = options.output
-    ? path.resolve(options.output)
-    : path.join(resolvedWorkspace, DEFAULT_WORKSPACE_TARGETS_FILE);
-
-  if (fs.existsSync(outputPath) && !options.force) {
-    throw new Error(`Refusing to overwrite existing file without --force: ${outputPath}`);
-  }
-
-  const headerLines = [
-    '# multiagent-safety workspace targets',
-    `# generated: ${new Date().toISOString()}`,
-    `# workspace: ${resolvedWorkspace}`,
-    `# max-depth: ${options.maxDepth}`,
-    '#',
-    '# Run:',
-    `# multiagent-safety install-many --targets-file "${outputPath}"`,
-    '',
-  ];
-  const content = `${headerLines.join('\n')}${repos.join('\n')}${repos.length ? '\n' : ''}`;
-
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, content, 'utf8');
-
-  console.log(`[multiagent-safety] Workspace target file written: ${outputPath}`);
-  console.log(`[multiagent-safety] Repos discovered: ${repos.length}`);
-  if (repos.length === 0) {
-    console.log('[multiagent-safety] No git repos found. You can add target paths manually to the file.');
-  } else {
-    console.log(`[multiagent-safety] Next step: multiagent-safety install-many --targets-file "${outputPath}"`);
-  }
-}
-
-function doctorAudit(rawArgs) {
-  const options = parseDoctorArgs(rawArgs);
-  const repoRoot = resolveRepoRoot(options.target);
-  const guardexToggle = resolveGuardexRepoToggle(repoRoot);
-  const failures = [];
-  const warnings = [];
-
-  function ok(message) {
-    console.log(`  [ok]   ${message}`);
-  }
-  function warn(message) {
-    warnings.push(message);
-    console.log(`  [warn] ${message}`);
-  }
-  function fail(message) {
-    failures.push(message);
-    console.log(`  [fail] ${message}`);
-  }
-
-  console.log(`[multiagent-safety] doctor target: ${repoRoot}`);
-  if (!guardexToggle.enabled) {
-    console.log(
-      `[multiagent-safety] Guardex is disabled for this repo (${describeGuardexRepoToggle(guardexToggle)}).`,
-    );
-    console.log('[multiagent-safety] doctor passed.');
-    return;
-  }
-
-  const hooksPath = run('git', ['-C', repoRoot, 'config', '--get', 'core.hooksPath']);
-  if (hooksPath.status !== 0) {
-    fail('git core.hooksPath is not configured');
-  } else if (hooksPath.stdout.trim() !== '.githooks') {
-    fail(`git core.hooksPath is "${hooksPath.stdout.trim()}" (expected ".githooks")`);
-  } else {
-    ok('git core.hooksPath is .githooks');
-  }
-
-  for (const relativePath of REQUIRED_MANAGED_REPO_FILES) {
-    const absolutePath = path.join(repoRoot, relativePath);
-    if (!fs.existsSync(absolutePath)) {
-      fail(`missing ${relativePath}`);
-      continue;
-    }
-    ok(`found ${relativePath}`);
-
-    if (EXECUTABLE_RELATIVE_PATHS.has(relativePath)) {
-      try {
-        fs.accessSync(absolutePath, fs.constants.X_OK);
-      } catch {
-        fail(`${relativePath} exists but is not executable`);
-      }
-    }
-  }
-
-  const lockFilePath = path.join(repoRoot, '.omx/state/agent-file-locks.json');
-  if (fs.existsSync(lockFilePath)) {
-    try {
-      const parsed = JSON.parse(fs.readFileSync(lockFilePath, 'utf8'));
-      if (!parsed || typeof parsed !== 'object' || typeof parsed.locks !== 'object') {
-        fail('.omx/state/agent-file-locks.json does not contain a valid { locks: {} } object');
-      } else {
-        ok('lock registry JSON is valid');
-      }
-    } catch (error) {
-      fail(`lock registry JSON is invalid: ${error.message}`);
-    }
-  }
-
-  const packagePath = path.join(repoRoot, 'package.json');
-  if (!fs.existsSync(packagePath)) {
-    warn('package.json not found (legacy agent:* script drift cannot be checked)');
-  } else {
-    try {
-      const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-      const scripts = pkg.scripts || {};
-      const legacyAgentScripts = Object.entries(LEGACY_MANAGED_PACKAGE_SCRIPTS)
-        .filter(([name, expectedValue]) => scripts[name] === expectedValue)
-        .map(([name]) => name);
-      if (legacyAgentScripts.length > 0) {
-        warn(`legacy agent:* package.json scripts remain (${legacyAgentScripts.join(', ')}); run '${SHORT_TOOL_NAME} migrate' to remove them`);
-      } else {
-        ok('package.json does not contain Guardex-managed agent:* helper scripts');
-      }
-    } catch (error) {
-      fail(`package.json is invalid JSON: ${error.message}`);
-    }
-  }
-
-  const agentsPath = path.join(repoRoot, 'AGENTS.md');
-  if (!fs.existsSync(agentsPath)) {
-    warn('AGENTS.md not found (multi-agent contract snippet not present)');
-  } else {
-    const agentsContent = fs.readFileSync(agentsPath, 'utf8');
-    if (!agentsContent.includes(AGENTS_MARKER_START)) {
-      warn('AGENTS.md exists but multiagent-safety snippet marker is missing');
-    } else {
-      ok('AGENTS.md contains multiagent-safety snippet marker');
-    }
-  }
-
-  if (warnings.length) {
-    console.log(`[multiagent-safety] warnings: ${warnings.length}`);
-  }
-  if (failures.length) {
-    console.log(`[multiagent-safety] failures: ${failures.length}`);
-  }
-
-  if (failures.length === 0 && (!options.strict || warnings.length === 0)) {
-    console.log('[multiagent-safety] doctor passed.');
-    if (warnings.length > 0) {
-      console.log('[multiagent-safety] tip: run with --strict to treat warnings as failures.');
-    }
-    return;
-  }
-
-  if (options.strict && warnings.length > 0 && failures.length === 0) {
-    console.log('[multiagent-safety] strict mode failed due to warnings.');
-  } else {
-    console.log('[multiagent-safety] doctor failed.');
-  }
-  throw new Error('doctor detected configuration issues');
-}
-
 function printAgentsSnippet() {
   const snippetPath = path.join(TEMPLATE_ROOT, 'AGENTS.multiagent-safety.md');
   process.stdout.write(fs.readFileSync(snippetPath, 'utf8'));
@@ -6361,17 +5259,6 @@ function prompt(rawArgs) {
   if (variant === 'exec') return copyCommands();
   if (variant === 'snippet') return printAgentsSnippet();
   return copyPrompt();
-}
-
-function printStandaloneOperations(title, rootLabel, operations, dryRun = false) {
-  console.log(`[${TOOL_NAME}] ${title}: ${rootLabel}`);
-  for (const operation of operations) {
-    const note = operation.note ? ` (${operation.note})` : '';
-    console.log(`  - ${operation.status.padEnd(12)} ${operation.file}${note}`);
-  }
-  if (dryRun) {
-    console.log(`[${TOOL_NAME}] Dry run complete. No files were modified.`);
-  }
 }
 
 function branch(rawArgs) {

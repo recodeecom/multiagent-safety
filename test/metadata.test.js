@@ -156,11 +156,13 @@ test('package manifest ships the extracted src runtime', () => {
   assert.match(pkg.files.join('\n'), /^src$/m);
 });
 
-test('doctor CLI parser exists in src/cli args and main runtime to prevent ReferenceError regressions', () => {
+test('doctor CLI parser stays in src/cli args while dead legacy audit stubs stay removed from main runtime', () => {
   const argsSource = fs.readFileSync(path.join(repoRoot, 'src', 'cli', 'args.js'), 'utf8');
   const cliSource = fs.readFileSync(path.join(repoRoot, 'src', 'cli', 'main.js'), 'utf8');
   assert.match(argsSource, /function parseDoctorArgs\(rawArgs(?:, options = \{\})?\)/);
-  assert.match(cliSource, /function doctorAudit\(rawArgs\)/);
+  assert.doesNotMatch(cliSource, /function doctorAudit\(rawArgs\)/);
+  assert.doesNotMatch(cliSource, /function installMany\(rawArgs\)/);
+  assert.doesNotMatch(cliSource, /function initWorkspace\(rawArgs\)/);
 });
 
 test('cli main delegates extracted seams and keeps doctor single-source', () => {
