@@ -21,6 +21,7 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
   2. grouped edits or grouped repo actions
   3. focused verification
   4. compact summary
+- Low output alone is not a defect. A bounded run that finishes in roughly <=10 steps is usually fine; low output stretched across 20+ steps with rising input is fragmentation.
 - Treat obvious follow-on actions as part of the active phase; do not stop for tiny internal checkpoints.
 - If context grows or the session becomes fragmented, write a short working summary and continue from it.
 
@@ -30,12 +31,14 @@ When writing complex features or significant refactors, use an ExecPlan (as desc
 - Prefer targeted reads: `rg`, `head`, `tail`, `git diff`, and exact line ranges.
 - Keep command output compact and relevant.
 - Avoid repeated status checks unless something changed.
+- Treat repeated `sed` / `cat` peeks, tiny diagnostic retries, and repeated `write_stdin` as red flags. When they appear, stop the probe loop and reset to one bounded phase.
 
 ### Command Discipline
 
 - Batch related shell commands whenever safe.
 - Prefer one-shot non-interactive commands, scripts, or exact invocations over interactive loops or repeated stdin driving.
 - For diagnosis, gather the relevant evidence in one pass, then summarize once.
+- If the session turns fragmented, collapse back to inspect once, patch once, verify once, and summarize once.
 
 ### Git And PR Workflow
 

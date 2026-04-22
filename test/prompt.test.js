@@ -73,6 +73,8 @@ test('prompt outputs AI setup instructions', () => {
   assert.match(result.stdout, /gx doctor/);
   assert.match(result.stdout, /gx branch start/);
   assert.match(result.stdout, /gx locks claim/);
+  assert.match(result.stdout, /inspect once -> patch once -> verify once -> gx branch finish/);
+  assert.match(result.stdout, /avoid repeated peeks or stdin loops/);
   assert.match(result.stdout, /gx finish --all/);
   assert.match(result.stdout, /\/opsx:propose/);
   assert.match(result.stdout, /https:\/\/github\.com\/apps\/pull/);
@@ -101,6 +103,7 @@ test('prompt --part outputs only the selected checklist slices', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /^Task loop:/m);
   assert.match(result.stdout, /gx branch start "<task>" "<agent>"/);
+  assert.match(result.stdout, /inspect once -> patch once -> verify once -> gx branch finish/);
   assert.match(result.stdout, /^Finish:/m);
   assert.match(result.stdout, /gx finish --all/);
   assert.doesNotMatch(result.stdout, /GitGuardex \(gx\) setup checklist/);

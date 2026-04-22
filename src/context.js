@@ -425,7 +425,8 @@ const AI_SETUP_PARTS = [
     label: 'Task loop',
     promptLines: [
       'gx branch start "<task>" "<agent>"',
-      'then gx locks claim --branch "<agent-branch>" <file...> -> gx branch finish',
+      'then gx locks claim --branch "<agent-branch>" <file...> -> inspect once -> patch once -> verify once -> gx branch finish',
+      'batch discovery, git/PR, and CI by phase; avoid repeated peeks or stdin loops',
     ],
     execLines: [
       'gx branch start "<task>" "<agent>"',
