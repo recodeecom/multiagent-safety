@@ -32,6 +32,6 @@ This change is complete only when all of the following are true:
 
 ## 4. Cleanup
 
-- [ ] 4.1 Run `gx branch finish --branch agent/codex/replace-custom-semver-jsonc-stdin-helper-2026-04-22-18-06 --base main --via-pr --wait-for-merge --cleanup`.
-- [ ] 4.2 Record PR URL and final merge state (`MERGED`) in the completion handoff.
-- [ ] 4.3 Confirm the sandbox worktree is removed and no local/remote refs remain for the branch.
+- [x] 4.1 Run `gx branch finish --branch agent/codex/replace-custom-semver-jsonc-stdin-helper-2026-04-22-18-06 --base main --via-pr --wait-for-merge --cleanup`.
+- [x] 4.2 Record PR URL and final merge state (`MERGED`) in the completion handoff.
+- [x] 4.3 Confirm the sandbox worktree is removed and no local/remote refs remain for the branch.
