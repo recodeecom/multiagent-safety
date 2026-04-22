@@ -26,6 +26,6 @@ This change is complete only when **all** of the following are true:
 
 ## 4. Cleanup (mandatory; run before claiming completion)
 
-- [ ] 4.1 Run `gx branch finish --branch agent/codex/vscode-active-agents-live-worktree-telem-2026-04-22-13-43 --base main --via-pr --wait-for-merge --cleanup`.
-- [ ] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
-- [ ] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
+- [x] 4.1 Run `gx branch finish --branch agent/codex/vscode-active-agents-live-worktree-telem-2026-04-22-13-43 --base main --via-pr --wait-for-merge --cleanup`. Finish merged the lane but could not delete the active cwd worktree from inside itself; a follow-up `gx cleanup --base main` from the main checkout removed the detached leftover worktree.
+- [x] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff. PR: `https://github.com/recodeee/gitguardex/pull/301` -> `MERGED`; merge commit: `57947e3f872ea1b761cd961a7b35fcf151b34c1c`.
+- [x] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch). Verified on `main` after `gx cleanup --base main`: the path `/home/deadpool/Documents/recodee/gitguardex/.omx/agent-worktrees/agent__codex__vscode-active-agents-live-worktree-telem-2026-04-22-13-43` no longer appears in `git worktree list --porcelain`, and `git branch -a --list 'agent/codex/vscode-active-agents-live-worktree-telem-2026-04-22-13-43' 'remotes/origin/agent/codex/vscode-active-agents-live-worktree-telem-2026-04-22-13-43'` returns no refs.
