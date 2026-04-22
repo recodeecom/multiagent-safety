@@ -645,6 +645,12 @@ npm pack --dry-run
 <details>
 <summary><strong>v7.x</strong></summary>
 
+### v7.0.20
+- The VS Code Active Agents tree now exposes worktree-owned SCM changes and lock ownership directly, so operators can see which sandbox owns a dirty file before they act.
+- Guardex now keeps merged cleanup evidence truthful by recording final cleanup proof only after the merge and cleanup state is actually available.
+- Install-surface verification cleanup on `main` is easier to maintain without changing the shipped CLI surface.
+- Bumped the release from `7.0.19` → `7.0.20` so the shipped Active Agents visibility and cleanup-evidence refinements land on a fresh publishable npm version.
+
 ### v7.0.19
 - `gx setup` and `gx doctor` now accept targeted managed-file recovery after `--force`, so `gx doctor --force scripts/review-bot-watch.sh` repairs the named managed file instead of failing on an unknown argument.
 - Managed-file conflict output now teaches both recovery forms directly: `--force <managed-path>` for one file and plain `--force` for whole-surface rewrites.
