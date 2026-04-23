@@ -24,5 +24,5 @@ Handoff: change=`agent-codex-patch-vscode-active-agents-empty-list-2026-04-23-11
 
 ## 5. Cleanup
 
-- [ ] 5.1 Commit, push, open PR, wait for `MERGED`, and prune the sandbox with `gx branch finish --branch "agent/codex/patch-vscode-active-agents-empty-list-2026-04-23-11-32" --base main --via-pr --wait-for-merge --cleanup`.
-- [ ] 5.2 Record PR URL and final `MERGED` cleanup evidence here.
+- [x] 5.1 Commit, push, open PR, wait for `MERGED`, and prune the sandbox with `gx branch finish --branch "agent/codex/patch-vscode-active-agents-empty-list-2026-04-23-11-32" --base main --via-pr --wait-for-merge --cleanup`. Result: PR #356 merged at `561c0621027e545bfdf18cc6f461dfda6b515510`; follow-up `gx cleanup --base main` pruned the detached source worktree.
+- [x] 5.2 Record PR URL and final `MERGED` cleanup evidence here. Result: https://github.com/recodeee/gitguardex/pull/356 state=`MERGED`; final `git worktree list` showed only the primary `/home/deadpool/Documents/recodee/gitguardex` worktree after cleanup.
