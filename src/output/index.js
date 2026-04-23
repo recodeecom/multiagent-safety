@@ -294,6 +294,59 @@ function formatElapsedDuration(ms) {
   return `${Math.round(durationMs / 1000)}s`;
 }
 
+function startTransientSpinner(message, options = {}) {
+  const stream = options.stream || process.stdout;
+  if (!stream || !stream.isTTY || typeof stream.write !== 'function') {
+    return {
+      stop() {},
+    };
+  }
+
+  const frames = supportsAnsiColors()
+    ? ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    : ['-', '\\', '|', '/'];
+  const intervalMs = Number.isFinite(options.intervalMs) ? Math.max(60, options.intervalMs) : 80;
+  const prefix = String(options.prefix || `[${TOOL_NAME}]`).trim();
+  const text = String(message || '').trim();
+  let frameIndex = 0;
+  let stopped = false;
+
+  const render = () => {
+    const frame = frames[frameIndex % frames.length];
+    frameIndex += 1;
+    const indicator = supportsAnsiColors() ? colorize(frame, '36') : frame;
+    stream.write(`\r${prefix} ${indicator} ${text}`);
+  };
+
+  const clear = () => {
+    stream.write('\r');
+    if (typeof stream.clearLine === 'function') {
+      stream.clearLine(0);
+    }
+    if (typeof stream.cursorTo === 'function') {
+      stream.cursorTo(0);
+    }
+  };
+
+  render();
+  const timer = setInterval(render, intervalMs);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+
+  return {
+    stop(finalLine = '') {
+      if (stopped) return;
+      stopped = true;
+      clearInterval(timer);
+      clear();
+      if (finalLine) {
+        stream.write(`${finalLine}\n`);
+      }
+    },
+  };
+}
+
 function truncateMiddle(value, maxLength) {
   const text = String(value || '');
   const limit = Number.isFinite(maxLength) ? Math.max(4, maxLength) : 0;
@@ -456,6 +509,7 @@ module.exports = {
   printToolLogsSummary,
   usage,
   formatElapsedDuration,
+  startTransientSpinner,
   truncateMiddle,
   truncateTail,
   compactAutoFinishPathSegments,

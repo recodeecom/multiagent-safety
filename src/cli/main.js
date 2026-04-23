@@ -148,6 +148,7 @@ const {
   printToolLogsSummary,
   usage,
   formatElapsedDuration,
+  startTransientSpinner,
   compactAutoFinishPathSegments,
   detectRecoverableAutoFinishConflict,
   printAutoFinishSummary,
@@ -887,6 +888,80 @@ function parseBooleanLike(raw) {
   if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
   return null;
+}
+
+function autoDoctorEnabledForCurrentSession() {
+  const explicit = parseBooleanLike(process.env.GUARDEX_AUTO_DOCTOR);
+  if (explicit != null) {
+    return explicit;
+  }
+  return isInteractiveTerminal();
+}
+
+function shouldAutoRunDoctorFromStatus(statusPayload) {
+  const repo = statusPayload?.repo || {};
+  return Boolean(
+    autoDoctorEnabledForCurrentSession()
+    && repo.inGitRepo
+    && repo.guardexEnabled !== false
+    && repo.serviceStatus === 'degraded'
+    && repo.scan
+    && Number(repo.scan.findings || 0) > 0,
+  );
+}
+
+function runCliSubprocessWithSpinner(args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const spinner = options.spinnerMessage
+      ? startTransientSpinner(options.spinnerMessage, {
+        prefix: options.spinnerPrefix || `[${TOOL_NAME}]`,
+      })
+      : { stop() {} };
+    const child = cp.spawn(process.execPath, [path.resolve(__filename), ...args], {
+      cwd: options.cwd || process.cwd(),
+      env: {
+        ...process.env,
+        GUARDEX_AUTO_DOCTOR: '0',
+      },
+      stdio: ['inherit', 'pipe', 'pipe'],
+    });
+
+    const stopSpinner = () => spinner.stop();
+    child.stdout.on('data', (chunk) => {
+      stopSpinner();
+      process.stdout.write(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stopSpinner();
+      process.stderr.write(chunk);
+    });
+    child.on('error', (error) => {
+      stopSpinner();
+      reject(error);
+    });
+    child.on('close', (code) => {
+      stopSpinner();
+      resolve(typeof code === 'number' ? code : 1);
+    });
+  });
+}
+
+async function maybeAutoRunDoctorFromDefaultStatus(statusPayload) {
+  if (!shouldAutoRunDoctorFromStatus(statusPayload)) {
+    return false;
+  }
+
+  const target = statusPayload?.repo?.target || process.cwd();
+  console.log(`[${TOOL_NAME}] Auto-repair: repo safety is degraded. Running '${SHORT_TOOL_NAME} doctor' now.`);
+  process.exitCode = await runCliSubprocessWithSpinner(
+    ['doctor', '--target', target],
+    {
+      cwd: target,
+      spinnerPrefix: `[${TOOL_NAME}] Auto-repair:`,
+      spinnerMessage: 'preparing doctor workspace',
+    },
+  );
+  return true;
 }
 
 function parseDotenvAssignmentValue(raw) {
@@ -1672,6 +1747,22 @@ function setExitCodeFromScan(scan) {
   process.exitCode = 0;
 }
 
+function printStatusRepairHint(scanResult) {
+  if (!scanResult || scanResult.guardexEnabled === false) {
+    return;
+  }
+  if (scanResult.errors === 0 && scanResult.warnings === 0) {
+    return;
+  }
+
+  const scanHint = scanResult.errors === 0
+    ? `review warning details with '${SHORT_TOOL_NAME} scan'`
+    : `inspect detailed findings with '${SHORT_TOOL_NAME} scan'`;
+  console.log(
+    `[${TOOL_NAME}] Quick fix: run '${SHORT_TOOL_NAME} doctor' to repair drift, or ${scanHint}.`,
+  );
+}
+
 function status(rawArgs) {
   const options = parseCommonArgs(rawArgs, {
     target: process.cwd(),
@@ -1752,7 +1843,7 @@ function status(rawArgs) {
   if (options.json) {
     process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     process.exitCode = 0;
-    return;
+    return payload;
   }
 
   console.log(`[${TOOL_NAME}] CLI: ${payload.cli.runtime}`);
@@ -1800,7 +1891,7 @@ function status(rawArgs) {
       `[${TOOL_NAME}] Repo safety service: ${statusDot('inactive')} inactive (no git repository at target).`,
     );
     process.exitCode = 0;
-    return;
+    return payload;
   }
 
   if (scanResult.guardexEnabled === false) {
@@ -1811,7 +1902,7 @@ function status(rawArgs) {
     console.log(`[${TOOL_NAME}] Branch: ${scanResult.branch}`);
     printToolLogsSummary();
     process.exitCode = 0;
-    return;
+    return payload;
   }
 
   if (scanResult.errors === 0 && scanResult.warnings === 0) {
@@ -1820,23 +1911,22 @@ function status(rawArgs) {
     console.log(
       `[${TOOL_NAME}] Repo safety service: ${statusDot('degraded')} degraded (${scanResult.warnings} warning(s)).`,
     );
-    console.log(`[${TOOL_NAME}] Run '${TOOL_NAME} scan' to review warning details.`);
   } else if (scanResult.warnings === 0) {
     console.log(
       `[${TOOL_NAME}] Repo safety service: ${statusDot('degraded')} degraded (${scanResult.errors} error(s)).`,
     );
-    console.log(`[${TOOL_NAME}] Run '${TOOL_NAME} scan' for detailed findings.`);
   } else {
     console.log(
       `[${TOOL_NAME}] Repo safety service: ${statusDot('degraded')} degraded (${scanResult.errors} error(s), ${scanResult.warnings} warning(s)).`,
     );
-    console.log(`[${TOOL_NAME}] Run '${TOOL_NAME} scan' for detailed findings.`);
   }
+  printStatusRepairHint(scanResult);
   console.log(`[${TOOL_NAME}] Repo: ${scanResult.repoRoot}`);
   console.log(`[${TOOL_NAME}] Branch: ${scanResult.branch}`);
   printToolLogsSummary();
 
   process.exitCode = 0;
+  return payload;
 }
 
 function install(rawArgs) {
@@ -3246,13 +3336,14 @@ function protect(rawArgs) {
   throw new Error(`Unknown protect subcommand: ${subcommand}`);
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
     toolchainModule.maybeSelfUpdateBeforeStatus();
     toolchainModule.maybeOpenSpecUpdateBeforeStatus();
-    status([]);
+    const statusPayload = status([]);
+    await maybeAutoRunDoctorFromDefaultStatus(statusPayload);
     return;
   }
 
@@ -3322,9 +3413,9 @@ function main() {
   throw new Error(`Unknown command: ${command}`);
 }
 
-function runFromBin() {
+async function runFromBin() {
   try {
-    main();
+    await main();
   } catch (error) {
     console.error(`[${TOOL_NAME}] ${error.message}`);
     process.exitCode = 1;
@@ -3332,7 +3423,7 @@ function runFromBin() {
 }
 
 if (require.main === module) {
-  runFromBin();
+  void runFromBin();
 }
 
 module.exports = {

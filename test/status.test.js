@@ -116,7 +116,7 @@ exit 1
 });
 
 
-test('warning-only degraded status avoids zero-error wording and improves scan hint', () => {
+test('warning-only degraded status avoids zero-error wording and points humans at doctor', () => {
   const repoDir = initRepo();
 
   let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
@@ -129,7 +129,56 @@ test('warning-only degraded status avoids zero-error wording and improves scan h
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Repo safety service: .*degraded \(\d+ warning\(s\)\)\./);
   assert.doesNotMatch(result.stdout, /0 error\(s\),/);
-  assert.match(result.stdout, /Run 'gitguardex scan' to review warning details\./);
+  assert.match(
+    result.stdout,
+    /Quick fix: run 'gx doctor' to repair drift, or review warning details with 'gx scan'\./,
+  );
+});
+
+
+test('default invocation on degraded repo stays status-only in non-interactive mode', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['config', 'core.hooksPath', '.bad-hooks'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runNode([], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(
+    result.stdout,
+    /Quick fix: run 'gx doctor' to repair drift, or review warning details with 'gx scan'\./,
+  );
+  assert.doesNotMatch(result.stdout, /Auto-repair: repo safety is degraded/);
+
+  const hooksPath = runCmd('git', ['config', 'core.hooksPath'], repoDir);
+  assert.equal(hooksPath.status, 0, hooksPath.stderr || hooksPath.stdout);
+  assert.equal(hooksPath.stdout.trim(), '.bad-hooks');
+});
+
+
+test('default invocation can auto-run doctor when GUARDEX_AUTO_DOCTOR=yes', () => {
+  const repoDir = initRepo();
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['config', 'core.hooksPath', '.bad-hooks'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runNodeWithEnv([], repoDir, {
+    GUARDEX_AUTO_DOCTOR: 'yes',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Auto-repair: repo safety is degraded\. Running 'gx doctor' now\./);
+  assert.match(result.stdout, /Doctor\/fix:/);
+  assert.match(result.stdout, /Repo is fully safe\./);
+
+  const hooksPath = runCmd('git', ['config', 'core.hooksPath'], repoDir);
+  assert.equal(hooksPath.status, 0, hooksPath.stderr || hooksPath.stdout);
+  assert.equal(hooksPath.stdout.trim(), '.githooks');
 });
 
 
