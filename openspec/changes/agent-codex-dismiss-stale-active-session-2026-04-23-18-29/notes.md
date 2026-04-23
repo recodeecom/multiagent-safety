@@ -2,7 +2,8 @@
 
 Branch: `agent/codex/dismiss-stale-active-session-2026-04-23-18-29`
 
-Describe the change in a sentence or two. Commit message is the spec of record.
+Add a separate `Dismiss` action for stale or dead Active Agents rows so operators can clear leftover active-session records after usage-limit exits or manual takeovers.
+Keep the live `Stop` flow process-oriented for real terminals and pids, while verifying the new dismiss path with the focused extension test suite.
 
 ## Handoff
 
@@ -12,6 +13,7 @@ Describe the change in a sentence or two. Commit message is the spec of record.
 
 ## Cleanup
 
-- [ ] Run: `gx branch finish --branch agent/codex/dismiss-stale-active-session-2026-04-23-18-29 --base main --via-pr --wait-for-merge --cleanup`
-- [ ] Record PR URL + `MERGED` state in the completion handoff.
-- [ ] Confirm sandbox worktree is gone (`git worktree list`, `git branch -a`).
+- Cleanup result: PR [#393](https://github.com/recodeee/gitguardex/pull/393) is `MERGED` with merge commit `fad45e8daed2be67ec8d88b0cebe1ff5040e73f4`; `gh pr view 393`, `git worktree list`, and `git branch -a` on `main` show the lane is closed and pruned.
+- [x] Run: `gx branch finish --branch agent/codex/dismiss-stale-active-session-2026-04-23-18-29 --base main --via-pr --wait-for-merge --cleanup`
+- [x] Record PR URL + `MERGED` state in the completion handoff.
+- [x] Confirm sandbox worktree is gone (`git worktree list`, `git branch -a`).

@@ -29,6 +29,7 @@ This change is complete only when **all** of the following are true:
 
 ## 4. Cleanup (mandatory; run before claiming completion)
 
-- [ ] 4.1 Run the cleanup pipeline: `gx branch finish --branch agent/codex/harden-scorecard-best-practices-2026-04-23-18-42 --base main --via-pr --wait-for-merge --cleanup`. This handles commit -> push -> PR create -> merge wait -> worktree prune in one invocation.
-- [ ] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
-- [ ] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
+- Cleanup result: PR [#392](https://github.com/recodeee/gitguardex/pull/392) is `MERGED` with merge commit `f0ee72a10b676508e21def6bc9a953522d80da22`; `gh pr view 392`, `git worktree list`, and `git branch -a` on `main` show the lane is closed and pruned.
+- [x] 4.1 Run the cleanup pipeline: `gx branch finish --branch agent/codex/harden-scorecard-best-practices-2026-04-23-18-42 --base main --via-pr --wait-for-merge --cleanup`. This handles commit -> push -> PR create -> merge wait -> worktree prune in one invocation.
+- [x] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
+- [x] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
