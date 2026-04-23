@@ -31,4 +31,4 @@ Handoff: 2026-04-23 codex owns branch `agent/codex/active-agents-openspec-change
 - [ ] 4.2 Record the PR URL and final `MERGED` state in the completion handoff.
 - [ ] 4.3 Confirm the sandbox worktree and branch refs are gone after cleanup.
 
-BLOCKED: none.
+BLOCKED: `gx branch finish --branch "agent/codex/active-agents-openspec-change-icons-2026-04-23-17-07" --base main --via-pr --wait-for-merge --cleanup` pushed the branch and opened PR `#394` (`https://github.com/recodeee/gitguardex/pull/394`), but cleanup could not complete because GitHub rejected `gh pr merge 394 --squash --admin --delete-branch` with `New changes require approval from someone other than the last pusher. 4 of 4 required status checks are queued. (mergePullRequest)`. Current PR state: `OPEN`; cleanup/worktree-prune confirmation is still pending review plus CI.
