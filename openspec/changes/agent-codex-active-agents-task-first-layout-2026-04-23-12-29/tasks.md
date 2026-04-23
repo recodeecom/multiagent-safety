@@ -28,6 +28,8 @@ Handoff: 2026-04-23 12:29Z codex owns `vscode/guardex-active-agents/*`, `templat
 
 ## 4. Cleanup
 
-- [ ] 4.1 Run `gx branch finish --branch "agent/codex/active-agents-task-first-layout-2026-04-23-12-29" --base main --via-pr --wait-for-merge --cleanup`.
-- [ ] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
-- [ ] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
+- [x] 4.1 Run `gx branch finish --branch "agent/codex/active-agents-task-first-layout-2026-04-23-12-29" --base main --via-pr --wait-for-merge --cleanup`.
+- [x] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
+- [x] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
+
+Completion handoff: 2026-04-23 11:12Z PR https://github.com/recodeee/gitguardex/pull/366 reached `MERGED` (`gh pr view 366 --json number,url,state,mergedAt,headRefName,baseRefName`). `gx branch finish --branch "agent/codex/active-agents-task-first-layout-2026-04-23-12-29" --base main --via-pr --wait-for-merge --cleanup` exited 0. `git fetch --prune origin` removed `origin/agent/codex/active-agents-task-first-layout-2026-04-23-12-29`; `git branch -a --list "*active-agents-task-first-layout*"` returned no refs; `git worktree list` no longer showed the source sandbox.
