@@ -76,6 +76,46 @@ function toPositiveInteger(value) {
   return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
 }
 
+function toBoundedInteger(value, min, max) {
+  const normalized = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isInteger(normalized) || normalized < min || normalized > max) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeStringList(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => toNonEmptyString(value))
+    .filter(Boolean);
+}
+
+function normalizeSessionHealthPayload(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return null;
+  }
+
+  const rawScores = input.scores && typeof input.scores === 'object' && !Array.isArray(input.scores)
+    ? input.scores
+    : null;
+  const score = toBoundedInteger(input.score ?? input.total ?? rawScores?.total, 0, 100);
+  if (score === null) {
+    return null;
+  }
+
+  return {
+    score,
+    label: toNonEmptyString(input.label),
+    primaryDriver: toNonEmptyString(input.primaryDriver),
+    secondaries: normalizeStringList(input.secondaries),
+    outputLine: toNonEmptyString(input.outputLine),
+  };
+}
+
 function normalizeTaskMode(value) {
   const normalized = toNonEmptyString(value).toLowerCase();
   return normalized === 'caveman' || normalized === 'omx' ? normalized : '';
@@ -124,6 +164,17 @@ function splitOutputLines(output) {
 
 function normalizeRelativePath(value) {
   return toNonEmptyString(value).replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+function normalizeProjectPath(value) {
+  const normalized = toNonEmptyString(value);
+  if (!normalized) {
+    return '';
+  }
+
+  return path.isAbsolute(normalized)
+    ? path.resolve(normalized)
+    : normalizeRelativePath(normalized);
 }
 
 function readJsonFile(filePath) {
@@ -744,6 +795,8 @@ function buildSessionRecord(input) {
     taskName: toNonEmptyString(input.taskName, 'task'),
     latestTaskPreview: '',
     agentName: toNonEmptyString(input.agentName, 'agent'),
+    projectName: toNonEmptyString(input.projectName),
+    projectPath: normalizeProjectPath(input.projectPath),
     snapshotName: toNonEmptyString(input.snapshotName),
     snapshotEmail: toNonEmptyString(input.snapshotEmail || input.email),
     worktreePath,
@@ -755,6 +808,7 @@ function buildSessionRecord(input) {
     startedAt: startedAt.toISOString(),
     lastHeartbeatAt: lastHeartbeatAt.toISOString(),
     state: normalizeAdvisoryState(input.state),
+    sessionHealth: normalizeSessionHealthPayload(input.sessionHealth || input.sessionSeverity),
   };
 }
 
@@ -796,6 +850,8 @@ function normalizeSessionRecord(input, options = {}) {
     taskName: toNonEmptyString(input.taskName, 'task'),
     latestTaskPreview: '',
     agentName: toNonEmptyString(input.agentName, 'agent'),
+    projectName: toNonEmptyString(input.projectName),
+    projectPath: normalizeProjectPath(input.projectPath),
     snapshotName: toNonEmptyString(input.snapshotName),
     snapshotEmail: toNonEmptyString(input.snapshotEmail || input.email),
     worktreePath: path.resolve(worktreePath),
@@ -817,6 +873,7 @@ function normalizeSessionRecord(input, options = {}) {
     lockSnapshotCount: 0,
     lockSessionCount: 0,
     collaboration: false,
+    sessionHealth: normalizeSessionHealthPayload(input.sessionHealth || input.sessionSeverity),
   };
 }
 
@@ -901,6 +958,9 @@ function flattenTelemetrySnapshotSessions(lockPayload) {
         projectPath: toNonEmptyString(session?.projectPath),
         snapshotName: toNonEmptyString(snapshot?.snapshotName),
         email: toNonEmptyString(snapshot?.email),
+        sessionHealth: normalizeSessionHealthPayload(
+          session?.sessionHealth || session?.sessionSeverity || snapshot?.sessionHealth || snapshot?.sessionSeverity,
+        ),
       });
     }
   }
@@ -926,6 +986,7 @@ function deriveLockTaskAnchor(entries, fallbackTaskName, fallbackTimestamp) {
     taskName: latestEntry?.taskPreview || fallbackTaskName || 'task',
     latestTaskPreview: latestEntry?.taskPreview || '',
     timestamp: latestEntry?.taskUpdatedAt || fallbackTimestamp || '',
+    sessionHealth: latestEntry?.sessionHealth || null,
   };
 }
 
@@ -951,6 +1012,15 @@ function deriveLockSnapshotIdentity(entries) {
   };
 }
 
+function deriveLockProjectMetadata(entries) {
+  const latestEntry = sortTelemetryEntriesForAnchor(entries)
+    .find((entry) => entry?.projectPath || entry?.projectName) || null;
+  return {
+    projectName: toNonEmptyString(latestEntry?.projectName),
+    projectPath: normalizeProjectPath(latestEntry?.projectPath),
+  };
+}
+
 function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options = {}) {
   const now = options.now || Date.now();
   const telemetryEntries = flattenTelemetrySnapshotSessions(lockPayload);
@@ -962,6 +1032,7 @@ function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options =
   const label = deriveSessionLabel(effectiveBranch, worktreePath);
   const taskAnchor = deriveLockTaskAnchor(telemetryEntries, label, telemetryUpdatedAt);
   const snapshotIdentity = deriveLockSnapshotIdentity(telemetryEntries);
+  const projectMetadata = deriveLockProjectMetadata(telemetryEntries);
   const startedAt = taskAnchor.timestamp || telemetryUpdatedAt || new Date(now).toISOString();
 
   const session = {
@@ -971,6 +1042,8 @@ function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options =
     taskName: taskAnchor.taskName,
     latestTaskPreview: taskAnchor.latestTaskPreview,
     agentName: deriveAgentNameFromBranch(effectiveBranch),
+    projectName: projectMetadata.projectName,
+    projectPath: projectMetadata.projectPath,
     snapshotName: snapshotIdentity.snapshotName,
     snapshotEmail: snapshotIdentity.snapshotEmail,
     worktreePath: path.resolve(worktreePath),
@@ -992,6 +1065,9 @@ function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options =
     lockSnapshotCount: toPositiveInteger(lockPayload?.snapshotCount) || 0,
     lockSessionCount: toPositiveInteger(lockPayload?.sessionCount) || telemetryEntries.length,
     collaboration: Boolean(lockPayload?.collaboration),
+    sessionHealth: taskAnchor.sessionHealth || normalizeSessionHealthPayload(
+      lockPayload?.sessionHealth || lockPayload?.sessionSeverity,
+    ),
   };
 
   session.elapsedLabel = formatElapsedFrom(session.startedAt, now);
@@ -1015,6 +1091,8 @@ function buildManagedWorktreeSession(repoRoot, worktreePath, options = {}) {
     taskName: label,
     latestTaskPreview: '',
     agentName: deriveAgentNameFromBranch(branch),
+    projectName: '',
+    projectPath: '',
     snapshotName: '',
     snapshotEmail: '',
     worktreePath: path.resolve(worktreePath),
@@ -1036,6 +1114,7 @@ function buildManagedWorktreeSession(repoRoot, worktreePath, options = {}) {
     lockSnapshotCount: 0,
     lockSessionCount: 0,
     collaboration: false,
+    sessionHealth: null,
   };
 
   session.elapsedLabel = formatElapsedFrom(session.startedAt, now);
@@ -1142,6 +1221,21 @@ function mergeSessionSources(primarySessions, lockSessions) {
     }
     if (lockSession) {
       consumedLockWorktrees.add(worktreeKey);
+      merged.push({
+        ...session,
+        latestTaskPreview: session.latestTaskPreview || lockSession.latestTaskPreview,
+        projectName: session.projectName || lockSession.projectName,
+        projectPath: session.projectPath || lockSession.projectPath,
+        snapshotName: session.snapshotName || lockSession.snapshotName,
+        snapshotEmail: session.snapshotEmail || lockSession.snapshotEmail,
+        telemetryUpdatedAt: session.telemetryUpdatedAt || lockSession.telemetryUpdatedAt,
+        telemetrySource: session.telemetrySource || lockSession.telemetrySource,
+        lockSnapshotCount: session.lockSnapshotCount || lockSession.lockSnapshotCount,
+        lockSessionCount: session.lockSessionCount || lockSession.lockSessionCount,
+        collaboration: session.collaboration || lockSession.collaboration,
+        sessionHealth: session.sessionHealth || lockSession.sessionHealth,
+      });
+      continue;
     }
     merged.push(session);
   }

@@ -1991,14 +1991,24 @@ test('active-agents extension shows grouped repo changes beside active agents', 
   assert.equal(unassignedChangeItem.label, 'root-file.txt');
   assert.equal(unassignedChangeItem.description, 'M · Protected branch');
 
+  const activeAgentTree = await getSectionByLabel(provider, advancedSection, 'Active agent tree');
+  const rawWorkingSection = await getSectionByLabel(provider, activeAgentTree, 'WORKING NOW');
+  const [rawWorktreeItem] = await provider.getChildren(rawWorkingSection);
+  assert.equal(rawWorktreeItem.label, 'live-task');
+  assert.equal(rawWorktreeItem.description, 'working: codex');
+  const [rawSessionItem] = await provider.getChildren(rawWorktreeItem);
+  assert.equal(rawSessionItem.label, 'codex/live-task');
+  assert.match(rawSessionItem.description, /^Working · 2 files · /);
+
   const rawPathTree = await getSectionByLabel(provider, advancedSection, 'Raw path tree');
   const [worktreeGroup, repoRootGroup] = await provider.getChildren(rawPathTree);
-  assert.equal(worktreeGroup.label, `${path.basename(worktreePath)}`);
-  assert.equal(worktreeGroup.description, '1 agent · 2 changed');
+  assert.equal(worktreeGroup.label, 'live-task');
+  assert.equal(worktreeGroup.description, 'codex · 2 files');
   assert.equal(repoRootGroup.label, 'Repo root');
 
   const [sessionGroup] = await provider.getChildren(worktreeGroup);
-  assert.equal(sessionGroup.label, sessionItem.session.branch);
+  assert.equal(sessionGroup.label, 'codex/live-task');
+  assert.match(sessionGroup.description, /^Working · 2 files · /);
   const [folderItem, trackedItem] = await provider.getChildren(sessionGroup);
   assert.equal(folderItem.label, 'src');
   assert.equal(trackedItem.label, 'tracked.txt');
@@ -2035,6 +2045,8 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
   runGit(worktreePath, ['add', 'src/live.js']);
   runGit(worktreePath, ['commit', '-m', 'baseline']);
   fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\nchanged\n', 'utf8');
+  const projectPath = path.join(tempRoot, 'gitguardex');
+  fs.mkdirSync(projectPath, { recursive: true });
   const lockPath = writeWorktreeLock(worktreePath, {
     updatedAt: '2026-04-22T09:01:00.000Z',
     snapshots: [
@@ -2051,7 +2063,7 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
             taskPreview: 'Implement live worktree telemetry',
             taskUpdatedAt: '2026-04-22T08:55:00.000Z',
             projectName: 'gitguardex',
-            projectPath: worktreePath,
+            projectPath,
           },
         ],
       },
@@ -2084,18 +2096,177 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
     'Advanced details',
   ]);
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
-  const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
-  assert.equal(worktreeItem, null);
+  const [projectFolder] = await provider.getChildren(workingSection);
+  assert.equal(projectFolder.label, 'gitguardex');
+  assert.equal(projectFolder.description, '1 agent · 1 file');
+  const [sessionItem] = await provider.getChildren(projectFolder);
+  assert.equal(sessionItem.label, 'Implement live worktree telemetry');
   assert.equal(sessionItem.session.branch, 'agent/codex/lock-visible-task');
   assert.match(sessionItem.description, /^Working: codex · via OpenAI · snapshot nagyviktor@edixa\.com · 1 changed file/);
   assert.equal(sessionItem.session.snapshotName, 'nagyviktor@edixa.com');
   assert.match(sessionItem.tooltip, /Telemetry updated 2026-04-22T09:01:00.000Z/);
   assert.match(sessionItem.tooltip, /Snapshot nagyviktor@edixa\.com/);
+
+  const advancedSection = await getSectionByLabel(provider, repoItem, 'Advanced details');
+  const activeAgentTree = await getSectionByLabel(provider, advancedSection, 'Active agent tree');
+  const rawWorkingSection = await getSectionByLabel(provider, activeAgentTree, 'WORKING NOW');
+  const [rawProjectFolder] = await provider.getChildren(rawWorkingSection);
+  assert.equal(rawProjectFolder.label, 'gitguardex');
+  assert.equal(rawProjectFolder.description, '1 agent · 1 file');
+  const [rawWorktreeItem] = await provider.getChildren(rawProjectFolder);
+  assert.equal(rawWorktreeItem.label, 'Implement live worktree telemetry');
+  assert.equal(rawWorktreeItem.description, 'working: codex · snapshot nagyviktor@edixa.com');
+  assert.equal(
+    rawWorktreeItem.resourceUri.toString(),
+    `gitguardex-agent://${sessionSchema.sanitizeBranchForFile('agent/codex/lock-visible-task')}`,
+  );
+  const [rawSessionItem] = await provider.getChildren(rawWorktreeItem);
+  assert.equal(rawSessionItem.label, 'codex/lock-visible-task');
+  assert.match(rawSessionItem.description, /^Working · 1 file · /);
+
   const snapshotDecoration = registrations.decorationProviders[0].provideFileDecoration(vscode.Uri.parse(
     `gitguardex-agent://${sessionSchema.sanitizeBranchForFile('agent/codex/lock-visible-task')}`,
   ));
   assert.equal(snapshotDecoration.badge, 'N');
   assert.equal(snapshotDecoration.tooltip, 'Snapshot nagyviktor@edixa.com');
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
+test('active-agents extension shows session health from active-session records', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-session-health-active-'));
+  initGitRepo(tempRoot);
+
+  const worktreePath = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-session-health-worktree-'));
+  initGitRepo(worktreePath);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'tracked.txt']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\nchanged\n', 'utf8');
+
+  const branch = 'agent/codex/health-task';
+  const sessionPath = sessionSchema.sessionFilePathForBranch(tempRoot, branch);
+  fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+  const record = sessionSchema.buildSessionRecord({
+    repoRoot: tempRoot,
+    branch,
+    taskName: 'health-task',
+    agentName: 'codex',
+    worktreePath,
+    pid: process.pid,
+    cliName: 'codex',
+    state: 'working',
+  });
+  record.sessionHealth = {
+    score: 45,
+    label: 'Inefficient',
+    primaryDriver: 'turn fragmentation',
+    secondaries: ['write_stdin churn'],
+    outputLine: 'Score 45/100 — Inefficient. Primary: turn fragmentation. Secondaries: write_stdin churn.',
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async () => [{ fsPath: sessionPath }];
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const provider = registrations.providers[0].provider;
+  const [repoItem] = await provider.getChildren();
+  const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
+  const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
+  assert.equal(worktreeItem, null);
+  assert.match(sessionItem.description, /^Working: codex · via OpenAI · 1 changed file · 45\/100/);
+  assert.match(sessionItem.tooltip, /Session health 45\/100 · Inefficient/);
+  const sessionDetails = await provider.getChildren(sessionItem);
+  const sessionHealthItem = sessionDetails.find((item) => item.label === 'Session health');
+  assert.equal(sessionHealthItem?.description, '45/100 · Inefficient');
+  assert.match(sessionHealthItem?.tooltip || '', /Score 45\/100 — Inefficient\./);
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
+test('active-agents extension shows session health from AGENT.lock fallback telemetry', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-session-health-lock-'));
+  initGitRepo(tempRoot);
+
+  const worktreePath = path.join(
+    tempRoot,
+    '.omx',
+    'agent-worktrees',
+    'agent__codex__health-lock-task',
+  );
+  initGitRepo(worktreePath);
+  runGit(worktreePath, ['checkout', '-b', 'agent/codex/health-lock-task']);
+  fs.mkdirSync(path.join(worktreePath, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'src/live.js']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\nchanged\n', 'utf8');
+  const lockPath = writeWorktreeLock(worktreePath, {
+    updatedAt: '2026-04-22T09:01:00.000Z',
+    snapshots: [
+      {
+        snapshotName: 'snapshot-a',
+        accountId: 'acct-1',
+        email: 'agent@example.com',
+        liveSessionCount: 1,
+        trackedSessionCount: 1,
+        compatSessionCount: 1,
+        sessions: [
+          {
+            sessionKey: 'pid:101',
+            taskPreview: 'Implement live worktree telemetry',
+            taskUpdatedAt: '2026-04-22T08:55:00.000Z',
+            projectName: 'gitguardex',
+            projectPath: worktreePath,
+            sessionHealth: {
+              score: 45,
+              label: 'Inefficient',
+              primaryDriver: 'turn fragmentation',
+              secondaries: ['write_stdin churn'],
+              outputLine: 'Score 45/100 — Inefficient. Primary: turn fragmentation. Secondaries: write_stdin churn.',
+            },
+          },
+        ],
+      },
+    ],
+  });
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async (pattern) => {
+    if (pattern === '**/.omx/state/active-sessions/*.json') {
+      return [];
+    }
+    if (pattern === '**/{.omx,.omc}/agent-worktrees/**/AGENT.lock') {
+      return [{ fsPath: lockPath }];
+    }
+    return [];
+  };
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const provider = registrations.providers[0].provider;
+  const [repoItem] = await provider.getChildren();
+  const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
+  const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
+  assert.equal(worktreeItem, null);
+  assert.match(sessionItem.description, /^Working: codex · via OpenAI · snapshot snapshot-a · 1 changed file · 45\/100/);
+  assert.match(sessionItem.tooltip, /Session health 45\/100 · Inefficient/);
+  const sessionDetails = await provider.getChildren(sessionItem);
+  const sessionHealthItem = sessionDetails.find((item) => item.label === 'Session health');
+  assert.equal(sessionHealthItem?.description, '45/100 · Inefficient');
+  assert.match(sessionHealthItem?.tooltip || '', /Score 45\/100 — Inefficient\./);
 
   for (const subscription of context.subscriptions) {
     subscription.dispose?.();
@@ -2221,11 +2392,13 @@ test('active-agents extension decorates sessions and repo changes from the lock 
 
   const activeAgentTree = await getSectionByLabel(provider, advancedSection, 'Active agent tree');
   const rawWorkingSection = await getSectionByLabel(provider, activeAgentTree, 'WORKING NOW');
-  const worktreeGroup = await getChildByLabel(provider, rawWorkingSection, path.basename(worktreePath));
+  const worktreeGroup = await getChildByLabel(provider, rawWorkingSection, 'live-task');
   assert.equal(worktreeGroup.iconPath.id, 'git-branch');
   assert.equal(worktreeGroup.description, 'working: codex');
   assert.equal(worktreeGroup.resourceUri.toString(), `gitguardex-agent://${sessionSchema.sanitizeBranchForFile(branch)}`);
   const [sessionGroup] = await provider.getChildren(worktreeGroup);
+  assert.equal(sessionGroup.label, 'codex/live-task');
+  assert.match(sessionGroup.description, /^Working · 1 file · /);
   const [sessionChangeItem] = await provider.getChildren(sessionGroup);
   assert.equal(sessionChangeItem.label, 'tracked.txt');
   assert.equal(sessionChangeItem.iconPath.id, 'warning');

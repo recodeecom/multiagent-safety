@@ -17,6 +17,10 @@ const LOCK_FILE_RELATIVE = path.join('.omx', 'state', 'agent-file-locks.json');
 const ACTIVE_SESSION_FILES_GLOB = '**/.omx/state/active-sessions/*.json';
 const AGENT_FILE_LOCKS_GLOB = '**/.omx/state/agent-file-locks.json';
 const WORKTREE_AGENT_LOCKS_GLOB = '**/{.omx,.omc}/agent-worktrees/**/AGENT.lock';
+const MANAGED_WORKTREE_RELATIVE_ROOTS = [
+  path.join('.omx', 'agent-worktrees'),
+  path.join('.omc', 'agent-worktrees'),
+];
 const AGENT_LOG_FILES_GLOB = '**/.omx/logs/*.log';
 const SESSION_SCAN_EXCLUDE_GLOB = '**/{node_modules,.git,.omx/agent-worktrees,.omc/agent-worktrees}/**';
 const WORKTREE_LOCK_SCAN_EXCLUDE_GLOB = '**/{node_modules,.git}/**';
@@ -129,6 +133,34 @@ function sessionIdleDecoration(session, now = Date.now()) {
 
 function formatCountLabel(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function branchSegments(branch) {
+  return String(branch || '')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function compactBranchLabel(branch) {
+  const segments = branchSegments(branch);
+  if (segments.length >= 3 && segments[0] === 'agent') {
+    return `${segments[1]}/${segments.slice(2).join('/')}`;
+  }
+  return segments.join('/');
+}
+
+function sessionFileCountLabel(session) {
+  const activityCountLabel = typeof session?.activityCountLabel === 'string'
+    ? session.activityCountLabel.trim()
+    : '';
+  if (activityCountLabel) {
+    return activityCountLabel;
+  }
+  if ((session?.changeCount || 0) > 0) {
+    return formatCountLabel(session.changeCount, 'file');
+  }
+  return '';
 }
 
 function uniqueStringList(values) {
@@ -458,6 +490,54 @@ function sessionStatusLabel(session) {
   }
 }
 
+function sessionHealthScore(session) {
+  return Number.isInteger(session?.sessionHealth?.score) ? session.sessionHealth.score : null;
+}
+
+function buildSessionHealthCompactLabel(session) {
+  const score = sessionHealthScore(session);
+  return score === null ? '' : `${score}/100`;
+}
+
+function buildSessionHealthSummary(session) {
+  const compactLabel = buildSessionHealthCompactLabel(session);
+  if (!compactLabel) {
+    return '';
+  }
+
+  const label = typeof session?.sessionHealth?.label === 'string'
+    ? session.sessionHealth.label.trim()
+    : '';
+  return label ? `${compactLabel} · ${label}` : compactLabel;
+}
+
+function buildSessionHealthDriversSummary(session) {
+  const primaryDriver = typeof session?.sessionHealth?.primaryDriver === 'string'
+    ? session.sessionHealth.primaryDriver.trim()
+    : '';
+  const secondaries = uniqueStringList(Array.isArray(session?.sessionHealth?.secondaries)
+    ? session.sessionHealth.secondaries.map((value) => String(value || '').trim())
+    : []);
+  return [
+    primaryDriver ? `Primary: ${primaryDriver}` : '',
+    secondaries.length > 0 ? `Secondary: ${secondaries.join(', ')}` : '',
+  ].filter(Boolean).join(' | ');
+}
+
+function buildSessionHealthTooltip(session) {
+  const outputLine = typeof session?.sessionHealth?.outputLine === 'string'
+    ? session.sessionHealth.outputLine.trim()
+    : '';
+  if (outputLine) {
+    return outputLine;
+  }
+
+  return [
+    buildSessionHealthSummary(session),
+    buildSessionHealthDriversSummary(session),
+  ].filter(Boolean).join('\n');
+}
+
 function buildSessionTopFiles(session) {
   return uniqueStringList((session?.worktreeChangedPaths || [])
     .map(normalizeRelativePath)
@@ -507,6 +587,7 @@ function buildSessionCardDescription(session) {
     session.deltaLabel || '',
     session.changeCount > 0 ? formatCountLabel(session.changeCount, 'changed file') : '',
     session.lockCount > 0 ? formatCountLabel(session.lockCount, 'lock') : '',
+    buildSessionHealthCompactLabel(session),
     session.freshnessLabel || '',
     session.lastActiveLabel ? `${session.lastActiveLabel} ago` : '',
   ].filter(Boolean);
@@ -515,8 +596,11 @@ function buildSessionCardDescription(session) {
 
 function buildRawSessionDescription(session) {
   const provider = resolveSessionProvider(session);
-  const status = sessionStatusLabel(session).toLowerCase();
-  const descriptionParts = [`${status}: ${session.agentName || 'agent'}`];
+  const descriptionParts = [sessionStatusLabel(session)];
+  const fileCountLabel = sessionFileCountLabel(session);
+  if (fileCountLabel) {
+    descriptionParts.push(fileCountLabel);
+  }
   if (provider?.label) {
     descriptionParts.push(provider.label);
   }
@@ -524,10 +608,11 @@ function buildRawSessionDescription(session) {
   if (snapshot) {
     descriptionParts.push(snapshot);
   }
-  if (session.activityCountLabel) {
-    descriptionParts.push(session.activityCountLabel);
-  }
   descriptionParts.push(session.elapsedLabel || formatElapsedFrom(session.startedAt));
+  const sessionHealthLabel = buildSessionHealthCompactLabel(session);
+  if (sessionHealthLabel) {
+    descriptionParts.push(sessionHealthLabel);
+  }
   if (session.lockCount > 0) {
     descriptionParts.push(formatCountLabel(session.lockCount, 'lock'));
   }
@@ -541,6 +626,8 @@ function buildSessionTooltip(session, description) {
     session?.deltaLabel || '',
   ].filter(Boolean)).join(', ');
   const topFiles = session?.topChangedFilesLabel || summarizeCompactPaths(session?.worktreeChangedPaths || []);
+  const sessionHealthSummary = buildSessionHealthSummary(session);
+  const sessionHealthDrivers = buildSessionHealthDriversSummary(session);
   return [
     session.branch,
     provider?.label
@@ -549,6 +636,8 @@ function buildSessionTooltip(session, description) {
     sessionSnapshotDisplayName(session) ? `Snapshot ${sessionSnapshotDisplayName(session)}` : '',
     `${session.agentName} · ${session.taskName}`,
     `Status ${description}`,
+    sessionHealthSummary ? `Session health ${sessionHealthSummary}` : '',
+    sessionHealthDrivers ? `Drivers ${sessionHealthDrivers}` : '',
     session.recentChangeSummary ? `Recent ${session.recentChangeSummary}` : '',
     topFiles ? `Top files ${topFiles}` : '',
     riskSummary ? `Signals ${riskSummary}` : '',
@@ -1002,18 +1091,17 @@ class WorktreeItem extends vscode.TreeItem {
     const changedCount = Number.isInteger(options.changedCount)
       ? options.changedCount
       : sessionList.reduce((total, session) => total + (session.changeCount || 0), 0);
-    const descriptionParts = [formatCountLabel(sessionList.length, 'agent')];
-    if (changedCount > 0) {
-      descriptionParts.push(`${changedCount} changed`);
-    }
+    const label = typeof options.label === 'string' && options.label.trim()
+      ? options.label.trim()
+      : worktreeDisplayLabel(normalizedWorktreePath, sessionList);
     super(
-      options.label || path.basename(normalizedWorktreePath || '') || 'worktree',
+      label,
       items.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
     );
     this.worktreePath = normalizedWorktreePath;
     this.sessions = sessionList;
     this.items = items;
-    this.description = options.description || descriptionParts.join(' · ');
+    this.description = options.description || buildWorktreeDescription(sessionList, changedCount);
     this.tooltip = [
       normalizedWorktreePath,
       ...sessionList.map((session) => session.branch).filter(Boolean),
@@ -1068,13 +1156,19 @@ class SessionItem extends vscode.TreeItem {
 }
 
 class FolderItem extends vscode.TreeItem {
-  constructor(label, relativePath, items) {
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
+  constructor(label, relativePath, items, options = {}) {
+    super(
+      label,
+      items.length > 0
+        ? (options.collapsedState ?? vscode.TreeItemCollapsibleState.Expanded)
+        : vscode.TreeItemCollapsibleState.None,
+    );
     this.relativePath = relativePath;
     this.items = items;
-    this.tooltip = relativePath;
-    this.iconPath = new vscode.ThemeIcon('folder');
-    this.contextValue = 'gitguardex.folder';
+    this.description = typeof options.description === 'string' ? options.description : '';
+    this.tooltip = options.tooltip || relativePath || label;
+    this.iconPath = new vscode.ThemeIcon(options.iconId || 'folder');
+    this.contextValue = options.contextValue || 'gitguardex.folder';
   }
 }
 
@@ -1144,11 +1238,214 @@ function sessionDisplayLabel(session) {
 }
 
 function sessionTreeLabel(session) {
-  return session?.branch || sessionDisplayLabel(session);
+  return compactBranchLabel(session?.branch) || sessionDisplayLabel(session);
+}
+
+function worktreeDisplayLabel(worktreePath, sessions) {
+  const sessionList = Array.isArray(sessions)
+    ? sessions.filter(Boolean)
+    : [];
+  if (sessionList.length === 1) {
+    return sessionDisplayLabel(sessionList[0]);
+  }
+
+  return path.basename(String(worktreePath || '').trim()) || 'worktree';
+}
+
+function buildWorktreeDescription(sessions, changedCount) {
+  const sessionList = Array.isArray(sessions)
+    ? sessions.filter(Boolean)
+    : [];
+  const primarySession = sessionList.length === 1 ? sessionList[0] : null;
+  const totalLocks = sessionList.reduce((total, session) => total + (session.lockCount || 0), 0);
+  const descriptionParts = [];
+
+  if (primarySession?.agentName) {
+    descriptionParts.push(primarySession.agentName);
+  } else {
+    descriptionParts.push(formatCountLabel(sessionList.length, 'agent'));
+  }
+
+  const fileCountLabel = primarySession
+    ? sessionFileCountLabel(primarySession)
+    : changedCount > 0
+      ? formatCountLabel(changedCount, 'file')
+      : '';
+  if (fileCountLabel) {
+    descriptionParts.push(fileCountLabel);
+  }
+  if (totalLocks > 0) {
+    descriptionParts.push(formatCountLabel(totalLocks, 'lock'));
+  }
+
+  return descriptionParts.join(' · ');
 }
 
 function sessionWorktreePath(session) {
   return typeof session?.worktreePath === 'string' ? session.worktreePath.trim() : '';
+}
+
+function resolveSessionProjectRelativePath(session) {
+  const repoRoot = typeof session?.repoRoot === 'string' ? session.repoRoot.trim() : '';
+  if (!repoRoot) {
+    return '';
+  }
+
+  const resolveCandidate = (candidatePath) => {
+    const normalizedCandidate = typeof candidatePath === 'string' ? candidatePath.trim() : '';
+    if (!normalizedCandidate) {
+      return '';
+    }
+
+    const absolutePath = path.isAbsolute(normalizedCandidate)
+      ? path.resolve(normalizedCandidate)
+      : path.resolve(repoRoot, normalizedCandidate);
+    if (!isPathWithin(repoRoot, absolutePath) || !fs.existsSync(absolutePath)) {
+      return '';
+    }
+
+    return normalizeRelativePath(path.relative(repoRoot, absolutePath));
+  };
+
+  const isManagedWorktreeRelativePath = (relativePath) => {
+    const normalizedRelativePath = normalizeRelativePath(relativePath);
+    return MANAGED_WORKTREE_RELATIVE_ROOTS.some((managedRoot) => {
+      const normalizedManagedRoot = normalizeRelativePath(managedRoot);
+      return normalizedRelativePath === normalizedManagedRoot
+        || normalizedRelativePath.startsWith(`${normalizedManagedRoot}/`);
+    });
+  };
+
+  const explicitProjectPath = resolveCandidate(session?.projectPath);
+  if (explicitProjectPath && !isManagedWorktreeRelativePath(explicitProjectPath)) {
+    return explicitProjectPath;
+  }
+
+  const namedProjectPath = resolveCandidate(session?.projectName);
+  if (namedProjectPath && !isManagedWorktreeRelativePath(namedProjectPath)) {
+    return namedProjectPath;
+  }
+  return '';
+}
+
+function worktreeProjectRelativePath(sessions) {
+  const projectPaths = uniqueStringList((sessions || [])
+    .map((session) => resolveSessionProjectRelativePath(session))
+    .filter(Boolean));
+  return projectPaths.length === 1 ? projectPaths[0] : '';
+}
+
+function buildProjectScopedDescription(entries) {
+  const sessions = (entries || []).flatMap((entry) => Array.isArray(entry?.sessions) ? entry.sessions : []);
+  if (sessions.length === 0) {
+    return '';
+  }
+
+  const changedCount = sessions.reduce((total, session) => total + (session.changeCount || 0), 0);
+  const lockCount = sessions.reduce((total, session) => total + (session.lockCount || 0), 0);
+  const descriptionParts = [formatCountLabel(sessions.length, 'agent')];
+  if (changedCount > 0) {
+    descriptionParts.push(formatCountLabel(changedCount, 'file'));
+  }
+  if (lockCount > 0) {
+    descriptionParts.push(formatCountLabel(lockCount, 'lock'));
+  }
+  return descriptionParts.join(' · ');
+}
+
+function buildProjectScopedItems(entries, options = {}) {
+  const normalizedEntries = Array.isArray(entries)
+    ? entries.filter((entry) => entry?.item)
+    : [];
+  const projectRoots = [];
+  const rootEntries = [];
+  let hasProjectFolders = false;
+
+  function sortFolders(nodes) {
+    nodes.sort((left, right) => left.label.localeCompare(right.label));
+    for (const node of nodes) {
+      sortFolders(node.children);
+    }
+  }
+
+  for (const entry of normalizedEntries) {
+    const projectRelativePath = normalizeRelativePath(entry.projectRelativePath);
+    if (!projectRelativePath) {
+      rootEntries.push(entry);
+      continue;
+    }
+
+    hasProjectFolders = true;
+    let nodes = projectRoots;
+    let folderPath = '';
+    let parentNode = null;
+    for (const segment of projectRelativePath.split('/').filter(Boolean)) {
+      folderPath = folderPath ? path.posix.join(folderPath, segment) : segment;
+      let folderNode = nodes.find((node) => node.relativePath === folderPath);
+      if (!folderNode) {
+        folderNode = {
+          label: segment,
+          relativePath: folderPath,
+          children: [],
+          entries: [],
+          directEntries: [],
+        };
+        nodes.push(folderNode);
+      }
+      folderNode.entries.push(entry);
+      parentNode = folderNode;
+      nodes = folderNode.children;
+    }
+
+    if (parentNode) {
+      parentNode.directEntries.push(entry);
+    } else {
+      rootEntries.push(entry);
+    }
+  }
+
+  if (!hasProjectFolders) {
+    return rootEntries.map((entry) => entry.item);
+  }
+
+  sortFolders(projectRoots);
+
+  function materialize(nodes) {
+    return nodes.map((node) => new FolderItem(
+      node.label,
+      node.relativePath,
+      [
+        ...materialize(node.children),
+        ...node.directEntries.map((entry) => entry.item),
+      ],
+      {
+        description: buildProjectScopedDescription(node.entries),
+        tooltip: [node.relativePath, buildProjectScopedDescription(node.entries)].filter(Boolean).join('\n'),
+      },
+    ));
+  }
+
+  const items = materialize(projectRoots);
+  if (rootEntries.length === 0) {
+    return items;
+  }
+
+  const rootLabel = typeof options.rootLabel === 'string' ? options.rootLabel.trim() : '';
+  if (!rootLabel) {
+    items.push(...rootEntries.map((entry) => entry.item));
+    return items;
+  }
+
+  items.push(new FolderItem(
+    rootLabel,
+    '',
+    rootEntries.map((entry) => entry.item),
+    {
+      description: buildProjectScopedDescription(rootEntries),
+      tooltip: rootLabel,
+    },
+  ));
+  return items;
 }
 
 function showSessionMessage(message) {
@@ -1845,25 +2142,31 @@ function partitionChangesByOwnership(sessions, changes) {
 function buildGroupedChangeTreeNodes(sessions, changes) {
   const { changesBySession, repoRootChanges } = partitionChangesByOwnership(sessions, changes);
 
-  const items = groupSessionsByWorktree(
-    sessions.filter((session) => (changesBySession.get(session.branch) || []).length > 0),
-  ).map(({ worktreePath, sessions: worktreeSessions }) => {
-    const sessionItems = worktreeSessions.map((session) => (
-      new SessionItem(
-        session,
-        buildChangeTreeNodes(changesBySession.get(session.branch) || []),
-        {
-          label: sessionTreeLabel(session),
-          variant: 'raw',
-        },
-      )
-    ));
-    const changedCount = worktreeSessions.reduce(
-      (total, session) => total + ((changesBySession.get(session.branch) || []).length),
-      0,
-    );
-    return new WorktreeItem(worktreePath, worktreeSessions, sessionItems, { changedCount });
-  });
+  const items = buildProjectScopedItems(
+    groupSessionsByWorktree(
+      sessions.filter((session) => (changesBySession.get(session.branch) || []).length > 0),
+    ).map(({ worktreePath, sessions: worktreeSessions }) => {
+      const sessionItems = worktreeSessions.map((session) => (
+        new SessionItem(
+          session,
+          buildChangeTreeNodes(changesBySession.get(session.branch) || []),
+          {
+            label: sessionTreeLabel(session),
+            variant: 'raw',
+          },
+        )
+      ));
+      const changedCount = worktreeSessions.reduce(
+        (total, session) => total + ((changesBySession.get(session.branch) || []).length),
+        0,
+      );
+      return {
+        projectRelativePath: worktreeProjectRelativePath(worktreeSessions),
+        sessions: worktreeSessions,
+        item: new WorktreeItem(worktreePath, worktreeSessions, sessionItems, { changedCount }),
+      };
+    }),
+  );
 
   if (repoRootChanges.length > 0) {
     items.push(new SectionItem('Repo root', buildChangeTreeNodes(repoRootChanges), {
@@ -1991,6 +2294,12 @@ function commitWorktree(worktreePath, message) {
 function buildSessionDetailItems(session) {
   const provider = resolveSessionProvider(session);
   const snapshot = sessionSnapshotDisplayName(session);
+  const projectRelativePath = resolveSessionProjectRelativePath(session);
+  const badgeSummary = uniqueStringList([
+    ...(session.riskBadges || []),
+    session.deltaLabel || '',
+  ].filter(Boolean)).join(', ');
+  const sessionHealthSummary = buildSessionHealthSummary(session);
   const items = [
     new DetailItem('Recent change', session.recentChangeSummary || 'No recent change summary.', {
       iconId: 'history',
@@ -1998,50 +2307,68 @@ function buildSessionDetailItems(session) {
     new DetailItem('Top files', session.topChangedFilesLabel || 'No tracked file edits.', {
       iconId: 'list-flat',
     }),
-    new DetailItem('Branch', session.branch, {
-      iconId: 'git-branch',
-    }),
-    new DetailItem('Worktree', session.worktreePath, {
-      iconId: 'folder',
-      tooltip: session.worktreePath,
-    }),
   ];
-  if (snapshot) {
-    items.splice(3, 0, new DetailItem('Snapshot', snapshot, {
-      iconId: 'account',
-    }));
-  }
-  if (provider?.label) {
-    items.splice(3, 0, new DetailItem('Provider', provider.label, {
-      iconId: 'sparkle',
-    }));
-  }
-  const badgeSummary = uniqueStringList([
-    ...(session.riskBadges || []),
-    session.deltaLabel || '',
-  ].filter(Boolean)).join(', ');
   if (badgeSummary) {
-    items.splice(2, 0, new DetailItem('Signals', badgeSummary, {
+    items.push(new DetailItem('Signals', badgeSummary, {
       iconId: 'warning',
     }));
   }
+  if (sessionHealthSummary) {
+    items.push(new DetailItem('Session health', sessionHealthSummary, {
+      iconId: 'pulse',
+      tooltip: buildSessionHealthTooltip(session) || sessionHealthSummary,
+    }));
+  }
+  if (provider?.label) {
+    items.push(new DetailItem('Provider', provider.label, {
+      iconId: 'sparkle',
+    }));
+  }
+  if (snapshot) {
+    items.push(new DetailItem('Snapshot', snapshot, {
+      iconId: 'account',
+    }));
+  }
+  if (projectRelativePath) {
+    items.push(new DetailItem('Project', projectRelativePath, {
+      iconId: 'folder',
+      tooltip: projectRelativePath,
+    }));
+  }
+  items.push(new DetailItem('Branch', session.branch, {
+    iconId: 'git-branch',
+  }));
+  items.push(new DetailItem('Worktree', session.worktreePath, {
+    iconId: 'folder',
+    tooltip: session.worktreePath,
+  }));
   return items;
 }
 
 function buildWorkingNowNodes(sessions) {
-  return sortSessionsForWorkingNow(
+  const sessionEntries = sortSessionsForWorkingNow(
     sessions.filter((session) => (
       session.activityKind === 'working' || session.activityKind === 'blocked'
     )),
-  ).map((session) => new SessionItem(session, buildSessionDetailItems(session)));
+  ).map((session) => ({
+    projectRelativePath: resolveSessionProjectRelativePath(session),
+    sessions: [session],
+    item: new SessionItem(session, buildSessionDetailItems(session)),
+  }));
+  return buildProjectScopedItems(sessionEntries, { rootLabel: 'Repo root' });
 }
 
 function buildIdleThinkingNodes(sessions) {
-  return sortSessionsForIdleThinking(
+  const sessionEntries = sortSessionsForIdleThinking(
     sessions.filter((session) => !(
       session.activityKind === 'working' || session.activityKind === 'blocked'
     )),
-  ).map((session) => new SessionItem(session, buildSessionDetailItems(session)));
+  ).map((session) => ({
+    projectRelativePath: resolveSessionProjectRelativePath(session),
+    sessions: [session],
+    item: new SessionItem(session, buildSessionDetailItems(session)),
+  }));
+  return buildProjectScopedItems(sessionEntries, { rootLabel: 'Repo root' });
 }
 
 function buildUnassignedChangeNodes(changes) {
@@ -2056,26 +2383,31 @@ function buildRawActiveAgentGroupNodes(sessions) {
   const groups = [];
   for (const group of SESSION_ACTIVITY_GROUPS) {
     const groupSessions = sessions.filter((session) => session.activityKind === group.kind);
-    const worktreeItems = groupSessionsByWorktree(groupSessions).map(({ worktreePath, sessions: worktreeSessions }) => (
-      new WorktreeItem(
-        worktreePath,
-        worktreeSessions,
-        worktreeSessions.map((session) => new SessionItem(
-          session,
-          buildChangeTreeNodes(session.touchedChanges || []),
+    const worktreeItems = buildProjectScopedItems(
+      groupSessionsByWorktree(groupSessions).map(({ worktreePath, sessions: worktreeSessions }) => ({
+        projectRelativePath: worktreeProjectRelativePath(worktreeSessions),
+        sessions: worktreeSessions,
+        item: new WorktreeItem(
+          worktreePath,
+          worktreeSessions,
+          worktreeSessions.map((session) => new SessionItem(
+            session,
+            buildChangeTreeNodes(session.touchedChanges || []),
+            {
+              label: sessionTreeLabel(session),
+              variant: 'raw',
+            },
+          )),
           {
-            label: sessionTreeLabel(session),
-            variant: 'raw',
+            description: buildWorktreeBranchDescription(worktreeSessions),
+            iconId: 'git-branch',
+            resourceSession: worktreeSessions[0],
+            useSessionDecoration: true,
           },
-        )),
-        {
-          description: buildWorktreeBranchDescription(worktreeSessions),
-          iconId: 'git-branch',
-          resourceSession: worktreeSessions[0],
-          useSessionDecoration: true,
-        },
-      )
-    ));
+        ),
+      })),
+      { rootLabel: 'Repo root' },
+    );
     if (worktreeItems.length > 0) {
       groups.push(new SectionItem(group.label, worktreeItems));
     }
