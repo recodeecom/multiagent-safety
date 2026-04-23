@@ -386,6 +386,79 @@ exit 1
 });
 
 
+test('agent-branch-finish pr mode skips temporary integration helper creation', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  result = runCmd('git', ['checkout', '-b', 'agent/test-pr-skip-integrate-helper'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  commitFile(repoDir, 'agent-pr-skip-integrate.txt', 'agent change\n', 'agent change');
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/skip-integrate"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+  const realGit = runCmd('bash', ['-lc', 'command -v git'], repoDir);
+  assert.equal(realGit.status, 0, realGit.stderr || realGit.stdout);
+  const realGitPath = realGit.stdout.trim();
+  const { fakeBin } = createFakeBin('git', `
+real_git="${realGitPath}"
+if [[ "$1" == "-C" && "$3" == "worktree" && "$4" == "add" ]]; then
+  case "$5" in
+    *"/.omx/.tmp-worktrees/__integrate-"*|*"/.omc/.tmp-worktrees/__integrate-"*)
+      echo "unexpected integration helper worktree in PR mode: $5" >&2
+      exit 99
+      ;;
+  esac
+fi
+"$real_git" "$@"
+`);
+
+  const finish = runBranchFinish(
+    ['--branch', 'agent/test-pr-skip-integrate-helper', '--mode', 'pr', '--cleanup'],
+    repoDir,
+    {
+      GUARDEX_GH_BIN: fakeGhPath,
+      PATH: `${fakeBin}:${process.env.PATH || ''}`,
+    },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-pr-skip-integrate-helper' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+  );
+
+  result = runCmd('git', ['branch', '--list', '__agent_integrate_dev_*'], repoDir);
+  assert.equal(result.stdout.trim(), '', 'temporary integrate branches should not be created in PR mode');
+});
+
+
 test('agent-branch-finish cleanup succeeds when remote delete reports an already-removed branch', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);

@@ -39,3 +39,16 @@ Guardex-managed VS Code repo scan ignores SHALL include `.omx/.tmp-worktrees` an
 - **WHEN** `gx setup` or `gx doctor` refreshes the managed settings
 - **THEN** the existing user-defined entries remain
 - **AND** the resulting ignore list includes `.omx/.tmp-worktrees`, `**/.omx/.tmp-worktrees`, `.omc/.tmp-worktrees`, and `**/.omc/.tmp-worktrees`
+
+### Requirement: explicit PR mode skips temporary integration helpers
+
+`gx branch finish` SHALL skip creating temporary `__integrate-*` worktrees and refs when the operator explicitly selects PR-only finish mode (`--mode pr` or `--via-pr`).
+
+#### Scenario: PR-only finish merges without an integration helper worktree
+
+- **GIVEN** an agent branch is finished with `--mode pr` or `--via-pr`
+- **AND** the source branch already has a normal attached worktree
+- **WHEN** `gx branch finish` prepares the PR flow
+- **THEN** it does not create a temporary `__integrate-*` worktree
+- **AND** it does not create a temporary `__agent_integrate_*` ref
+- **AND** the PR flow still pushes the source branch and opens or merges the PR

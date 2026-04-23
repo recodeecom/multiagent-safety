@@ -277,6 +277,10 @@ created_source_probe=0
 source_probe_path=""
 integration_worktree=""
 integration_branch=""
+merge_completed=0
+merge_status="pr"
+direct_push_error=""
+pr_url=""
 
 cleanup() {
   if [[ -n "$integration_worktree" && -d "$integration_worktree" ]]; then
@@ -358,22 +362,6 @@ if [[ "$should_require_sync" -eq 1 ]] && git -C "$repo_root" show-ref --verify -
   fi
 fi
 
-integration_stamp="$(date +%Y%m%d-%H%M%S)"
-integration_worktree_base="${temp_worktree_root}/__integrate-${BASE_BRANCH//\//__}-${integration_stamp}"
-integration_branch_base="__agent_integrate_${BASE_BRANCH//\//_}_$(date +%Y%m%d_%H%M%S)"
-integration_worktree="$integration_worktree_base"
-integration_branch="$integration_branch_base"
-integration_suffix=1
-while [[ -e "$integration_worktree" ]] || git -C "$repo_root" show-ref --verify --quiet "refs/heads/${integration_branch}"; do
-  integration_worktree="${integration_worktree_base}-${integration_suffix}"
-  integration_branch="${integration_branch_base}_${integration_suffix}"
-  integration_suffix=$((integration_suffix + 1))
-done
-mkdir -p "$(dirname "$integration_worktree")"
-
-git -C "$repo_root" worktree add "$integration_worktree" "$start_ref" >/dev/null
-git -C "$integration_worktree" checkout -b "$integration_branch" >/dev/null
-
 if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRANCH}"; then
   git -C "$source_worktree" fetch origin "$BASE_BRANCH" --quiet
 
@@ -395,16 +383,37 @@ if git -C "$repo_root" show-ref --verify --quiet "refs/remotes/origin/${BASE_BRA
   git -C "$source_worktree" merge --abort >/dev/null 2>&1 || true
 fi
 
-if ! git -C "$integration_worktree" merge --no-ff --no-edit "$SOURCE_BRANCH"; then
-  echo "[agent-branch-finish] Merge conflict detected while merging '${SOURCE_BRANCH}' into '${BASE_BRANCH}'." >&2
-  git -C "$integration_worktree" merge --abort >/dev/null 2>&1 || true
-  exit 1
+should_create_integration_helper=1
+if [[ "$MERGE_MODE" == "pr" && "$PUSH_ENABLED" -eq 1 ]]; then
+  should_create_integration_helper=0
 fi
 
-merge_completed=1
-merge_status="direct"
-direct_push_error=""
-pr_url=""
+if [[ "$should_create_integration_helper" -eq 1 ]]; then
+  integration_stamp="$(date +%Y%m%d-%H%M%S)"
+  integration_worktree_base="${temp_worktree_root}/__integrate-${BASE_BRANCH//\//__}-${integration_stamp}"
+  integration_branch_base="__agent_integrate_${BASE_BRANCH//\//_}_$(date +%Y%m%d_%H%M%S)"
+  integration_worktree="$integration_worktree_base"
+  integration_branch="$integration_branch_base"
+  integration_suffix=1
+  while [[ -e "$integration_worktree" ]] || git -C "$repo_root" show-ref --verify --quiet "refs/heads/${integration_branch}"; do
+    integration_worktree="${integration_worktree_base}-${integration_suffix}"
+    integration_branch="${integration_branch_base}_${integration_suffix}"
+    integration_suffix=$((integration_suffix + 1))
+  done
+  mkdir -p "$(dirname "$integration_worktree")"
+
+  git -C "$repo_root" worktree add "$integration_worktree" "$start_ref" >/dev/null
+  git -C "$integration_worktree" checkout -b "$integration_branch" >/dev/null
+
+  if ! git -C "$integration_worktree" merge --no-ff --no-edit "$SOURCE_BRANCH"; then
+    echo "[agent-branch-finish] Merge conflict detected while merging '${SOURCE_BRANCH}' into '${BASE_BRANCH}'." >&2
+    git -C "$integration_worktree" merge --abort >/dev/null 2>&1 || true
+    exit 1
+  fi
+
+  merge_completed=1
+  merge_status="direct"
+fi
 
 is_local_branch_delete_error() {
   local output="$1"
