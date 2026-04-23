@@ -160,10 +160,44 @@ gx branch start "refactor-payment-pipeline" "claude-name"
    ```bash
    gx branch finish \
      --branch "agent/claude-<name>/<slug>" \
-     --base dev --via-pr --wait-for-merge --cleanup
+     --base main --via-pr --wait-for-merge --cleanup
    ```
 
    Runs the OpenSpec tasks gate, merge-quality gate, and worktree prune — identical to the Codex path.
+
+#### Default Claude finish (non-negotiable)
+
+Claude's default completion command **must** include all four flags in this order: `--via-pr --wait-for-merge --cleanup`. Never stop at bare `--via-pr`; that strands commits and leaves worktrees dirty (see the stalled-worktree recovery section). The only time to deviate is when the user explicitly asks to keep the lane open (e.g. "don't merge yet", "leave the branch").
+
+When branch protection blocks a direct merge, enable auto-merge as soon as the PR URL is known so `--wait-for-merge` can observe the state transition:
+
+```bash
+# finish also prints the PR URL / number; use it immediately:
+gh pr merge <PR-NUMBER> --repo <owner>/<repo> --auto --squash
+```
+
+If checks are slow, extend the poll window rather than dropping the flag:
+
+```bash
+GUARDEX_FINISH_MERGE_TIMEOUT=3600 \
+  gx branch finish \
+    --branch "agent/claude-<name>/<slug>" \
+    --base main --via-pr --wait-for-merge --cleanup
+```
+
+One-shot sweep for multiple finished lanes:
+
+```bash
+gx finish --all       # iterates every agent/* branch the current user owns
+```
+
+If `gx branch finish --cleanup` reports a worktree held by a `__source-probe-*` temp path, recover with:
+
+```bash
+git worktree remove --force .omc/agent-worktrees/agent__claude__<slug>
+git worktree prune
+git branch -D agent/claude/<slug>
+```
 
 Notes:
 
