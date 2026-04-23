@@ -1721,7 +1721,7 @@ test('active-agents extension discovers nested managed-worktree subprojects unde
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
-  assert.equal(repoItem.label, `${path.basename(tempRoot)} -> gitguardex`);
+  assert.equal(repoItem.label, `${path.basename(tempRoot)}/gitguardex`);
   assert.equal(repoItem.repoRoot, nestedRepoRoot);
   assert.equal(repoItem.description, '1 working agent · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
@@ -2148,6 +2148,7 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
+  assert.equal(repoItem.label, `${path.basename(tempRoot)}/gitguardex`);
   assert.equal(repoItem.description, '1 working agent · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), [

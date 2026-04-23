@@ -830,7 +830,7 @@ function repoRootDisplayLabel(repoRoot) {
   return [
     workspaceLabel,
     ...relativePath.split('/').filter(Boolean),
-  ].join(' -> ');
+  ].join('/');
 }
 
 function sessionSnapshotKey(session) {
@@ -1499,6 +1499,28 @@ function worktreeProjectRelativePath(sessions) {
     .map((session) => resolveSessionProjectRelativePath(session))
     .filter(Boolean));
   return projectPaths.length === 1 ? projectPaths[0] : '';
+}
+
+function repoEntryDisplayLabel(repoRoot, sessions) {
+  const repoLabel = repoRootDisplayLabel(repoRoot);
+  const projectPaths = uniqueStringList((sessions || [])
+    .map((session) => resolveSessionProjectRelativePath(session))
+    .filter(Boolean));
+  if (projectPaths.length !== 1) {
+    return repoLabel;
+  }
+
+  const [projectRelativePath] = projectPaths;
+  const hasRootScopedSession = (sessions || []).some(
+    (session) => !resolveSessionProjectRelativePath(session),
+  );
+  if (!projectRelativePath || hasRootScopedSession) {
+    return repoLabel;
+  }
+  if (repoLabel.endsWith(`/${projectRelativePath}`)) {
+    return repoLabel;
+  }
+  return `${repoLabel}/${projectRelativePath}`;
 }
 
 function buildProjectScopedDescription(entries) {
@@ -2966,6 +2988,7 @@ class ActiveAgentsProvider {
     }
 
     return repoEntries.map((entry) => new RepoItem(entry.repoRoot, entry.sessions, entry.changes, {
+      label: repoEntryDisplayLabel(entry.repoRoot, entry.sessions),
       overview: entry.overview,
       unassignedChanges: entry.unassignedChanges,
       lockEntries: entry.lockEntries,
