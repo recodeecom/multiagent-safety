@@ -198,6 +198,49 @@ test('agent-branch-start restores protected-branch changes when startup fails af
   assert.doesNotMatch(stashList.stdout, /guardex-auto-transfer-/);
 });
 
+test('installed agent-branch-start script survives auto-transfer stash lookup under pipefail', () => {
+  const repoDir = initRepoOnBranch('main');
+  seedCommit(repoDir);
+  attachOriginRemoteForBranch(repoDir, 'main');
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const packageJsonPath = path.join(repoDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  packageJson.name = 'demo-script-auto-transfer';
+  fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
+
+  const branchStartScript = path.resolve(__dirname, '..', 'scripts', 'agent-branch-start.sh');
+
+  result = runCmd('bash', [branchStartScript, 'script-auto-transfer', 'bot'], repoDir, {
+    GUARDEX_CLI_ENTRY: cliPath,
+    GUARDEX_NODE_BIN: process.execPath,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Created branch: agent\/codex\/script-auto-transfer-/);
+
+  const agentWorktree = extractCreatedWorktree(result.stdout);
+  assert.equal(fs.existsSync(path.join(agentWorktree, 'package.json')), true, 'worktree should be created');
+
+  const rootStatus = runCmd('git', ['status', '--short'], repoDir);
+  assert.equal(rootStatus.status, 0, rootStatus.stderr || rootStatus.stdout);
+  assert.equal(rootStatus.stdout.trim(), '', 'base branch checkout should be clean after auto-transfer');
+
+  const stashList = runCmd('git', ['stash', 'list'], repoDir);
+  assert.equal(stashList.status, 0, stashList.stderr || stashList.stdout);
+  assert.doesNotMatch(stashList.stdout, /guardex-auto-transfer-/);
+});
+
 
 test('agent-branch-start leaves removed workflow helpers out of new worktrees', () => {
   const repoDir = initRepo();

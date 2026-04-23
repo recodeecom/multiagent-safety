@@ -370,6 +370,19 @@ has_local_changes() {
   return 1
 }
 
+resolve_stash_ref_by_message() {
+  local root="$1"
+  local message="$2"
+  local stash_list
+  stash_list="$(git -C "$root" stash list 2>/dev/null || true)"
+  if [[ -z "$stash_list" ]]; then
+    printf ''
+    return 0
+  fi
+
+  awk -v msg="$message" '$0 ~ msg { ref=$1; sub(/:$/, "", ref); print ref; exit }' <<<"$stash_list"
+}
+
 resolve_protected_branches() {
   local root="$1"
   local raw
@@ -616,10 +629,7 @@ if [[ -n "$current_branch" && "$current_branch" != "HEAD" ]] && is_protected_bra
   if has_local_changes "$repo_root"; then
     auto_transfer_message="guardex-auto-transfer-${timestamp}-${agent_slug}-${task_slug}"
     if git -C "$repo_root" stash push --include-untracked --message "$auto_transfer_message" >/dev/null 2>&1; then
-      auto_transfer_stash_ref="$(
-        git -C "$repo_root" stash list \
-          | awk -v msg="$auto_transfer_message" '$0 ~ msg { ref=$1; sub(/:$/, "", ref); print ref; exit }'
-      )"
+      auto_transfer_stash_ref="$(resolve_stash_ref_by_message "$repo_root" "$auto_transfer_message")"
       if [[ -n "$auto_transfer_stash_ref" ]]; then
         auto_transfer_source_branch="$current_branch"
         echo "[agent-branch-start] Detected local changes on protected branch '${current_branch}'. Moving them to '${branch_name}'..."
