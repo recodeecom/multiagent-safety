@@ -3049,6 +3049,7 @@ class ActiveAgentsProvider {
           }),
         ], {
           description: '1',
+          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
         }),
       ];
 
@@ -3056,6 +3057,7 @@ class ActiveAgentsProvider {
       if (workingNowItems.length > 0) {
         sectionItems.push(new SectionItem('Working now', workingNowItems, {
           description: String(workingNowItems.length),
+          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
           iconId: 'loading~spin',
         }));
       }
@@ -3096,7 +3098,7 @@ class ActiveAgentsProvider {
       if (advancedItems.length > 0) {
         sectionItems.push(new SectionItem('Advanced details', advancedItems, {
           description: String(advancedItems.length),
-          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
+          collapsedState: vscode.TreeItemCollapsibleState.Expanded,
           iconId: 'list-tree',
         }));
       }

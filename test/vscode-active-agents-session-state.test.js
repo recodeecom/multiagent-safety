@@ -410,6 +410,7 @@ function createMockVscode(tempRoot) {
       TreeItemCollapsibleState: {
         None: 0,
         Expanded: 1,
+        Collapsed: 2,
       },
       StatusBarAlignment: {
         Left: 1,
@@ -2123,6 +2124,11 @@ test('active-agents extension shows grouped repo changes beside active agents', 
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
   const unassignedSection = await getSectionByLabel(provider, repoItem, 'Unassigned changes');
   const advancedSection = await getSectionByLabel(provider, repoItem, 'Advanced details');
+  const overviewSection = await getSectionByLabel(provider, repoItem, 'Overview');
+
+  assert.equal(overviewSection.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+  assert.equal(workingSection.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+  assert.equal(advancedSection.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
 
   const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
   assert.equal(worktreeItem, null);
@@ -2251,6 +2257,7 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
     'Advanced details',
   ]);
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
+  const overviewSection = await getSectionByLabel(provider, repoItem, 'Overview');
   const [projectFolder] = await provider.getChildren(workingSection);
   assert.equal(projectFolder.label, 'gitguardex');
   assert.equal(projectFolder.description, '1 agent · 1 file');
@@ -2264,6 +2271,9 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
   assert.match(sessionItem.tooltip, /Snapshot nagyviktor@edixa\.com/);
 
   const advancedSection = await getSectionByLabel(provider, repoItem, 'Advanced details');
+  assert.equal(overviewSection.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+  assert.equal(workingSection.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+  assert.equal(advancedSection.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
   const activeAgentTree = await getSectionByLabel(provider, advancedSection, 'Active agent tree');
   const rawWorkingSection = await getSectionByLabel(provider, activeAgentTree, 'WORKING NOW');
   const [rawProjectFolder] = await provider.getChildren(rawWorkingSection);

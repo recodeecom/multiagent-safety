@@ -3069,6 +3069,7 @@ class ActiveAgentsProvider {
       if (workingNowItems.length > 0) {
         sectionItems.push(new SectionItem('Working now', workingNowItems, {
           description: String(workingNowItems.length),
+          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
           iconId: 'loading~spin',
         }));
       }
