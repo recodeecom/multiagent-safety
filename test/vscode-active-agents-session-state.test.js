@@ -765,6 +765,31 @@ test('session-schema falls back to managed worktree AGENT.lock telemetry when la
   assert.equal(session.telemetryUpdatedAt, '2026-04-22T08:56:00.000Z');
 });
 
+test('session-schema falls back to plain managed worktrees when launcher state and AGENT.lock are absent', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-managed-fallback-'));
+  const worktreePath = path.join(
+    tempRoot,
+    '.omx',
+    'agent-worktrees',
+    'agent__codex__plain-visible-task',
+  );
+  initGitRepo(worktreePath);
+  runGit(worktreePath, ['checkout', '-b', 'agent/codex/plain-visible-task']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'tracked.txt']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'tracked.txt'), 'base\nchanged\n', 'utf8');
+
+  const [session] = sessionSchema.readActiveSessions(tempRoot);
+  assert.equal(session.sourceKind, 'managed-worktree');
+  assert.equal(session.branch, 'agent/codex/plain-visible-task');
+  assert.equal(session.agentName, 'codex');
+  assert.equal(session.taskName, 'agent__codex__plain-visible-task');
+  assert.equal(session.activityKind, 'working');
+  assert.equal(session.activityCountLabel, '1 file');
+  assert.equal(session.telemetrySource, 'managed-worktree');
+});
+
 test('session-schema prefers live worktree telemetry over a dead launcher record for the same worktree', () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-active-session-lock-prefer-'));
   const worktreePath = path.join(
@@ -1719,6 +1744,50 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
   assert.equal(sessionItem.label, 'agent/codex/lock-visible-task');
   assert.match(sessionItem.description, /^working · 1 file · /);
   assert.match(sessionItem.tooltip, /Telemetry updated 2026-04-22T09:01:00.000Z/);
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
+test('active-agents extension surfaces plain managed worktrees from workspace fallback', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-managed-worktree-view-'));
+  initGitRepo(tempRoot);
+
+  const worktreePath = path.join(
+    tempRoot,
+    '.omx',
+    'agent-worktrees',
+    'agent__codex__plain-visible-task',
+  );
+  initGitRepo(worktreePath);
+  runGit(worktreePath, ['checkout', '-b', 'agent/codex/plain-visible-task']);
+  fs.mkdirSync(path.join(worktreePath, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\n', 'utf8');
+  runGit(worktreePath, ['add', 'src/live.js']);
+  runGit(worktreePath, ['commit', '-m', 'baseline']);
+  fs.writeFileSync(path.join(worktreePath, 'src', 'live.js'), 'base\nchanged\n', 'utf8');
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async () => [];
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const provider = registrations.providers[0].provider;
+  const [repoItem] = await provider.getChildren();
+  assert.equal(repoItem.description, '1 active · 1 working · 1 changed');
+
+  const [agentsSection] = await provider.getChildren(repoItem);
+  const [workingSection] = await provider.getChildren(agentsSection);
+  const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
+  assert.equal(workingSection.label, 'WORKING NOW');
+  assert.equal(worktreeItem.label, path.basename(worktreePath));
+  assert.equal(sessionItem.label, 'agent/codex/plain-visible-task');
+  assert.match(sessionItem.description, /^working · 1 file · /);
+  assert.match(sessionItem.tooltip, /Started /);
 
   for (const subscription of context.subscriptions) {
     subscription.dispose?.();

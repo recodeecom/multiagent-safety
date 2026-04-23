@@ -867,6 +867,23 @@ function deriveAgentNameFromBranch(branch) {
   return 'agent';
 }
 
+function isManagedAgentBranch(branch) {
+  return toNonEmptyString(branch).startsWith('agent/');
+}
+
+function deriveManagedWorktreeStartedAt(worktreePath, now = Date.now()) {
+  try {
+    const stats = fs.statSync(worktreePath);
+    if (Number.isFinite(stats.mtimeMs)) {
+      return new Date(stats.mtimeMs).toISOString();
+    }
+  } catch (_error) {
+    // Directory mtime is best-effort context only; fall back to current scan time.
+  }
+
+  return new Date(now).toISOString();
+}
+
 function flattenTelemetrySnapshotSessions(lockPayload) {
   const flattened = [];
   const snapshots = Array.isArray(lockPayload?.snapshots) ? lockPayload.snapshots : [];
@@ -962,6 +979,48 @@ function buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options =
   return session;
 }
 
+function buildManagedWorktreeSession(repoRoot, worktreePath, options = {}) {
+  const now = options.now || Date.now();
+  const branch = readWorktreeBranch(worktreePath);
+  if (!branch || branch === 'HEAD' || !isManagedAgentBranch(branch)) {
+    return null;
+  }
+
+  const label = deriveSessionLabel(branch, worktreePath);
+  const startedAt = deriveManagedWorktreeStartedAt(worktreePath, now);
+  const session = {
+    schemaVersion: SESSION_SCHEMA_VERSION,
+    repoRoot: path.resolve(repoRoot),
+    branch,
+    taskName: label,
+    latestTaskPreview: '',
+    agentName: deriveAgentNameFromBranch(branch),
+    worktreePath: path.resolve(worktreePath),
+    pid: null,
+    cliName: 'gx',
+    taskMode: '',
+    openspecTier: '',
+    taskRoutingReason: '',
+    startedAt,
+    lastHeartbeatAt: '',
+    state: '',
+    filePath: path.join(worktreePath, '.git'),
+    label,
+    changedPaths: [],
+    worktreeChangedPaths: [],
+    sourceKind: 'managed-worktree',
+    telemetryUpdatedAt: '',
+    telemetrySource: 'managed-worktree',
+    lockSnapshotCount: 0,
+    lockSessionCount: 0,
+    collaboration: false,
+  };
+
+  session.elapsedLabel = formatElapsedFrom(session.startedAt, now);
+  Object.assign(session, deriveSessionActivity(session, { now }));
+  return session;
+}
+
 function readWorktreeLockSessions(repoRoot, options = {}) {
   const sessions = [];
   for (const managedRoot of resolveManagedWorktreeRoots(repoRoot)) {
@@ -998,6 +1057,48 @@ function readWorktreeLockSessions(repoRoot, options = {}) {
       }
 
       sessions.push(buildWorktreeLockSession(repoRoot, worktreePath, lockPayload, options));
+    }
+  }
+
+  return sortSessionsByTimestamp(sessions);
+}
+
+function readManagedWorktreeSessions(repoRoot, options = {}) {
+  const lockSessions = readWorktreeLockSessions(repoRoot, options);
+  const lockSessionsByWorktree = new Map(
+    lockSessions.map((session) => [path.resolve(session.worktreePath), session]),
+  );
+  const sessions = [];
+
+  for (const managedRoot of resolveManagedWorktreeRoots(repoRoot)) {
+    if (!fs.existsSync(managedRoot)) {
+      continue;
+    }
+
+    let entries;
+    try {
+      entries = fs.readdirSync(managedRoot, { withFileTypes: true });
+    } catch (_error) {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const worktreePath = path.join(managedRoot, entry.name);
+      const worktreeKey = path.resolve(worktreePath);
+      const lockSession = lockSessionsByWorktree.get(worktreeKey);
+      if (lockSession) {
+        sessions.push(lockSession);
+        continue;
+      }
+
+      const managedSession = buildManagedWorktreeSession(repoRoot, worktreePath, options);
+      if (managedSession) {
+        sessions.push(managedSession);
+      }
     }
   }
 
@@ -1061,7 +1162,7 @@ function readActiveSessions(repoRoot, options = {}) {
 
   return mergeSessionSources(
     sortSessionsByTimestamp(sessionFileSessions),
-    readWorktreeLockSessions(repoRoot, { now }),
+    readManagedWorktreeSessions(repoRoot, { now }),
   );
 }
 
@@ -1096,6 +1197,7 @@ module.exports = {
   parseRepoChangeLine,
   previewChangedPaths,
   readActiveSessions,
+  readManagedWorktreeSessions,
   readWorktreeLockSessions,
   readRepoChanges,
   deriveRepoChangeStatus,

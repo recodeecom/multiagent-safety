@@ -3,7 +3,7 @@
   "displayName": "GitGuardex Active Agents",
   "description": "Shows live Guardex sandbox sessions and repo changes inside VS Code Source Control.",
   "publisher": "recodeee",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "license": "MIT",
   "icon": "icon.png",
   "engines": {
