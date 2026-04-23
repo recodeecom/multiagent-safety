@@ -15,6 +15,7 @@ CLEANUP_AFTER_MERGE_RAW="${GUARDEX_FINISH_CLEANUP:-false}"
 WAIT_FOR_MERGE_RAW="${GUARDEX_FINISH_WAIT_FOR_MERGE:-false}"
 WAIT_TIMEOUT_SECONDS_RAW="${GUARDEX_FINISH_WAIT_TIMEOUT_SECONDS:-1800}"
 WAIT_POLL_SECONDS_RAW="${GUARDEX_FINISH_WAIT_POLL_SECONDS:-10}"
+PARENT_GITLINK_AUTO_COMMIT_RAW="${GUARDEX_FINISH_PARENT_GITLINK_AUTO_COMMIT:-true}"
 
 run_guardex_cli() {
   if [[ -n "$CLI_ENTRY" ]]; then
@@ -67,6 +68,7 @@ CLEANUP_AFTER_MERGE="$(normalize_bool "$CLEANUP_AFTER_MERGE_RAW" "0")"
 WAIT_FOR_MERGE="$(normalize_bool "$WAIT_FOR_MERGE_RAW" "0")"
 WAIT_TIMEOUT_SECONDS="$(normalize_int "$WAIT_TIMEOUT_SECONDS_RAW" "1800" "30")"
 WAIT_POLL_SECONDS="$(normalize_int "$WAIT_POLL_SECONDS_RAW" "10" "0")"
+PARENT_GITLINK_AUTO_COMMIT="$(normalize_bool "$PARENT_GITLINK_AUTO_COMMIT_RAW" "1")"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -117,6 +119,14 @@ while [[ $# -gt 0 ]]; do
       WAIT_POLL_SECONDS="$(normalize_int "${2:-}" "10" "0")"
       shift 2
       ;;
+    --parent-gitlink-commit)
+      PARENT_GITLINK_AUTO_COMMIT=1
+      shift
+      ;;
+    --no-parent-gitlink-commit)
+      PARENT_GITLINK_AUTO_COMMIT=0
+      shift
+      ;;
     --mode)
       MERGE_MODE="${2:-auto}"
       shift 2
@@ -131,7 +141,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       echo "[agent-branch-finish] Unknown argument: $1" >&2
-      echo "Usage: $0 [--base <branch>] [--branch <branch>] [--no-push] [--cleanup|--no-cleanup] [--wait-for-merge|--no-wait-for-merge] [--wait-timeout-seconds <n>] [--wait-poll-seconds <n>] [--keep-remote-branch|--delete-remote-branch] [--mode auto|direct|pr|--via-pr|--direct-only]" >&2
+      echo "Usage: $0 [--base <branch>] [--branch <branch>] [--no-push] [--cleanup|--no-cleanup] [--wait-for-merge|--no-wait-for-merge] [--wait-timeout-seconds <n>] [--wait-poll-seconds <n>] [--parent-gitlink-commit|--no-parent-gitlink-commit] [--keep-remote-branch|--delete-remote-branch] [--mode auto|direct|pr|--via-pr|--direct-only]" >&2
       exit 1
       ;;
   esac
@@ -499,6 +509,78 @@ read_merged_pr_for_head() {
   return 0
 }
 
+maybe_auto_commit_parent_gitlink() {
+  local base_wt="${1:-}"
+  local base_wt_real=""
+  local super_root_raw=""
+  local super_root=""
+  local subrepo_rel=""
+  local gitlink_mode=""
+  local add_output=""
+  local commit_output=""
+  local commit_message=""
+
+  if [[ "$PARENT_GITLINK_AUTO_COMMIT" -ne 1 || "$PUSH_ENABLED" -ne 1 ]]; then
+    return 0
+  fi
+  if [[ -z "$base_wt" ]]; then
+    return 0
+  fi
+  if ! base_wt_real="$(cd "$base_wt" && pwd -P 2>/dev/null)"; then
+    return 0
+  fi
+  if [[ "$base_wt_real" != "$repo_common_root" ]]; then
+    return 0
+  fi
+  if ! is_clean_worktree "$repo_common_root"; then
+    echo "[agent-branch-finish] Parent gitlink auto-commit skipped; nested base worktree is dirty: ${repo_common_root}" >&2
+    return 0
+  fi
+
+  super_root_raw="$(git -C "$repo_common_root" rev-parse --show-superproject-working-tree 2>/dev/null || true)"
+  if [[ -z "$super_root_raw" ]]; then
+    return 0
+  fi
+  if ! super_root="$(cd "$super_root_raw" && pwd -P 2>/dev/null)"; then
+    return 0
+  fi
+
+  case "$repo_common_root" in
+    "$super_root"/*) subrepo_rel="${repo_common_root#"$super_root"/}" ;;
+    *) return 0 ;;
+  esac
+  if [[ -z "$subrepo_rel" || "$subrepo_rel" == "$repo_common_root" ]]; then
+    return 0
+  fi
+
+  gitlink_mode="$(git -C "$super_root" ls-files -s -- "$subrepo_rel" | awk 'NR == 1 { print $1 }')"
+  if [[ "$gitlink_mode" != "160000" ]]; then
+    return 0
+  fi
+  if git -C "$super_root" diff --quiet -- "$subrepo_rel" \
+    && git -C "$super_root" diff --cached --quiet -- "$subrepo_rel"; then
+    return 0
+  fi
+
+  if ! add_output="$(git -C "$super_root" add -- "$subrepo_rel" 2>&1)"; then
+    echo "[agent-branch-finish] Warning: parent gitlink staging failed for ${subrepo_rel} in ${super_root}." >&2
+    [[ -n "$add_output" ]] && echo "$add_output" >&2
+    return 0
+  fi
+  if git -C "$super_root" diff --cached --quiet -- "$subrepo_rel"; then
+    return 0
+  fi
+
+  commit_message="Update ${subrepo_rel} subrepo pointer"
+  if ! commit_output="$(git -C "$super_root" commit -m "$commit_message" -- "$subrepo_rel" 2>&1)"; then
+    echo "[agent-branch-finish] Warning: parent gitlink auto-commit failed in ${super_root}." >&2
+    [[ -n "$commit_output" ]] && echo "$commit_output" >&2
+    return 0
+  fi
+
+  echo "[agent-branch-finish] Parent gitlink auto-committed '${subrepo_rel}' in ${super_root}."
+}
+
 wait_for_pr_merge() {
   local deadline
   deadline=$(( $(date +%s) + WAIT_TIMEOUT_SECONDS ))
@@ -667,6 +749,7 @@ base_worktree="$(get_worktree_for_branch "$BASE_BRANCH")"
 if [[ -n "$base_worktree" ]] && is_clean_worktree "$base_worktree" && [[ "$PUSH_ENABLED" -eq 1 ]]; then
   git -C "$base_worktree" pull --ff-only origin "$BASE_BRANCH" >/dev/null 2>&1 || true
 fi
+maybe_auto_commit_parent_gitlink "$base_worktree"
 
 if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   if [[ "$source_worktree" == "$repo_root" ]]; then

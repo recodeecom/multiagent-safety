@@ -770,6 +770,7 @@ function parseFinishArgs(rawArgs, defaults = {}) {
     cleanup: defaults.cleanup ?? true,
     keepRemote: false,
     noAutoCommit: false,
+    parentGitlinkCommit: defaults.parentGitlinkCommit ?? true,
     failFast: false,
     commitMessage: '',
     mergeMode: defaults.mergeMode || 'pr',
@@ -863,6 +864,14 @@ function parseFinishArgs(rawArgs, defaults = {}) {
     }
     if (arg === '--no-auto-commit') {
       options.noAutoCommit = true;
+      continue;
+    }
+    if (arg === '--parent-gitlink-commit') {
+      options.parentGitlinkCommit = true;
+      continue;
+    }
+    if (arg === '--no-parent-gitlink-commit') {
+      options.parentGitlinkCommit = false;
       continue;
     }
     if (arg === '--fail-fast') {

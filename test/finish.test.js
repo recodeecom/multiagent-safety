@@ -154,6 +154,80 @@ test('finish command auto-commits dirty agent worktree and runs PR finish flow f
 });
 
 
+test('agent-branch-finish auto-commits parent gitlink after nested repo finish', () => {
+  const parentDir = initRepoOnBranch('main');
+  seedCommit(parentDir);
+
+  const childDir = path.join(parentDir, 'packages', 'child');
+  fs.mkdirSync(childDir, { recursive: true });
+  let result = runCmd('git', ['init', '-b', 'main'], childDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  configureGitIdentity(childDir);
+  fs.writeFileSync(
+    path.join(childDir, 'package.json'),
+    JSON.stringify({ name: 'child', private: true, scripts: {} }, null, 2) + '\n',
+    'utf8',
+  );
+  seedCommit(childDir);
+  attachOriginRemoteForBranch(childDir, 'main');
+
+  result = runNode(['setup', '--target', childDir, '--no-global-install', '--no-recursive'], childDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], childDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], childDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['push', 'origin', 'main'], childDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runCmd('git', ['add', 'packages/child'], parentDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['commit', '-m', 'track child subrepo'], parentDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  fs.writeFileSync(path.join(parentDir, 'unrelated-parent.txt'), 'already staged\n', 'utf8');
+  result = runCmd('git', ['add', 'unrelated-parent.txt'], parentDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  result = runBranchStart(['gitlink-finish', 'bot', 'main'], childDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const agentBranch = extractCreatedBranch(result.stdout);
+  const agentWorktree = extractCreatedWorktree(result.stdout);
+  commitFile(agentWorktree, 'finished.txt', 'nested branch finished\n', 'finish nested repo');
+
+  result = runBranchFinish([
+    '--branch',
+    agentBranch,
+    '--base',
+    'main',
+    '--direct-only',
+    '--cleanup',
+    '--parent-gitlink-commit',
+  ], childDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Parent gitlink auto-committed 'packages\/child'/);
+
+  const parentSubject = runCmd('git', ['log', '-1', '--pretty=%s'], parentDir);
+  assert.equal(parentSubject.status, 0, parentSubject.stderr || parentSubject.stdout);
+  assert.equal(parentSubject.stdout.trim(), 'Update packages/child subrepo pointer');
+
+  const parentCommitFiles = runCmd('git', ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'], parentDir);
+  assert.equal(parentCommitFiles.status, 0, parentCommitFiles.stderr || parentCommitFiles.stdout);
+  assert.deepEqual(parentCommitFiles.stdout.trim().split('\n'), ['packages/child']);
+
+  const stagedParentFiles = runCmd('git', ['diff', '--cached', '--name-only'], parentDir);
+  assert.equal(stagedParentFiles.status, 0, stagedParentFiles.stderr || stagedParentFiles.stdout);
+  assert.deepEqual(stagedParentFiles.stdout.trim().split('\n'), ['unrelated-parent.txt']);
+
+  const parentStatus = runCmd('git', ['status', '--short', '--', 'packages/child'], parentDir);
+  assert.equal(parentStatus.status, 0, parentStatus.stderr || parentStatus.stdout);
+  assert.equal(parentStatus.stdout.trim(), '', 'parent gitlink should be committed cleanly');
+});
+
+
 test('agent-branch-finish auto-syncs source branch when behind origin/dev', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);

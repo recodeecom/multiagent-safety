@@ -317,6 +317,7 @@ function finish(rawArgs, defaults = {}) {
       if (options.keepRemote) {
         finishArgs.push('--keep-remote-branch');
       }
+      finishArgs.push(options.parentGitlinkCommit ? '--parent-gitlink-commit' : '--no-parent-gitlink-commit');
 
       if (options.dryRun) {
         console.log(`[${TOOL_NAME}] [dry-run] Would run: gx branch finish ${finishArgs.join(' ')}`);

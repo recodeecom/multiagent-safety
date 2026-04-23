@@ -176,6 +176,7 @@ test('parseFinishArgs rejects non-agent branches and preserves explicit override
     '--direct-only',
     '--keep-remote',
     '--no-auto-commit',
+    '--no-parent-gitlink-commit',
     '--fail-fast',
     '--commit-message',
     'Finish the active lane',
@@ -187,6 +188,7 @@ test('parseFinishArgs rejects non-agent branches and preserves explicit override
   assert.equal(options.mergeMode, 'direct');
   assert.equal(options.keepRemote, true);
   assert.equal(options.noAutoCommit, true);
+  assert.equal(options.parentGitlinkCommit, false);
   assert.equal(options.failFast, true);
   assert.equal(options.commitMessage, 'Finish the active lane');
 });
