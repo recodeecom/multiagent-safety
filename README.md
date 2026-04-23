@@ -111,6 +111,16 @@ gx setup
 
 That's it. Install and update via `@imdeadpool/guardex`. Setup installs the minimal repo footprint: managed hook shims, repo-local state, AGENTS wiring, OpenSpec/caveman/OMX scaffolding, and a small set of repo-local helper assets. Aliases: `gx` (preferred), `gitguardex` (full), `guardex` (legacy compatibility).
 
+### Install surfaces at a glance
+
+| Goal | Command | Installs |
+| --- | --- | --- |
+| Global Guardex CLI | `npm i -g @imdeadpool/guardex` | `gx`, `gitguardex`, `guardex`, and the CLI runtime |
+| User-level Codex/Claude companions | `gx install-agent-skills` | `~/.codex/skills/gitguardex/SKILL.md`, `~/.codex/skills/guardex-merge-skills-to-dev/SKILL.md`, and `~/.claude/commands/gitguardex.md` |
+| Generic repo skill catalog | `npx skills add recodee/` or `npx skills add recodee/gitguardex` | the repo-root `skills/` catalog for agents that support the generic installer |
+
+These paths are complementary, not chained together. `npm i -g @imdeadpool/guardex` does not auto-run `npx skills add ...`.
+
 ---
 
 ## How `AGENTS.md` and `CLAUDE.md` are handled
@@ -140,7 +150,14 @@ That's it. Install and update via `@imdeadpool/guardex`. Setup installs the mini
 </div>
 
 > [!NOTE]
-> In this repo, `CLAUDE.md` is a symlink to `AGENTS.md`, so Claude reads the same contract. Optional Codex/Claude companion files still install at the user level with `gx install-agent-skills`, while the generic repo skill catalog is available through `npx skills add recodeee/` or directly via `npx skills add recodeee/gitguardex`.
+> In this repo, `CLAUDE.md` is a symlink to `AGENTS.md`, so Claude reads the same contract as Codex.
+>
+> Keep the install paths separate:
+> - `npm i -g @imdeadpool/guardex` installs the Guardex CLI.
+> - `gx install-agent-skills` installs the user-level Codex/Claude companion files.
+> - `npx skills add recodee/` or `npx skills add recodee/gitguardex` installs the generic repo skill catalog.
+>
+> The global npm install does not auto-run the generic `npx skills add ...` flow.
 
 ### Decision flow
 
@@ -461,17 +478,19 @@ Repo: <https://github.com/Yeachan-Heo/oh-my-claudecode>
 
 ### GitGuardex skills - install the repo skill catalog through `npx skills`
 
-For agents that already support the generic `skills` installer flow, GitGuardex now exposes its repo skill catalog directly. You can start from the broader `recodeee` source or jump straight into this repo's catalog.
+For agents that already support the generic `skills` installer flow, GitGuardex exposes its repo skill catalog directly. Use it as a separate install path after the CLI install. You can start from the broader `recodee` source or jump straight into this repo's catalog.
 
 ```sh
-npx skills add recodeee/
+npx skills add recodee/
 ```
 
 ```sh
-npx skills add recodeee/gitguardex
+npx skills add recodee/gitguardex
 ```
 
-This repo currently exposes `gitguardex` and `guardex-merge-skills-to-dev` through that flow. If the picker does not show a separate `guardex` skill, that is expected: `guardex` remains the legacy CLI alias, while the repo skill itself is named `gitguardex`. Use `gx install-agent-skills` when you want the Codex/Claude user-home startup files instead of the generic `skills` catalog.
+This repo currently exposes `gitguardex` and `guardex-merge-skills-to-dev` through that flow. If the picker does not show a separate `guardex` skill, that is expected: `guardex` remains the legacy CLI alias, while the repo skill itself is named `gitguardex`.
+
+Need the Codex/Claude user-home startup files instead? Run `gx install-agent-skills`. Need the generic repo catalog? Run `npx skills add ...`. They solve different setup surfaces.
 
 Repo: <https://github.com/recodeee/gitguardex>
 [![GitHub stars](https://img.shields.io/github/stars/recodeee/gitguardex?style=social)](https://github.com/recodeee/gitguardex)
@@ -626,7 +645,7 @@ vscode/guardex-active-agents/README.md
 
 Legacy compatibility note: older repos may still contain repo-local workflow scripts under `scripts/`. Direct `gx branch ...`, `gx locks ...`, `gx finish`, `gx cleanup`, `gx merge`, and `gx migrate` do not require them. `gx migrate` removes those leftover workflow shims by default. The CLI still honors repo-local `scripts/review-bot-watch.sh` and `scripts/codex-agent.sh` when they are already present so older repos can keep working during migration.
 
-Optional Codex/Claude user-level companions still install with `gx install-agent-skills`; the generic repo skill catalog is available with `npx skills add recodeee/` or directly via `npx skills add recodeee/gitguardex`. Neither path copies those user-home files into each repo.
+Optional Codex/Claude user-level companions still install with `gx install-agent-skills`; the generic repo skill catalog is available with `npx skills add recodee/` or directly via `npx skills add recodee/gitguardex`. Neither path copies those user-home files into each repo, and the global Guardex npm install does not trigger the `npx skills add ...` path for you.
 
 ---
 
@@ -691,7 +710,7 @@ npm pack --dry-run
 
 ### v7.0.26
 - Bumped `@imdeadpool/guardex` from `7.0.25` to `7.0.26` so npm can publish a fresh version after `v7.0.25` reached GitHub Releases while the registry stayed on `7.0.24`.
-- README now documents both `npx skills add recodeee/` and `npx skills add recodeee/gitguardex`, and explains why the picker shows `gitguardex` instead of a separate `guardex` skill.
+- README now documents both `npx skills add recodee/` and `npx skills add recodee/gitguardex`, clarifies that the global Guardex npm install does not auto-run the generic skills installer, and explains why the picker shows `gitguardex` instead of a separate `guardex` skill.
 - Keep the release scoped to version metadata plus the already-merged README installer guidance on `main`; no additional CLI/runtime behavior changed in this lane.
 
 ### v7.0.25

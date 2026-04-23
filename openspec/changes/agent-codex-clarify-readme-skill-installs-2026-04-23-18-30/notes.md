@@ -1,0 +1,2 @@
+- Handoff: branch=`agent/codex/clarify-readme-skill-installs-2026-04-23-18-30`; scope=`README install wording, generic skills path spelling, focused metadata test sync`; action=`clarify that global Guardex install, user-level companion install, and generic npx skills install are separate paths, then verify with focused tests`.
+- Result: README now separates `npm i -g @imdeadpool/guardex`, `gx install-agent-skills`, and `npx skills add recodee/...`; focused verification passed with `node --test test/metadata.test.js` (19/19).

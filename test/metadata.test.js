@@ -73,8 +73,9 @@ test('README documents gx release as README-driven GitHub release writer', () =>
 
 test('README advertises the repo skills installer path and root skills stay in sync with shipped templates', () => {
   const readme = fs.readFileSync(readmePath, 'utf8');
-  assert.match(readme, /npx skills add recodeee\//);
-  assert.match(readme, /npx skills add recodeee\/gitguardex/);
+  assert.match(readme, /npx skills add recodee\//);
+  assert.match(readme, /npx skills add recodee\/gitguardex/);
+  assert.match(readme, /does not auto-run `npx skills add \.\.\.`/);
   assert.match(readme, /picker does not show a separate `guardex` skill, that is expected/);
 
   const pairs = [
