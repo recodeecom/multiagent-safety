@@ -232,6 +232,21 @@ test('critical runtime helper scripts and active-agents sources stay in sync wit
   }
 });
 
+test('agent-branch-finish pivots out of active agent cwd before every prune path', () => {
+  const script = fs.readFileSync(path.join(repoRoot, 'scripts', 'agent-branch-finish.sh'), 'utf8');
+
+  assert.match(script, /pivot_to_repo_root_before_prune\(\) \{\n\s+if \[\[ "\$current_worktree" == "\$source_worktree"/);
+  assert.match(script, /cd "\$repo_root" 2>\/dev\/null \|\| true/);
+  assert.match(
+    script,
+    /pivot_to_repo_root_before_prune\n\s+if ! run_guardex_cli worktree prune "\$\{prune_args\[@\]\}"; then/,
+  );
+  assert.match(
+    script,
+    /else\n\s+pivot_to_repo_root_before_prune\n\s+if ! run_guardex_cli worktree prune --base "\$BASE_BRANCH"; then/,
+  );
+});
+
 test('thin CLI entrypoint delegates to src/cli runtime', () => {
   const entryPath = path.join(repoRoot, 'bin', 'multiagent-safety.js');
   const entrySource = fs.readFileSync(entryPath, 'utf8');

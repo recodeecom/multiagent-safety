@@ -526,6 +526,15 @@ if [[ -n "$base_worktree" ]] && is_clean_worktree "$base_worktree" && [[ "$PUSH_
   git -C "$base_worktree" pull --ff-only origin "$BASE_BRANCH" >/dev/null 2>&1 || true
 fi
 
+# Pivot out of the agent worktree before prune calls that may remove it.
+# Without this, subprocess spawns can fail with ENOENT uv_cwd after cwd
+# disappears even when the merge succeeded.
+pivot_to_repo_root_before_prune() {
+  if [[ "$current_worktree" == "$source_worktree" && "$source_worktree" == "${agent_worktree_root}"/* ]]; then
+    cd "$repo_root" 2>/dev/null || true
+  fi
+}
+
 if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   if [[ "$source_worktree" == "$repo_root" ]]; then
     if is_clean_worktree "$source_worktree"; then
@@ -560,6 +569,8 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
     if [[ "$DELETE_REMOTE_BRANCH" -eq 1 ]]; then
       prune_args+=(--delete-remote-branches)
     fi
+
+    pivot_to_repo_root_before_prune
     if ! bash "${repo_root}/scripts/agent-worktree-prune.sh" "${prune_args[@]}"; then
       echo "[agent-branch-finish] Warning: automatic worktree prune failed." >&2
       echo "[agent-branch-finish] You can run manual cleanup: bash scripts/agent-worktree-prune.sh --base ${BASE_BRANCH} --delete-branches" >&2
@@ -573,6 +584,7 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   fi
 else
   if [[ -x "${repo_root}/scripts/agent-worktree-prune.sh" ]]; then
+    pivot_to_repo_root_before_prune
     if ! bash "${repo_root}/scripts/agent-worktree-prune.sh" --base "$BASE_BRANCH"; then
       echo "[agent-branch-finish] Warning: temporary worktree prune failed." >&2
     fi

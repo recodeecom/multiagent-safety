@@ -787,6 +787,15 @@ if [[ -n "$base_worktree" ]] && is_clean_worktree "$base_worktree" && [[ "$PUSH_
 fi
 maybe_auto_commit_parent_gitlink "$base_worktree"
 
+# Pivot out of the agent worktree before prune calls that may remove it.
+# Without this, subprocess spawns can fail with ENOENT uv_cwd after cwd
+# disappears even when the merge succeeded.
+pivot_to_repo_root_before_prune() {
+  if [[ "$current_worktree" == "$source_worktree" && "$source_worktree" == "${agent_worktree_root}"/* ]]; then
+    cd "$repo_root" 2>/dev/null || true
+  fi
+}
+
 if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   if [[ "$source_worktree" == "$repo_root" ]]; then
     if is_clean_worktree "$source_worktree"; then
@@ -830,17 +839,20 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
   if [[ "$DELETE_REMOTE_BRANCH" -eq 1 ]]; then
     prune_args+=(--delete-remote-branches)
   fi
+
+  pivot_to_repo_root_before_prune
   if ! run_guardex_cli worktree prune "${prune_args[@]}"; then
     echo "[agent-branch-finish] Warning: automatic worktree prune failed." >&2
     echo "[agent-branch-finish] You can run manual cleanup: gx cleanup --base ${BASE_BRANCH}" >&2
   fi
 
   echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via ${merge_status} flow and cleaned source branch/worktree."
-  if [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${agent_worktree_root}"/* ]]; then
+  if [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${agent_worktree_root}"/* && -d "$source_worktree" ]]; then
     echo "[agent-branch-finish] Current worktree '${source_worktree}' still exists because it is the active shell cwd." >&2
     echo "[agent-branch-finish] Leave this directory, then run: gx cleanup --base ${BASE_BRANCH}" >&2
   fi
 else
+  pivot_to_repo_root_before_prune
   if ! run_guardex_cli worktree prune --base "$BASE_BRANCH"; then
     echo "[agent-branch-finish] Warning: temporary worktree prune failed." >&2
   fi
