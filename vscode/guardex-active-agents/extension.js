@@ -1,6 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
+const http = require('node:http');
+const os = require('node:os');
 const vscode = require('vscode');
 const {
   clearWorktreeActivityCache,
@@ -40,6 +42,84 @@ const ACTIVE_AGENTS_EXTENSION_ID = 'Recodee.gitguardex-active-agents';
 const RESTART_EXTENSION_HOST_COMMAND = 'workbench.action.restartExtensionHost';
 const REFRESH_POLL_INTERVAL_MS = 30_000;
 const INSPECT_PANEL_VIEW_TYPE = 'gitguardex.activeAgents.inspect';
+const COLONY_DEFAULT_PORT = 37777;
+const COLONY_SNAPSHOT_TTL_MS = 5_000;
+const COLONY_FETCH_TIMEOUT_MS = 800;
+
+function colonyDataDir() {
+  return process.env.COLONY_HOME
+    || process.env.CAVEMEM_HOME
+    || path.join(os.homedir(), '.colony');
+}
+
+function readColonyPort() {
+  try {
+    const raw = fs.readFileSync(path.join(colonyDataDir(), 'settings.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    const port = Number(parsed?.workerPort);
+    return Number.isFinite(port) && port > 0 ? port : COLONY_DEFAULT_PORT;
+  } catch (_error) {
+    return COLONY_DEFAULT_PORT;
+  }
+}
+
+function fetchColonyJson(urlPath) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      {
+        hostname: '127.0.0.1',
+        port: readColonyPort(),
+        path: urlPath,
+        timeout: COLONY_FETCH_TIMEOUT_MS,
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve(null);
+          return;
+        }
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(body));
+          } catch (_error) {
+            resolve(null);
+          }
+        });
+      },
+    );
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+const colonyTasksCache = new Map();
+
+async function readColonyTasksForRepo(repoRoot) {
+  const cached = colonyTasksCache.get(repoRoot);
+  if (cached && Date.now() - cached.at < COLONY_SNAPSHOT_TTL_MS) {
+    return cached.tasks;
+  }
+  const tasks = await fetchColonyJson(
+    `/api/colony/tasks?repo_root=${encodeURIComponent(repoRoot)}`,
+  );
+  const resolved = Array.isArray(tasks) ? tasks : [];
+  colonyTasksCache.set(repoRoot, { at: Date.now(), tasks: resolved });
+  return resolved;
+}
+
+function compactColonyBranchLabel(branch) {
+  if (typeof branch !== 'string' || !branch) return 'unknown';
+  const parts = branch.split('/').filter(Boolean);
+  return parts.length > 2 ? parts.slice(-2).join('/') : branch;
+}
 const GIT_CONFIGURATION_SECTION = 'git';
 const REPO_SCAN_IGNORED_FOLDERS_SETTING = 'repositoryScanIgnoredFolders';
 const BUNDLED_FILE_ICONS_MANIFEST_RELATIVE = path.join('fileicons', 'gitguardex-fileicons.json');
@@ -840,10 +920,18 @@ function buildOverviewDescription(summary) {
     formatCountLabel(summary?.workingCount || 0, 'working agent'),
     formatCountLabel(summary?.finishedCount || 0, 'finished agent'),
     formatCountLabel(summary?.idleCount || 0, 'idle agent'),
+    summary?.colonyTaskCount
+      ? formatCountLabel(summary.colonyTaskCount, 'colony task')
+      : '',
+    summary?.pendingHandoffCount
+      ? formatCountLabel(summary.pendingHandoffCount, 'pending handoff')
+      : '',
     formatCountLabel(summary?.unassignedChangeCount || 0, 'unassigned change'),
     formatCountLabel(summary?.lockedFileCount || 0, 'locked file'),
     formatCountLabel(summary?.conflictCount || 0, 'conflict'),
-  ].join(' · ');
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function buildRepoDescription(summary) {
@@ -1252,7 +1340,9 @@ class RepoItem extends vscode.TreeItem {
     this.changes = changes;
     this.unassignedChanges = options.unassignedChanges || [];
     this.lockEntries = options.lockEntries || [];
-    this.overview = options.overview || buildRepoOverview(sessions, this.unassignedChanges, this.lockEntries);
+    this.colonyTasks = Array.isArray(options.colonyTasks) ? options.colonyTasks : [];
+    this.overview = options.overview
+      || buildRepoOverview(sessions, this.unassignedChanges, this.lockEntries, this.colonyTasks);
     this.description = buildRepoDescription(this.overview);
     this.tooltip = buildRepoTooltip(repoRoot, this.overview);
     this.iconPath = themeIcon('repo');
@@ -2524,7 +2614,8 @@ function countChangedPaths(repoRoot, sessions, changes) {
   return changedKeys.size;
 }
 
-function buildRepoOverview(sessions, unassignedChanges, lockEntries) {
+function buildRepoOverview(sessions, unassignedChanges, lockEntries, colonyTasks = []) {
+  const colonyTaskList = Array.isArray(colonyTasks) ? colonyTasks : [];
   return {
     sessionCount: sessions.length,
     workingCount: countWorkingSessions(sessions),
@@ -2536,6 +2627,11 @@ function buildRepoOverview(sessions, unassignedChanges, lockEntries) {
       (total, session) => total + (session.conflictCount || 0),
       0,
     ) + (unassignedChanges || []).filter((change) => change.hasForeignLock).length,
+    colonyTaskCount: colonyTaskList.length,
+    pendingHandoffCount: colonyTaskList.reduce(
+      (total, task) => total + (task.pending_handoff_count || 0),
+      0,
+    ),
   };
 }
 
@@ -3023,12 +3119,14 @@ class ActiveAgentsProvider {
 
       const { repoRootChanges } = partitionChangesByOwnership(sessions, changes);
       const unassignedChanges = sortUnassignedChanges(repoRootChanges);
+      const colonyTasks = Array.isArray(entry.colonyTasks) ? entry.colonyTasks : [];
       return {
         ...entry,
         sessions,
         changes,
         unassignedChanges,
-        overview: buildRepoOverview(sessions, unassignedChanges, entry.lockEntries),
+        colonyTasks,
+        overview: buildRepoOverview(sessions, unassignedChanges, entry.lockEntries, colonyTasks),
       };
     });
 
@@ -3140,6 +3238,37 @@ class ActiveAgentsProvider {
           iconId: 'file-directory',
         }));
       }
+      const colonyTaskList = Array.isArray(element.colonyTasks) ? element.colonyTasks : [];
+      if (colonyTaskList.length > 0) {
+        const colonyItems = colonyTaskList.map((task) => {
+          const pendingLabel = task.pending_handoff_count > 0
+            ? formatCountLabel(task.pending_handoff_count, 'pending handoff')
+            : 'quiet';
+          const participantLabel =
+            (task.participants || []).map((p) => p.agent).filter(Boolean).join(', ')
+            || 'no participants';
+          return new DetailItem(
+            `#${task.id} · ${compactColonyBranchLabel(task.branch)}`,
+            `${participantLabel} · ${pendingLabel}`,
+            {
+              iconId: task.pending_handoff_count > 0 ? 'warning' : 'comment-discussion',
+              tooltip: [
+                task.branch,
+                `task #${task.id}`,
+                participantLabel,
+                task.pending_handoff_count > 0
+                  ? formatCountLabel(task.pending_handoff_count, 'pending handoff')
+                  : '',
+              ].filter(Boolean).join('\n'),
+            },
+          );
+        });
+        advancedItems.push(new SectionItem('Colony tasks', colonyItems, {
+          description: String(colonyItems.length),
+          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
+          iconId: 'organization',
+        }));
+      }
       if (advancedItems.length > 0) {
         sectionItems.push(new SectionItem('Advanced details', advancedItems, {
           description: String(advancedItems.length),
@@ -3166,24 +3295,29 @@ class ActiveAgentsProvider {
       overview: entry.overview,
       unassignedChanges: entry.unassignedChanges,
       lockEntries: entry.lockEntries,
+      colonyTasks: entry.colonyTasks,
     }));
   }
 
   async loadRepoEntries() {
     const repoEntries = await findRepoSessionEntries();
-    return repoEntries.map((entry) => {
-      const repoRoot = entry.repoRoot;
-      const lockRegistry = this.getLockRegistryForRepo(repoRoot);
-      const currentBranch = readCurrentBranch(repoRoot);
-      return {
-        repoRoot,
-        sessions: entry.sessions.map((session) => decorateSession(session, lockRegistry)),
-        changes: readRepoChanges(repoRoot).map((change) => (
-          decorateChange(change, lockRegistry, currentBranch)
-        )),
-        lockEntries: Array.from(lockRegistry.entriesByPath.entries()),
-      };
-    });
+    return Promise.all(
+      repoEntries.map(async (entry) => {
+        const repoRoot = entry.repoRoot;
+        const lockRegistry = this.getLockRegistryForRepo(repoRoot);
+        const currentBranch = readCurrentBranch(repoRoot);
+        const colonyTasks = await readColonyTasksForRepo(repoRoot);
+        return {
+          repoRoot,
+          sessions: entry.sessions.map((session) => decorateSession(session, lockRegistry)),
+          changes: readRepoChanges(repoRoot).map((change) => (
+            decorateChange(change, lockRegistry, currentBranch)
+          )),
+          lockEntries: Array.from(lockRegistry.entriesByPath.entries()),
+          colonyTasks,
+        };
+      }),
+    );
   }
 }
 
