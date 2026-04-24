@@ -99,17 +99,29 @@ function iconColorId(iconId) {
     case 'folder':
     case 'graph':
     case 'history':
+    case 'dashboard':
+    case 'inbox':
+    case 'file-directory':
+    case 'settings-gear':
+    case 'folder-library':
       return 'textLink.foreground';
     case 'git-branch':
       return 'gitDecoration.modifiedResourceForeground';
     case 'account':
       return 'terminal.ansiYellow';
+    case 'debug-pause':
+      return 'terminal.ansiYellow';
     case 'sparkle':
+    case 'rocket':
       return 'terminal.ansiMagenta';
     case 'list-flat':
+    case 'device-camera':
       return 'terminal.ansiCyan';
     case 'list-tree':
+    case 'telescope':
       return 'terminal.ansiBlue';
+    case 'organization':
+      return 'terminal.ansiGreen';
     case 'pass-filled':
     case 'pass':
     case 'check':
@@ -2777,12 +2789,12 @@ function buildSessionDetailItems(session) {
   }
   if (provider?.label) {
     items.push(new DetailItem('Provider', provider.label, {
-      iconId: 'sparkle',
+      iconId: 'rocket',
     }));
   }
   if (snapshot) {
     items.push(new DetailItem('Snapshot', snapshot, {
-      iconId: 'account',
+      iconId: 'device-camera',
     }));
   }
   if (projectRelativePath) {
@@ -2795,7 +2807,7 @@ function buildSessionDetailItems(session) {
     iconId: 'git-branch',
   }));
   items.push(new DetailItem('Worktree', session.worktreePath, {
-    iconId: 'folder',
+    iconId: 'folder-library',
     tooltip: session.worktreePath,
   }));
   return items;
@@ -3077,12 +3089,12 @@ class ActiveAgentsProvider {
       const sectionItems = [
         new SectionItem('Overview', [
           new DetailItem('Summary', buildOverviewDescription(element.overview), {
-            iconId: 'graph',
+            iconId: 'dashboard',
             tooltip: buildRepoTooltip(element.repoRoot, element.overview),
           }),
         ], {
           description: '1',
-          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
+          iconId: 'telescope',
         }),
       ];
 
@@ -3100,14 +3112,14 @@ class ActiveAgentsProvider {
         sectionItems.push(new SectionItem('Idle / thinking', idleThinkingItems, {
           description: String(idleThinkingItems.length),
           collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
-          iconId: 'comment-discussion',
+          iconId: 'debug-pause',
         }));
       }
 
       if (element.unassignedChanges.length > 0) {
         sectionItems.push(new SectionItem('Unassigned changes', buildUnassignedChangeNodes(element.unassignedChanges), {
           description: String(element.unassignedChanges.length),
-          iconId: 'warning',
+          iconId: 'inbox',
         }));
       }
 
@@ -3117,7 +3129,7 @@ class ActiveAgentsProvider {
         advancedItems.push(new SectionItem('Active agent tree', rawActiveAgents, {
           description: String(element.sessions.length),
           collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
-          iconId: 'git-branch',
+          iconId: 'organization',
         }));
       }
       const rawChangeTree = buildGroupedChangeTreeNodes(element.sessions, element.changes);
@@ -3125,14 +3137,14 @@ class ActiveAgentsProvider {
         advancedItems.push(new SectionItem('Raw path tree', rawChangeTree, {
           description: String(element.changes.length),
           collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
-          iconId: 'list-tree',
+          iconId: 'file-directory',
         }));
       }
       if (advancedItems.length > 0) {
         sectionItems.push(new SectionItem('Advanced details', advancedItems, {
           description: String(advancedItems.length),
-          collapsedState: vscode.TreeItemCollapsibleState.Expanded,
-          iconId: 'list-tree',
+          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
+          iconId: 'settings-gear',
         }));
       }
       return sectionItems;

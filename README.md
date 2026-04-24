@@ -9,6 +9,8 @@
   and human teammates working the same codebase at the same time.
 </p>
 
+Guardian T-Rex for your multi-agent repo. Isolated worktrees, file locks, and PR-only merges stop parallel Codex & Claude agents from overwriting each other's work. Auto-wires Oh My Codex, Oh My Claude, OpenSpec, and Caveman. See [about_description.txt](./about_description.txt).
+
 <p align="center">
   <a href="https://www.npmjs.com/package/@imdeadpool/guardex"><img alt="npm version" src="https://img.shields.io/npm/v/%40imdeadpool%2Fguardex?label=npm&style=flat-square&color=cb3837&logo=npm&logoColor=white"></a>
   <a href="https://www.npmjs.com/package/@imdeadpool/guardex"><img alt="npm downloads per month" src="https://img.shields.io/npm/dm/%40imdeadpool%2Fguardex?label=downloads%2Fmonth&style=flat-square&color=0b76c5"></a>
@@ -57,7 +59,7 @@ gx setup   # hooks, state, OMX / OpenSpec / caveman wiring — one shot
 
 ---
 
-## `02` &nbsp;The problem
+## The problem
 
 ![Parallel agents colliding in the same files](https://raw.githubusercontent.com/recodeee/gitguardex/main/docs/images/problem-agent-collision.svg)
 
@@ -73,6 +75,10 @@ started overwriting or deleting each other's changes. More agents meant
 | `codex-03` → `test/auth.spec.ts` · ⚠ clash | `codex-03` → `agent/codex/session-guard` · ● owned |
 | `claude-a` → `test/auth.spec.ts` · ⚠ clash | `claude-a` → `agent/claude/token-rotation` · ● owned |
 | `codex-04` → `src/auth/session.ts` · ◌ stalled | `human` → `main` (protected) · ● clean |
+
+### Solution
+
+![Agent branch/worktree start protocol](https://raw.githubusercontent.com/recodeee/gitguardex/main/docs/images/workflow-branch-start.svg)
 
 ---
 
@@ -204,6 +210,12 @@ the compact layout everywhere.
 | `gx sync` | Sync current agent branch against base. |
 | `gx release` | Update the GitHub release from README notes. |
 
+```bash
+gx release  # create/update the current GitHub release from README notes
+```
+
+`gx release` is the maintainer path for package releases. It reads `README.md`, finds the last published GitHub release, and writes one grouped GitHub release body.
+
 ### Protected branches
 
 ```bash
@@ -249,11 +261,29 @@ Being honest about where this still has issues:
 
 ---
 
+## Release notes
+
+<details open>
+<summary><strong>v7.x</strong></summary>
+
+### v7.0.35
+- Bumped `@imdeadpool/guardex` from `7.0.34` to `7.0.35` so the current
+  merged `main` payload can publish on a fresh npm version after PR #420.
+- Refreshed README release/skills metadata and shipped Active Agents template
+  parity so the current `main` payload passes release verification.
+- No new CLI command behavior is introduced in this release lane.
+
+</details>
+
+---
+
 ## `10` &nbsp;Companion tools
 
 All optional — but if you're running many agents, you probably want them.
 `gx status` auto-detects each one and reports it in the `Global services`
 block.
+
+Install repo skills with `npx skills add recodee/gitguardex`; `npx skills add recodee/` opens the recodee namespace. `gx setup` does not auto-run `npx skills add ...`. If the picker does not show a separate `guardex` skill, that is expected.
 
 | Tool | What it does | Stars |
 | --- | --- | --- |

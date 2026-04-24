@@ -1028,10 +1028,13 @@ test('setup agent-branch-start routes Claude sessions into .omc worktrees and st
   );
 
   const createdWorktree = extractCreatedWorktree(result.stdout);
+  const createdWorktreeLeaf = `${path.basename(repoDir)}__${createdBranch
+    .replace(/^agent\//, '')
+    .replaceAll('/', '__')}`;
   assert.match(
     createdWorktree,
     new RegExp(
-      `${escapeRegexLiteral(repoDir)}/\\.omc/agent-worktrees/${escapeRegexLiteral(createdBranch.replaceAll('/', '__'))}$`,
+      `${escapeRegexLiteral(repoDir)}/\\.omc/agent-worktrees/${escapeRegexLiteral(createdWorktreeLeaf)}$`,
     ),
   );
 
