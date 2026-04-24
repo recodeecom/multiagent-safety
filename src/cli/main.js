@@ -1234,6 +1234,84 @@ function promptYesNoStrict(question) {
   }
 }
 
+const VSCODE_EXTENSION_ID = 'Recodee.gitguardex-active-agents';
+const VSCODE_EXTENSION_DISPLAY_NAME = 'GitGuardex Active Agents';
+
+function maybePromptInstallVscodeExtension(options) {
+  if (options.dryRun) {
+    console.log(
+      `[${TOOL_NAME}] (dry-run) Would offer to install VS Code extension '${VSCODE_EXTENSION_ID}'.`,
+    );
+    return;
+  }
+
+  if (envFlagIsTruthy(process.env.GUARDEX_SKIP_VSCODE_EXT_PROMPT)) {
+    return;
+  }
+
+  const codeProbe = cp.spawnSync('code', ['--version'], { stdio: 'ignore' });
+  if (codeProbe.error || codeProbe.status !== 0) {
+    return;
+  }
+
+  const listProbe = cp.spawnSync('code', ['--list-extensions'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (!listProbe.error && listProbe.status === 0) {
+    const alreadyInstalled = String(listProbe.stdout || '')
+      .split('\n')
+      .some((line) => line.trim().toLowerCase() === VSCODE_EXTENSION_ID.toLowerCase());
+    if (alreadyInstalled) {
+      console.log(
+        `[${TOOL_NAME}] ✅ VS Code extension '${VSCODE_EXTENSION_ID}' already installed.`,
+      );
+      return;
+    }
+  }
+
+  let approved;
+  if (options.yesGlobalInstall) {
+    approved = true;
+  } else if (options.noGlobalInstall) {
+    approved = false;
+  } else if (!isInteractiveTerminal()) {
+    console.log(
+      `[${TOOL_NAME}] Optional VS Code extension '${VSCODE_EXTENSION_ID}' ` +
+        `(${VSCODE_EXTENSION_DISPLAY_NAME}) not installed. ` +
+        `Install later: code --install-extension ${VSCODE_EXTENSION_ID}`,
+    );
+    return;
+  } else {
+    approved = promptYesNoStrict(
+      `Install VS Code extension '${VSCODE_EXTENSION_ID}' (${VSCODE_EXTENSION_DISPLAY_NAME}) now?`,
+    );
+  }
+
+  if (!approved) {
+    console.log(
+      `[${TOOL_NAME}] ⚠️ VS Code extension skipped. ` +
+        `Set GUARDEX_SKIP_VSCODE_EXT_PROMPT=1 to silence or run 'code --install-extension ${VSCODE_EXTENSION_ID}' later.`,
+    );
+    return;
+  }
+
+  const install = cp.spawnSync('code', ['--install-extension', VSCODE_EXTENSION_ID], {
+    stdio: 'inherit',
+  });
+  if (install.error || install.status !== 0) {
+    console.log(
+      `[${TOOL_NAME}] ⚠️ VS Code extension install failed. ` +
+        `Retry manually: code --install-extension ${VSCODE_EXTENSION_ID}`,
+    );
+    return;
+  }
+  console.log(
+    `[${TOOL_NAME}] ✅ VS Code extension '${VSCODE_EXTENSION_ID}' installed. ` +
+      `Reload the VS Code window to activate it.`,
+  );
+}
+
 function resolveGlobalInstallApproval(options) {
   if (options.yesGlobalInstall && options.noGlobalInstall) {
     throw new Error('Cannot use both --yes-global-install and --no-global-install');
@@ -2835,6 +2913,9 @@ function setup(rawArgs) {
       console.log(`[${TOOL_NAME}] ⚠️ ${warning}`);
     }
   }
+
+  maybePromptInstallVscodeExtension(options);
+
   const requiredSystemTools = toolchainModule.detectRequiredSystemTools();
   const missingSystemTools = requiredSystemTools.filter((tool) => tool.status !== 'active');
   if (missingSystemTools.length === 0) {
