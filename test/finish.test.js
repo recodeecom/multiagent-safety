@@ -734,6 +734,8 @@ test('agent-branch-finish cleanup succeeds from active agent worktree when base 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   result = runCmd('git', ['push', '-u', 'origin', 'agent/test-active-worktree-cleanup'], agentWorktreePath);
   assert.equal(result.status, 0, result.stderr || result.stdout);
+  const agentSubdir = path.join(agentWorktreePath, 'nested', 'cwd');
+  fs.mkdirSync(agentSubdir, { recursive: true });
 
   const { fakePath: fakeGhPath } = createFakeGhScript(`
 if [[ "$1" == "pr" && "$2" == "create" ]]; then
@@ -756,13 +758,13 @@ exit 1
 
   const finish = runBranchFinish(
     ['--branch', 'agent/test-active-worktree-cleanup', '--base', 'dev', '--mode', 'pr', '--cleanup'],
-    agentWorktreePath,
+    agentSubdir,
     { GUARDEX_GH_BIN: fakeGhPath },
   );
   assert.equal(finish.status, 0, finish.stderr || finish.stdout);
   assert.match(
     finish.stdout,
-    /Merged 'agent\/test-active-worktree-cleanup' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+    /Merged 'agent\/test-active-worktree-cleanup' into 'dev' via pr flow and cleaned source branch\/remote\./,
   );
   assert.match(finish.stderr, /Current worktree '.+' still exists because it is the active shell cwd/);
 
