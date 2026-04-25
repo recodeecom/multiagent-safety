@@ -698,6 +698,71 @@ exit 1
   assert.equal(result.stdout.trim(), '', 'agent branch should be deleted on origin');
 });
 
+test('agent-branch-finish cleanup is idempotent after merged PR already pruned branch and worktree', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  result = runCmd('git', ['checkout', '-b', 'agent/test-pr-already-cleaned'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  commitFile(repoDir, 'already-cleaned.txt', 'already cleaned\n', 'already cleaned change');
+  result = runCmd('git', ['push', '-u', 'origin', 'agent/test-pr-already-cleaned'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['checkout', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['branch', '-D', 'agent/test-pr-already-cleaned'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', '--delete', 'agent/test-pr-already-cleaned'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "list" ]]; then
+  if [[ " $* " == *" --state merged "* ]] && [[ " $* " == *" --head agent/test-pr-already-cleaned "* ]] && [[ " $* " == *" --base dev "* ]]; then
+    printf 'MERGED\\x1f2026-04-25T11:03:00Z\\x1fhttps://example.test/pr/already-cleaned\\n'
+    exit 0
+  fi
+  echo "unexpected gh pr list args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && ( "$2" == "create" || "$2" == "merge" || "$2" == "view" ) ]]; then
+  echo "already-cleaned rerun should not call gh pr $2" >&2
+  exit 1
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+
+  const finish = runBranchFinish(
+    ['--branch', 'agent/test-pr-already-cleaned', '--base', 'dev', '--mode', 'pr', '--cleanup'],
+    repoDir,
+    { GUARDEX_GH_BIN: fakeGhPath },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(
+    finish.stderr,
+    /Local source branch 'agent\/test-pr-already-cleaned' is already absent, but a merged PR exists; continuing cleanup\./,
+  );
+  assert.match(
+    finish.stderr,
+    /Merged PR: https:\/\/example\.test\/pr\/already-cleaned/,
+  );
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-pr-already-cleaned' into 'dev' via pr flow and found source branch\/worktree already cleaned\./,
+  );
+});
+
 
 test('agent-branch-finish cleanup succeeds from active agent worktree when base branch is checked out elsewhere', () => {
   const repoDir = initRepo();

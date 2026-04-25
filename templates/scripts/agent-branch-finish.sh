@@ -227,7 +227,68 @@ if [[ "$SOURCE_BRANCH" == "$BASE_BRANCH" ]]; then
   exit 1
 fi
 
+cleanup_missing_merged_source_branch() {
+  local state_line=""
+  local parsed_state=""
+  local parsed_merged_at=""
+  local parsed_url=""
+  local remote_delete_output=""
+  local prune_args=()
+
+  if [[ "$MERGE_MODE" != "pr" || "$CLEANUP_AFTER_MERGE" -ne 1 ]]; then
+    return 1
+  fi
+  if ! command -v "$GH_BIN" >/dev/null 2>&1; then
+    return 1
+  fi
+
+  state_line="$("$GH_BIN" pr list \
+    --state merged \
+    --head "$SOURCE_BRANCH" \
+    --base "$BASE_BRANCH" \
+    --json state,mergedAt,url \
+    --jq 'sort_by(.mergedAt // "") | reverse | (.[0] // {}) | [(.state // ""), (.mergedAt // ""), (.url // "")] | join("\u001f")' \
+    2>/dev/null || true)"
+  if [[ -z "$state_line" ]]; then
+    return 1
+  fi
+
+  IFS=$'\x1f' read -r parsed_state parsed_merged_at parsed_url <<< "$state_line"
+  if [[ "$parsed_state" != "MERGED" && -z "$parsed_merged_at" ]]; then
+    return 1
+  fi
+
+  echo "[agent-branch-finish] Local source branch '${SOURCE_BRANCH}' is already absent, but a merged PR exists; continuing cleanup." >&2
+  if [[ -n "$parsed_url" ]]; then
+    echo "[agent-branch-finish] Merged PR: ${parsed_url}" >&2
+  fi
+
+  run_guardex_cli locks release --branch "$SOURCE_BRANCH" >/dev/null 2>&1 || true
+
+  if [[ "$PUSH_ENABLED" -eq 1 && "$DELETE_REMOTE_BRANCH" -eq 1 ]]; then
+    if git -C "$repo_root" ls-remote --exit-code --heads origin "$SOURCE_BRANCH" >/dev/null 2>&1; then
+      if ! remote_delete_output="$(git -C "$repo_root" push origin --delete "$SOURCE_BRANCH" 2>&1)"; then
+        echo "[agent-branch-finish] Warning: remote branch cleanup failed for '${SOURCE_BRANCH}'." >&2
+        [[ -n "$remote_delete_output" ]] && echo "$remote_delete_output" >&2
+      fi
+    fi
+  fi
+
+  prune_args=(worktree prune --base "$BASE_BRANCH" --only-dirty-worktrees --delete-branches)
+  if [[ "$DELETE_REMOTE_BRANCH" -eq 1 ]]; then
+    prune_args+=(--delete-remote-branches)
+  fi
+  if ! run_guardex_cli "${prune_args[@]}"; then
+    echo "[agent-branch-finish] Warning: automatic worktree prune failed." >&2
+    echo "[agent-branch-finish] You can run manual cleanup: gx cleanup --base ${BASE_BRANCH}" >&2
+  fi
+
+  echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via pr flow and found source branch/worktree already cleaned."
+  exit 0
+}
+
 if ! git -C "$repo_root" show-ref --verify --quiet "refs/heads/${SOURCE_BRANCH}"; then
+  cleanup_missing_merged_source_branch
   echo "[agent-branch-finish] Local source branch does not exist: ${SOURCE_BRANCH}" >&2
   exit 1
 fi
