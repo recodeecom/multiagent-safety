@@ -136,7 +136,7 @@ const MANAGED_REPO_SCAN_IGNORED_FOLDERS = [
 const SESSION_ACTIVITY_GROUPS = [
   { kind: 'blocked', label: 'BLOCKED' },
   { kind: 'working', label: 'WORKING NOW' },
-  { kind: 'finished', label: 'FINISHED' },
+  { kind: 'finished', label: 'NEEDS CLEANUP' },
   { kind: 'idle', label: 'THINKING' },
   { kind: 'stalled', label: 'STALLED' },
   { kind: 'dead', label: 'DEAD' },
@@ -571,7 +571,7 @@ function buildActiveAgentsStatusSummary(summary) {
   if (workingCount > 0 || finishedCount > 0 || idleCount > 0) {
     const parts = [`${workingCount} working`];
     if (finishedCount > 0) {
-      parts.push(`${finishedCount} finished`);
+      parts.push(`${finishedCount} needs cleanup`);
     }
     parts.push(`${idleCount} idle`);
     return `$(git-branch) ${parts.join(' · ')}`;
@@ -594,7 +594,7 @@ function buildActiveAgentsStatusTooltip(selectedSession, summary) {
   return [
     formatCountLabel(activeCount, 'active agent'),
     formatCountLabel(summary?.workingCount || 0, 'working now session', 'working now sessions'),
-    formatCountLabel(summary?.finishedCount || 0, 'finished session'),
+    formatCountLabel(summary?.finishedCount || 0, 'needs cleanup session'),
     formatCountLabel(summary?.idleCount || 0, 'idle session'),
     formatCountLabel(summary?.unassignedChangeCount || 0, 'unassigned change'),
     formatCountLabel(summary?.lockedFileCount || 0, 'locked file'),
@@ -681,7 +681,7 @@ function sessionFreshnessLabel(session, now = Date.now()) {
     return 'Needs attention';
   }
   if (session.activityKind === 'finished') {
-    return 'Finished';
+    return 'Needs cleanup';
   }
   if (session.activityKind === 'stalled') {
     return 'Possibly stale';
@@ -711,7 +711,7 @@ function sessionStatusLabel(session) {
     case 'working':
       return 'Working';
     case 'finished':
-      return 'Finished';
+      return 'Needs cleanup';
     case 'idle':
       return 'Idle';
     case 'stalled':
@@ -918,7 +918,7 @@ function buildWorktreeBranchDescription(sessions) {
 function buildOverviewDescription(summary) {
   return [
     formatCountLabel(summary?.workingCount || 0, 'working agent'),
-    formatCountLabel(summary?.finishedCount || 0, 'finished agent'),
+    formatCountLabel(summary?.finishedCount || 0, 'needs cleanup agent'),
     formatCountLabel(summary?.idleCount || 0, 'idle agent'),
     summary?.colonyTaskCount
       ? formatCountLabel(summary.colonyTaskCount, 'colony task')
@@ -2925,13 +2925,26 @@ function buildWorkingNowNodes(sessions) {
 function buildIdleThinkingNodes(sessions) {
   const sessionEntries = sortSessionsForIdleThinking(
     sessions.filter((session) => !(
-      session.activityKind === 'working' || session.activityKind === 'blocked'
+      session.activityKind === 'working'
+      || session.activityKind === 'blocked'
+      || session.activityKind === 'finished'
     )),
   ).map((session) => ({
     projectRelativePath: resolveSessionProjectRelativePath(session),
     sessions: [session],
     item: new SessionItem(session, buildSessionDetailItems(session)),
   }));
+  return buildProjectScopedItems(sessionEntries, { rootLabel: 'Repo root' });
+}
+
+function buildNeedsCleanupNodes(sessions) {
+  const sessionEntries = sessions
+    .filter((session) => session.activityKind === 'finished')
+    .map((session) => ({
+      projectRelativePath: resolveSessionProjectRelativePath(session),
+      sessions: [session],
+      item: new SessionItem(session, buildSessionDetailItems(session)),
+    }));
   return buildProjectScopedItems(sessionEntries, { rootLabel: 'Repo root' });
 }
 
@@ -3202,6 +3215,15 @@ class ActiveAgentsProvider {
           description: String(workingNowItems.length),
           collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
           iconId: 'loading~spin',
+        }));
+      }
+
+      const needsCleanupItems = buildNeedsCleanupNodes(element.sessions);
+      if (needsCleanupItems.length > 0) {
+        sectionItems.push(new SectionItem('Needs cleanup', needsCleanupItems, {
+          description: String(needsCleanupItems.length),
+          collapsedState: vscode.TreeItemCollapsibleState.Collapsed,
+          iconId: 'pass-filled',
         }));
       }
 

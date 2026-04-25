@@ -1738,7 +1738,7 @@ test('active-agents extension groups live sessions under a repo node', async () 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
   assert.equal(repoItem.label, path.basename(tempRoot));
-  assert.equal(repoItem.description, '0 working agents · 0 finished agents · 1 idle agent · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '0 working agents · 0 needs cleanup agents · 1 idle agent · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), [
     'Overview',
@@ -1777,6 +1777,70 @@ test('active-agents extension groups live sessions under a repo node', async () 
     )),
     true,
   );
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
+test('active-agents extension labels idle dirty finished worktrees as needing cleanup', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-cleanup-label-'));
+  initGitRepo(tempRoot);
+  fs.writeFileSync(path.join(tempRoot, 'tracked.txt'), 'base\n', 'utf8');
+  runGit(tempRoot, ['add', 'tracked.txt']);
+  runGit(tempRoot, ['commit', '-m', 'baseline']);
+
+  const worktreePath = path.join(tempRoot, '.omx', 'agent-worktrees', 'finished-task');
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+  runGit(tempRoot, [
+    'worktree',
+    'add',
+    '-b',
+    'agent/codex/finished-task',
+    worktreePath,
+    'HEAD',
+  ]);
+  const changedPath = path.join(worktreePath, 'tracked.txt');
+  fs.writeFileSync(changedPath, 'base\nleftover cleanup\n', 'utf8');
+  setPathMtime(changedPath, Date.now() - (20 * 60 * 1000));
+
+  const sessionPath = writeSessionRecord(tempRoot, sessionSchema.buildSessionRecord({
+    repoRoot: tempRoot,
+    branch: 'agent/codex/finished-task',
+    taskName: 'finished-task',
+    agentName: 'codex',
+    worktreePath,
+    pid: process.pid,
+    cliName: 'codex',
+  }));
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.findFiles = async () => [{ fsPath: sessionPath }];
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const provider = registrations.providers[0].provider;
+  const [repoItem] = await provider.getChildren();
+  assert.equal(repoItem.description, '0 working agents · 1 needs cleanup agent · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), [
+    'Overview',
+    'Needs cleanup',
+    'Advanced details',
+  ]);
+
+  const cleanupSection = await getSectionByLabel(provider, repoItem, 'Needs cleanup');
+  const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, cleanupSection);
+  assert.equal(worktreeItem, null);
+  assert.equal(sessionItem.label, 'finished-task');
+  assert.match(sessionItem.description, /^Needs cleanup: codex · via OpenAI · 1 changed file/);
+  assert.equal(sessionItem.iconPath.id, 'pass-filled');
+  assert.deepEqual(registrations.treeViews[0].badge, {
+    value: 1,
+    tooltip: repoItem.description,
+  });
 
   for (const subscription of context.subscriptions) {
     subscription.dispose?.();
@@ -1827,7 +1891,7 @@ test('active-agents extension discovers nested managed-worktree subprojects unde
   const [repoItem] = await provider.getChildren();
   assert.equal(repoItem.label, `${path.basename(tempRoot)}/gitguardex`);
   assert.equal(repoItem.repoRoot, nestedRepoRoot);
-  assert.equal(repoItem.description, '1 working agent · 0 finished agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '1 working agent · 0 needs cleanup agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
   const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
@@ -2122,7 +2186,7 @@ test('active-agents extension shows grouped repo changes beside active agents', 
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
-  assert.equal(repoItem.description, '1 working agent · 0 finished agents · 0 idle agents · 1 unassigned change · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '1 working agent · 0 needs cleanup agents · 0 idle agents · 1 unassigned change · 0 locked files · 0 conflicts');
   assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), [
     'Overview',
     'Working now',
@@ -2258,7 +2322,7 @@ test('active-agents extension surfaces live managed worktrees from AGENT.lock fa
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
   assert.equal(repoItem.label, `${path.basename(tempRoot)}/gitguardex`);
-  assert.equal(repoItem.description, '1 working agent · 0 finished agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '1 working agent · 0 needs cleanup agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), [
     'Overview',
@@ -2476,7 +2540,7 @@ test('active-agents extension surfaces plain managed worktrees from workspace fa
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
-  assert.equal(repoItem.description, '1 working agent · 0 finished agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '1 working agent · 0 needs cleanup agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
   const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
@@ -2531,7 +2595,7 @@ test('active-agents extension resolves owning repo sessions when the window is o
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
   assert.equal(repoItem.label, path.basename(tempRoot));
-  assert.equal(repoItem.description, '1 working agent · 0 finished agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '1 working agent · 0 needs cleanup agents · 0 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
   const { worktreeItem, sessionItem } = await getOnlyWorktreeAndSession(provider, workingSection);
@@ -2610,7 +2674,7 @@ test('active-agents extension decorates sessions and repo changes from the lock 
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
-  assert.equal(repoItem.description, '1 working agent · 0 finished agents · 0 idle agents · 1 unassigned change · 3 locked files · 2 conflicts');
+  assert.equal(repoItem.description, '1 working agent · 0 needs cleanup agents · 0 idle agents · 1 unassigned change · 3 locked files · 2 conflicts');
   const workingSection = await getSectionByLabel(provider, repoItem, 'Working now');
   const unassignedSection = await getSectionByLabel(provider, repoItem, 'Unassigned changes');
   const advancedSection = await getSectionByLabel(provider, repoItem, 'Advanced details');
@@ -2861,7 +2925,7 @@ test('active-agents extension groups blocked, working, idle, stalled, and dead s
 
   const provider = registrations.providers[0].provider;
   const [repoItem] = await provider.getChildren();
-  assert.equal(repoItem.description, '2 working agents · 0 finished agents · 2 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
+  assert.equal(repoItem.description, '2 working agents · 0 needs cleanup agents · 2 idle agents · 0 unassigned changes · 0 locked files · 0 conflicts');
 
   assert.deepEqual((await provider.getChildren(repoItem)).map((item) => item.label), [
     'Overview',
