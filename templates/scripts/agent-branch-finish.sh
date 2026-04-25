@@ -165,7 +165,11 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 repo_root="$(git rev-parse --show-toplevel)"
-current_worktree="$(pwd -P)"
+# The physical cwd may be a subdirectory inside the source worktree. Cleanup
+# decisions need the enclosing worktree root, otherwise finishing from `src/`
+# can delete the caller's cwd and turn a successful merge into a false shell
+# failure.
+current_worktree="$repo_root"
 common_git_dir_raw="$(git -C "$repo_root" rev-parse --git-common-dir)"
 if [[ "$common_git_dir_raw" == /* ]]; then
   common_git_dir="$common_git_dir_raw"
@@ -846,10 +850,12 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
     echo "[agent-branch-finish] You can run manual cleanup: gx cleanup --base ${BASE_BRANCH}" >&2
   fi
 
-  echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via ${merge_status} flow and cleaned source branch/worktree."
   if [[ "$source_worktree" == "$current_worktree" && "$source_worktree" == "${agent_worktree_root}"/* && -d "$source_worktree" ]]; then
+    echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via ${merge_status} flow and cleaned source branch/remote."
     echo "[agent-branch-finish] Current worktree '${source_worktree}' still exists because it is the active shell cwd." >&2
     echo "[agent-branch-finish] Leave this directory, then run: gx cleanup --base ${BASE_BRANCH}" >&2
+  else
+    echo "[agent-branch-finish] Merged '${SOURCE_BRANCH}' into '${BASE_BRANCH}' via ${merge_status} flow and cleaned source branch/worktree."
   fi
 else
   pivot_to_repo_root_before_prune
