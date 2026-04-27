@@ -269,7 +269,7 @@ test('agent-branch-start leaves removed workflow helpers out of new worktrees', 
 });
 
 
-test('agent-branch-start links dependency node_modules directories into new worktrees when present', () => {
+test('agent-branch-start links dependency directories into new worktrees when present', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);
 
@@ -284,19 +284,22 @@ test('agent-branch-start links dependency node_modules directories into new work
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
   const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-  fs.appendFileSync(infoExcludePath, '\napps/frontend/node_modules\napps/backend/node_modules\n', 'utf8');
+  fs.appendFileSync(infoExcludePath, '\n.venv\napps/frontend/node_modules\napps/backend/node_modules\n', 'utf8');
 
-  const dependencyDirs = ['node_modules', 'apps/frontend/node_modules', 'apps/backend/node_modules'];
+  const dependencyDirs = ['.venv', 'node_modules', 'apps/frontend/node_modules', 'apps/backend/node_modules'];
   for (const relativeDir of dependencyDirs) {
     const sourceDir = path.join(repoDir, relativeDir);
     fs.mkdirSync(sourceDir, { recursive: true });
     fs.writeFileSync(path.join(sourceDir, '.guardex-link-marker'), 'present\n', 'utf8');
   }
+  fs.mkdirSync(path.join(repoDir, '.venv', 'bin'), { recursive: true });
+  fs.writeFileSync(path.join(repoDir, '.venv', 'bin', 'python3'), '#!/usr/bin/env python3\n', 'utf8');
 
   result = runBranchStart(['hydrate-deps', 'bot'], repoDir, {
     GUARDEX_PROTECTED_BRANCHES: 'main',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Linked dependency dir in worktree: \.venv/);
   assert.match(result.stdout, /Linked dependency dir in worktree: node_modules/);
   assert.match(result.stdout, /Linked dependency dir in worktree: apps\/frontend\/node_modules/);
   assert.match(result.stdout, /Linked dependency dir in worktree: apps\/backend\/node_modules/);
@@ -314,6 +317,11 @@ test('agent-branch-start links dependency node_modules directories into new work
       `symlink should expose source contents: ${relativeDir}`,
     );
   }
+  assert.equal(
+    fs.existsSync(path.join(createdWorktree, '.venv', 'bin', 'python3')),
+    true,
+    'worktree-local .venv/bin/python3 should resolve through the source venv symlink',
+  );
 });
 
 

@@ -681,6 +681,7 @@ if [[ -n "$auto_transfer_stash_ref" ]]; then
   fi
 fi
 
+hydrate_dependency_dir_symlink_in_worktree "$repo_root" "$worktree_path" ".venv"
 hydrate_dependency_dir_symlink_in_worktree "$repo_root" "$worktree_path" "node_modules"
 hydrate_dependency_dir_symlink_in_worktree "$repo_root" "$worktree_path" "apps/frontend/node_modules"
 hydrate_dependency_dir_symlink_in_worktree "$repo_root" "$worktree_path" "apps/backend/node_modules"
