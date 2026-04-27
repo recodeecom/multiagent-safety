@@ -407,3 +407,12 @@ OMX completion policy: when a task is done, the agent must commit the task chang
 
 **Version bumps.** If a change bumps a published version, the same PR updates release notes/changelog.
 <!-- multiagent-safety:END -->
+
+
+<claude-mem-context>
+# Memory Context
+
+# [gitguardex] recent context, 2026-04-27 9:55am GMT+2
+
+No previous sessions found.
+</claude-mem-context>
