@@ -148,6 +148,68 @@ test('agent-branch-start reuses the current agent worktree instead of cloning it
   );
 });
 
+test('agent-branch-start reuses a single dirty matching managed worktree from the protected checkout', () => {
+  const { repoDir } = createBootstrappedRepo({ committed: true });
+
+  let result = runBranchStart(['--tier', 'T1', 'add agents recodee billing sections', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const firstBranch = extractCreatedBranch(result.stdout);
+  const firstWorktree = extractCreatedWorktree(result.stdout);
+  fs.writeFileSync(path.join(firstWorktree, 'billing-note.txt'), 'unfinished billing work\n', 'utf8');
+
+  result = runBranchStart(['--tier', 'T1', 'continue per user saas billing replacement', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Matched dirty managed worktree for requested task/);
+  assert.match(result.stdout, new RegExp(`Reusing existing branch: ${escapeRegexLiteral(firstBranch)}`));
+  assert.equal(extractCreatedWorktree(result.stdout), firstWorktree);
+
+  const worktreeList = runCmd('git', ['worktree', 'list', '--porcelain'], repoDir);
+  assert.equal(worktreeList.status, 0, worktreeList.stderr || worktreeList.stdout);
+  assert.equal(
+    (worktreeList.stdout.match(/^branch refs\/heads\/agent\//gm) || []).length,
+    1,
+    'dirty continuation routing should not create a duplicate agent branch',
+  );
+});
+
+test('agent-branch-start creates a fresh branch when dirty matching worktrees are ambiguous', () => {
+  const { repoDir } = createBootstrappedRepo({ committed: true });
+
+  let result = runBranchStart(['--tier', 'T1', 'billing alpha implementation', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const alphaWorktree = extractCreatedWorktree(result.stdout);
+  fs.writeFileSync(path.join(alphaWorktree, 'alpha-billing-note.txt'), 'unfinished alpha billing work\n', 'utf8');
+
+  result = runBranchStart(['--tier', 'T1', 'billing beta implementation', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+    GUARDEX_BRANCH_START_REUSE_EXISTING: 'false',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const betaWorktree = extractCreatedWorktree(result.stdout);
+  fs.writeFileSync(path.join(betaWorktree, 'beta-billing-note.txt'), 'unfinished beta billing work\n', 'utf8');
+
+  result = runBranchStart(['--tier', 'T1', 'continue billing implementation', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.doesNotMatch(result.stdout, /Matched dirty managed worktree for requested task/);
+  assert.match(result.stdout, /Created branch: agent\/codex\/continue-billing-implementation-/);
+
+  const worktreeList = runCmd('git', ['worktree', 'list', '--porcelain'], repoDir);
+  assert.equal(worktreeList.status, 0, worktreeList.stderr || worktreeList.stdout);
+  assert.equal(
+    (worktreeList.stdout.match(/^branch refs\/heads\/agent\//gm) || []).length,
+    3,
+    'ambiguous dirty matches should leave both old branches and create a new explicit lane',
+  );
+});
+
 
 test('agent-branch-start moves protected-branch local changes into the new agent worktree', () => {
   const repoDir = initRepoOnBranch('main');

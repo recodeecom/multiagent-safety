@@ -410,6 +410,101 @@ has_local_changes() {
   return 1
 }
 
+meaningful_slug_tokens() {
+  local raw="$1"
+  printf '%s' "$raw" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr '/_' '--' \
+    | tr '-' '\n' \
+    | awk '
+      length($0) < 4 { next }
+      $0 ~ /^[0-9]+$/ { next }
+      $0 ~ /^(agent|agents|branch|codex|claude|continue|dirty|existing|fix|from|implement|make|matching|reuse|start|task|that|this|update|with|worktree|worktrees)$/ { next }
+      !seen[$0]++ { print }
+    '
+}
+
+token_match_score() {
+  local task_slug="$1"
+  local branch_descriptor="$2"
+  local task_tokens branch_tokens token score
+  task_tokens="$(meaningful_slug_tokens "$task_slug")"
+  branch_tokens="$(meaningful_slug_tokens "$branch_descriptor")"
+  score=0
+
+  if [[ -z "$task_tokens" ]] || [[ -z "$branch_tokens" ]]; then
+    printf '0'
+    return 0
+  fi
+
+  while IFS= read -r token; do
+    if grep -Fxq "$token" <<<"$branch_tokens"; then
+      score=$((score + 1))
+    fi
+  done <<<"$task_tokens"
+
+  printf '%s' "$score"
+}
+
+managed_worktree_roots() {
+  local repo="$1"
+  local explicit_root="$2"
+  local root
+  local seen_roots=$'\n'
+
+  for root in \
+    "${repo}/${explicit_root}" \
+    "${repo}/.omx/agent-worktrees" \
+    "${repo}/.omc/agent-worktrees"; do
+    if [[ -n "$root" && "$seen_roots" != *$'\n'"$root"$'\n'* ]]; then
+      seen_roots+="${root}"$'\n'
+      printf '%s\n' "$root"
+    fi
+  done
+}
+
+find_matching_dirty_agent_worktree() {
+  local repo="$1"
+  local worktree_root_rel="$2"
+  local task_slug="$3"
+  local agent_slug="$4"
+  local best_score=0
+  local best_branch=""
+  local best_worktree=""
+  local best_count=0
+  local root entry branch descriptor score
+
+  while IFS= read -r root; do
+    [[ -d "$root" ]] || continue
+    while IFS= read -r entry; do
+      [[ -d "$entry" ]] || continue
+      if ! branch="$(git -C "$entry" rev-parse --abbrev-ref HEAD 2>/dev/null)"; then
+        continue
+      fi
+      [[ "$branch" == "agent/${agent_slug}/"* ]] || continue
+      has_local_changes "$entry" || continue
+
+      descriptor="${branch#agent/${agent_slug}/}"
+      score="$(token_match_score "$task_slug" "$descriptor")"
+      [[ "$score" =~ ^[0-9]+$ ]] || score=0
+      [[ "$score" -gt 0 ]] || continue
+
+      if [[ "$score" -gt "$best_score" ]]; then
+        best_score="$score"
+        best_branch="$branch"
+        best_worktree="$entry"
+        best_count=1
+      elif [[ "$score" -eq "$best_score" ]]; then
+        best_count=$((best_count + 1))
+      fi
+    done < <(find "$root" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null | sort)
+  done < <(managed_worktree_roots "$repo" "$worktree_root_rel")
+
+  if [[ "$best_score" -gt 0 && "$best_count" -eq 1 && -n "$best_branch" && -n "$best_worktree" ]]; then
+    printf '%s\t%s\n' "$best_branch" "$best_worktree"
+  fi
+}
+
 resolve_stash_ref_by_message() {
   local root="$1"
   local message="$2"
@@ -595,6 +690,16 @@ branch_name="$branch_name_base"
 if [[ "$PRINT_NAME_ONLY" -eq 1 ]]; then
   printf '%s\n' "$branch_name"
   exit 0
+fi
+
+if [[ "$REUSE_EXISTING_WORKTREE" -eq 1 ]]; then
+  matching_dirty_worktree="$(find_matching_dirty_agent_worktree "$repo_root" "$WORKTREE_ROOT_REL" "$task_slug" "$agent_slug")"
+  if [[ -n "$matching_dirty_worktree" ]]; then
+    IFS=$'\t' read -r reused_branch reused_worktree <<<"$matching_dirty_worktree"
+    echo "[agent-branch-start] Matched dirty managed worktree for requested task."
+    print_reused_agent_worktree "$reused_branch" "$reused_worktree"
+    exit 0
+  fi
 fi
 
 if [[ "$BASE_BRANCH_EXPLICIT" -eq 0 ]]; then
