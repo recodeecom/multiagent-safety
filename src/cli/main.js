@@ -408,8 +408,9 @@ function runSetupBootstrapInternal(options) {
 }
 
 function extractAgentBranchStartMetadata(output) {
-  const branchMatch = String(output || '').match(/^\[agent-branch-start\] Created branch: (.+)$/m);
-  const worktreeMatch = String(output || '').match(/^\[agent-branch-start\] Worktree: (.+)$/m);
+  const outputText = String(output || '');
+  const branchMatch = outputText.match(/^\[agent-branch-start\] (?:Created branch|Reusing existing branch): (.+)$/m);
+  const worktreeMatch = outputText.match(/^\[agent-branch-start\] Worktree: (.+)$/m);
   return {
     branch: branchMatch ? branchMatch[1].trim() : '',
     worktreePath: worktreeMatch ? worktreeMatch[1].trim() : '',
@@ -3466,7 +3467,7 @@ function pivot(rawArgs) {
   }
   const stdoutText = String(result.stdout || '');
   const wtMatch = stdoutText.match(/^\[agent-branch-start\] Worktree:\s+(.+)$/m);
-  const branchMatch = stdoutText.match(/^\[agent-branch-start\] Created branch:\s+(.+)$/m);
+  const branchMatch = stdoutText.match(/^\[agent-branch-start\] (?:Created branch|Reusing existing branch):\s+(.+)$/m);
   if (wtMatch) {
     const wtPath = wtMatch[1].trim();
     process.stdout.write('\n');

@@ -65,8 +65,9 @@ function assertProtectedMainWriteAllowed(options, commandName) {
 }
 
 function extractAgentBranchStartMetadata(output) {
-  const branchMatch = String(output || '').match(/^\[agent-branch-start\] Created branch: (.+)$/m);
-  const worktreeMatch = String(output || '').match(/^\[agent-branch-start\] Worktree: (.+)$/m);
+  const outputText = String(output || '');
+  const branchMatch = outputText.match(/^\[agent-branch-start\] (?:Created branch|Reusing existing branch): (.+)$/m);
+  const worktreeMatch = outputText.match(/^\[agent-branch-start\] Worktree: (.+)$/m);
   return {
     branch: branchMatch ? branchMatch[1].trim() : '',
     worktreePath: worktreeMatch ? worktreeMatch[1].trim() : '',

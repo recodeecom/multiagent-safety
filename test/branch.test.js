@@ -117,6 +117,38 @@ test('agent-branch-start prefers current protected branch over stale configured 
 });
 
 
+test('agent-branch-start reuses the current agent worktree instead of cloning it', () => {
+  const { repoDir } = createBootstrappedRepo({ committed: true });
+
+  let result = runBranchStart(['--tier', 'T1', 'rust repair snapshot selection', 'bot'], repoDir, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const firstBranch = extractCreatedBranch(result.stdout);
+  const firstWorktree = extractCreatedWorktree(result.stdout);
+
+  result = runBranchStart(['--tier', 'T1', 'continue rust worktree', 'bot'], firstWorktree, {
+    GUARDEX_OPENSPEC_AUTO_INIT: 'true',
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, new RegExp(`Reusing existing branch: ${escapeRegexLiteral(firstBranch)}`));
+  assert.equal(extractCreatedWorktree(result.stdout), firstWorktree);
+  assert.equal(
+    fs.existsSync(path.join(firstWorktree, '.omx', 'agent-worktrees')),
+    false,
+    'branch start inside an agent worktree must not create nested worktrees',
+  );
+
+  const worktreeList = runCmd('git', ['worktree', 'list', '--porcelain'], repoDir);
+  assert.equal(worktreeList.status, 0, worktreeList.stderr || worktreeList.stdout);
+  assert.equal(
+    (worktreeList.stdout.match(/^branch refs\/heads\/agent\//gm) || []).length,
+    1,
+    'only the original agent branch should remain registered',
+  );
+});
+
+
 test('agent-branch-start moves protected-branch local changes into the new agent worktree', () => {
   const repoDir = initRepoOnBranch('main');
   seedCommit(repoDir);

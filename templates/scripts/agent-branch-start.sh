@@ -15,6 +15,7 @@ OPENSPEC_CHANGE_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CHANGE_SLUG:-}"
 OPENSPEC_CAPABILITY_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CAPABILITY_SLUG:-}"
 OPENSPEC_MASTERPLAN_LABEL_RAW="${GUARDEX_OPENSPEC_MASTERPLAN_LABEL-masterplan}"
 OPENSPEC_TIER_RAW="${GUARDEX_OPENSPEC_TIER:-T3}"
+REUSE_EXISTING_RAW="${GUARDEX_BRANCH_START_REUSE_EXISTING:-true}"
 PRINT_NAME_ONLY=0
 POSITIONAL_ARGS=()
 
@@ -58,6 +59,14 @@ while [[ $# -gt 0 ]]; do
       OPENSPEC_TIER_RAW="${2:-$OPENSPEC_TIER_RAW}"
       shift 2
       ;;
+    --reuse-existing|--reuse)
+      REUSE_EXISTING_RAW="true"
+      shift
+      ;;
+    --new|--no-reuse|--no-reuse-existing)
+      REUSE_EXISTING_RAW="false"
+      shift
+      ;;
     --in-place|--allow-in-place)
       echo "[agent-branch-start] In-place branch mode is disabled." >&2
       echo "[agent-branch-start] This command always creates an isolated worktree to keep your active checkout unchanged." >&2
@@ -78,7 +87,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       echo "[agent-branch-start] Unknown option: $1" >&2
-      echo "Usage: $0 [task] [agent] [base] [--worktree-root <path>] [--print-name-only]" >&2
+      echo "Usage: $0 [task] [agent] [base] [--worktree-root <path>] [--reuse-existing|--new] [--print-name-only]" >&2
       exit 1
       ;;
     *)
@@ -90,7 +99,7 @@ done
 
 if [[ "${#POSITIONAL_ARGS[@]}" -gt 3 ]]; then
   echo "[agent-branch-start] Too many positional arguments." >&2
-  echo "Usage: $0 [task] [agent] [base] [--worktree-root <path>]" >&2
+  echo "Usage: $0 [task] [agent] [base] [--worktree-root <path>] [--reuse-existing|--new]" >&2
   exit 1
 fi
 
@@ -254,6 +263,7 @@ normalize_bool() {
 }
 
 OPENSPEC_AUTO_INIT="$(normalize_bool "$OPENSPEC_AUTO_INIT_RAW" "1")"
+REUSE_EXISTING_WORKTREE="$(normalize_bool "$REUSE_EXISTING_RAW" "1")"
 
 normalize_tier() {
   local raw="${1:-}"
@@ -368,6 +378,22 @@ resolve_worktree_leaf() {
   fi
 
   printf '%s' "${branch_name//\//__}"
+}
+
+print_reused_agent_worktree() {
+  local branch_name="$1"
+  local worktree_path="$2"
+
+  echo "[agent-branch-start] Reusing existing branch: ${branch_name}"
+  echo "[agent-branch-start] Worktree: ${worktree_path}"
+  echo "[agent-branch-start] OpenSpec tier: ${OPENSPEC_TIER}"
+  echo "[agent-branch-start] OpenSpec change: existing worktree"
+  echo "[agent-branch-start] OpenSpec plan: existing worktree"
+  echo "[agent-branch-start] Next steps:"
+  echo "  cd \"${worktree_path}\""
+  echo "  gx locks claim --branch \"${branch_name}\" <file...>"
+  echo "  # continue work in this existing sandbox"
+  echo "  gx branch finish --branch \"${branch_name}\" --via-pr --wait-for-merge"
 }
 
 has_local_changes() {
@@ -548,6 +574,12 @@ fi
 if [[ "$BASE_BRANCH_EXPLICIT" -eq 1 && -z "$BASE_BRANCH" ]]; then
   echo "[agent-branch-start] --base requires a non-empty branch name." >&2
   exit 1
+fi
+
+current_branch="$(git -C "$repo_root" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [[ "$REUSE_EXISTING_WORKTREE" -eq 1 && "$current_branch" == agent/* ]]; then
+  print_reused_agent_worktree "$current_branch" "$repo_root"
+  exit 0
 fi
 
 task_slug="$(sanitize_slug "$TASK_NAME" "task")"

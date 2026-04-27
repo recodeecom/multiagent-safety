@@ -288,7 +288,7 @@ if [[ -z "$TARGET_BRANCH" ]]; then
   fi
 
   printf '%s\n' "$start_output"
-  TARGET_BRANCH="$(printf '%s\n' "$start_output" | sed -n 's/^\[agent-branch-start\] Created branch: //p' | head -n 1)"
+  TARGET_BRANCH="$(printf '%s\n' "$start_output" | sed -n -E 's/^\[agent-branch-start\] (Created branch|Reusing existing branch): //p' | head -n 1)"
   target_worktree="$(printf '%s\n' "$start_output" | sed -n 's/^\[agent-branch-start\] Worktree: //p' | head -n 1)"
   if [[ -z "$TARGET_BRANCH" || -z "$target_worktree" ]]; then
     echo "[agent-branch-merge] Unable to parse target branch/worktree from agent-branch-start output." >&2
