@@ -1567,6 +1567,92 @@ test('active-agents extension closes deleted worktree repositories during refres
   }
 });
 
+test('active-agents extension closes deleted worktrees after session records disappear', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-close-deleted-no-session-'));
+  const worktreePath = path.join(tempRoot, '.omx', 'agent-worktrees', 'deleted-task');
+  fs.mkdirSync(worktreePath, { recursive: true });
+  const sessionPath = writeSessionRecord(tempRoot, sessionSchema.buildSessionRecord({
+    repoRoot: tempRoot,
+    branch: 'agent/codex/deleted-task',
+    taskName: 'deleted-task',
+    agentName: 'codex',
+    worktreePath,
+    pid: process.pid,
+    cliName: 'codex',
+  }));
+  let currentSessionFiles = [{ fsPath: sessionPath }];
+
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.workspaceFolders = [
+    { uri: { fsPath: tempRoot } },
+    { uri: { fsPath: worktreePath } },
+  ];
+  vscode.workspace.findFiles = async () => currentSessionFiles;
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const gitCloseCalls = () => registrations.executedCommands.filter((entry) => (
+    entry.command === 'git.close'
+  ));
+  assert.equal(gitCloseCalls().length, 0);
+
+  fs.rmSync(worktreePath, { recursive: true, force: true });
+  fs.rmSync(sessionPath, { force: true });
+  currentSessionFiles = [];
+  await registrations.commands.get('gitguardex.activeAgents.refresh')();
+  await flushAsyncWork();
+
+  assert.equal(gitCloseCalls().length, 1);
+  assert.equal(gitCloseCalls()[0].args[0].fsPath, path.resolve(worktreePath));
+  assert.deepEqual(registrations.workspaceFolderUpdates, [
+    { start: 1, deleteCount: 1, folders: [] },
+  ]);
+  assert.deepEqual(
+    vscode.workspace.workspaceFolders.map((folder) => folder.uri.fsPath),
+    [tempRoot],
+  );
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
+test('active-agents extension closes deleted managed workspace folders without session state', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-close-stale-folder-'));
+  const worktreePath = path.join(tempRoot, '.omc', 'agent-worktrees', 'deleted-task');
+  const { registrations, vscode } = createMockVscode(tempRoot);
+  vscode.workspace.workspaceFolders = [
+    { uri: { fsPath: tempRoot } },
+    { uri: { fsPath: worktreePath } },
+  ];
+  vscode.workspace.findFiles = async () => [];
+  const extension = loadExtensionWithMockVscode(vscode);
+  const context = { subscriptions: [] };
+
+  extension.activate(context);
+  await flushAsyncWork();
+
+  const gitCloseCalls = registrations.executedCommands.filter((entry) => (
+    entry.command === 'git.close'
+  ));
+  assert.equal(gitCloseCalls.length, 1);
+  assert.equal(gitCloseCalls[0].args[0].fsPath, path.resolve(worktreePath));
+  assert.deepEqual(registrations.workspaceFolderUpdates, [
+    { start: 1, deleteCount: 1, folders: [] },
+  ]);
+  assert.deepEqual(
+    vscode.workspace.workspaceFolders.map((folder) => folder.uri.fsPath),
+    [tempRoot],
+  );
+
+  for (const subscription of context.subscriptions) {
+    subscription.dispose?.();
+  }
+});
+
 test('active-agents restart command restarts the extension host for this extension only', async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-vscode-restart-command-'));
   const { registrations, vscode } = createMockVscode(tempRoot);

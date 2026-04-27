@@ -2399,6 +2399,19 @@ function normalizeAbsolutePath(value) {
   return typeof value === 'string' && value.trim() ? path.resolve(value) : '';
 }
 
+function isManagedWorktreePath(worktreePath) {
+  const normalizedWorktreePath = normalizeAbsolutePath(worktreePath);
+  if (!normalizedWorktreePath) {
+    return false;
+  }
+
+  return MANAGED_WORKTREE_RELATIVE_ROOTS.some((relativeRoot) => {
+    const normalizedRelativeRoot = path.normalize(relativeRoot);
+    const marker = `${path.sep}${normalizedRelativeRoot}${path.sep}`;
+    return normalizedWorktreePath.includes(marker);
+  });
+}
+
 function removeDeletedWorktreeWorkspaceFolder(worktreePath) {
   if (typeof vscode.workspace.updateWorkspaceFolders !== 'function') {
     return false;
@@ -2438,6 +2451,16 @@ async function closeDeletedWorktreeRepository(worktreePath) {
 
   removeDeletedWorktreeWorkspaceFolder(normalizedWorktreePath);
   return true;
+}
+
+function findDeletedManagedWorkspaceFolders() {
+  return (vscode.workspace.workspaceFolders || [])
+    .map((folder) => normalizeAbsolutePath(folder?.uri?.fsPath))
+    .filter((workspacePath) => (
+      workspacePath
+      && !fs.existsSync(workspacePath)
+      && isManagedWorktreePath(workspacePath)
+    ));
 }
 
 function localizeChangeForSession(session, change) {
@@ -3480,6 +3503,7 @@ class ActiveAgentsRefreshController {
     this.refreshTimer = null;
     this.sessionWatchers = new Map();
     this.closedMissingWorktreeRepositories = new Set();
+    this.observedWorktreePaths = new Set();
   }
 
   scheduleRefresh() {
@@ -3502,6 +3526,10 @@ class ActiveAgentsRefreshController {
     const repoEntries = await findRepoSessionEntries();
     const liveSessionKeys = new Set();
 
+    for (const workspacePath of findDeletedManagedWorkspaceFolders()) {
+      await this.closeMissingWorktreeRepository(workspacePath);
+    }
+
     for (const entry of repoEntries) {
       for (const session of entry.sessions) {
         const worktreePath = sessionWorktreePath(session);
@@ -3512,6 +3540,7 @@ class ActiveAgentsRefreshController {
         }
         if (normalizedWorktreePath) {
           this.closedMissingWorktreeRepositories.delete(normalizedWorktreePath);
+          this.observedWorktreePaths.add(normalizedWorktreePath);
         }
 
         const sessionKey = resolveSessionWatcherKey(session);
@@ -3524,8 +3553,20 @@ class ActiveAgentsRefreshController {
           resolveSessionGitIndexPath(session.worktreePath),
         );
         const disposables = bindRefreshWatcher(watcher, () => this.scheduleRefresh());
-        this.sessionWatchers.set(sessionKey, { watcher, disposables });
+        this.sessionWatchers.set(sessionKey, {
+          watcher,
+          disposables,
+          worktreePath: normalizedWorktreePath,
+        });
       }
+    }
+
+    for (const observedWorktreePath of this.observedWorktreePaths) {
+      if (fs.existsSync(observedWorktreePath)) {
+        this.closedMissingWorktreeRepositories.delete(observedWorktreePath);
+        continue;
+      }
+      await this.closeMissingWorktreeRepository(observedWorktreePath);
     }
 
     for (const [sessionKey, entry] of this.sessionWatchers) {
@@ -3533,6 +3574,9 @@ class ActiveAgentsRefreshController {
         continue;
       }
 
+      if (entry.worktreePath && !fs.existsSync(entry.worktreePath)) {
+        await this.closeMissingWorktreeRepository(entry.worktreePath);
+      }
       disposeAll(entry.disposables);
       entry.watcher.dispose();
       this.sessionWatchers.delete(sessionKey);
