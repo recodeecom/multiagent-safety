@@ -536,6 +536,81 @@ fi
   assert.equal(result.stdout.trim(), '', 'agent branch should be absent on origin');
 });
 
+test('agent-branch-finish cleanup warns instead of failing when post-merge remote delete is rejected', () => {
+  const repoDir = initRepo();
+  seedCommit(repoDir);
+  attachOriginRemote(repoDir);
+
+  let result = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  result = runCmd('git', ['add', '.'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['commit', '-m', 'apply gx setup'], repoDir, {
+    ALLOW_COMMIT_ON_PROTECTED_BRANCH: '1',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  result = runCmd('git', ['push', 'origin', 'dev'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+
+  result = runCmd('git', ['checkout', '-b', 'agent/test-pr-remote-delete-rejected'], repoDir);
+  assert.equal(result.status, 0, result.stderr);
+  commitFile(repoDir, 'agent-pr-remote-delete-rejected.txt', 'agent change\n', 'agent change');
+
+  const { fakePath: fakeGhPath } = createFakeGhScript(`
+if [[ "$1" == "pr" && "$2" == "create" ]]; then
+  exit 0
+fi
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  if [[ " $* " == *" --json url "* ]]; then
+    echo "https://example.test/pr/remote-delete-rejected"
+    exit 0
+  fi
+  echo "unexpected gh pr view args: $*" >&2
+  exit 1
+fi
+if [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  git_bin="$(command -v git)"
+  "$git_bin" -C "${'${GUARDEX_TEST_REPO_DIR}'}" branch -D "$3" >/dev/null 2>&1 || true
+  exit 0
+fi
+echo "unexpected gh args: $*" >&2
+exit 1
+`);
+  const realGit = runCmd('bash', ['-lc', 'command -v git'], repoDir);
+  assert.equal(realGit.status, 0, realGit.stderr || realGit.stdout);
+  const realGitPath = realGit.stdout.trim();
+  const { fakeBin } = createFakeBin('git', `
+real_git="${realGitPath}"
+if [[ "$1" == "-C" && "$3" == "push" && "$4" == "origin" && "$5" == "--delete" && "$6" == "agent/test-pr-remote-delete-rejected" ]]; then
+  echo "remote: This repository moved. Please use the new location:" >&2
+  echo "remote:   https://github.com/recodeee/recodee.git" >&2
+  echo "error: failed to push some refs to 'origin'" >&2
+  exit 1
+fi
+"$real_git" "$@"
+`);
+
+  const finish = runBranchFinish(
+    ['--branch', 'agent/test-pr-remote-delete-rejected', '--mode', 'pr', '--cleanup'],
+    repoDir,
+    {
+      GUARDEX_GH_BIN: fakeGhPath,
+      GUARDEX_TEST_REPO_DIR: repoDir,
+      PATH: `${fakeBin}:${process.env.PATH || ''}`,
+    },
+  );
+  assert.equal(finish.status, 0, finish.stderr || finish.stdout);
+  assert.match(
+    finish.stderr,
+    /Warning: remote branch cleanup failed for 'agent\/test-pr-remote-delete-rejected' after merge; continuing local cleanup\./,
+  );
+  assert.match(finish.stderr, /This repository moved\. Please use the new location:/);
+  assert.match(
+    finish.stdout,
+    /Merged 'agent\/test-pr-remote-delete-rejected' into 'dev' via pr flow and cleaned source branch\/worktree\./,
+  );
+});
+
 test('agent-branch-finish cleanup tolerates an already-deleted local branch after gh delete warning', () => {
   const repoDir = initRepo();
   seedCommit(repoDir);

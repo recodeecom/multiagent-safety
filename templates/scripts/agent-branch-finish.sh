@@ -508,7 +508,7 @@ is_local_branch_delete_error() {
 
 is_remote_branch_missing_error() {
   local output="$1"
-  if [[ "$output" == *"remote ref does not exist"* ]] || [[ "$output" == *"failed to push some refs"* ]]; then
+  if [[ "$output" == *"remote ref does not exist"* ]]; then
     return 0
   fi
   return 1
@@ -893,8 +893,8 @@ if [[ "$CLEANUP_AFTER_MERGE" -eq 1 ]]; then
         if is_remote_branch_missing_error "$remote_delete_output"; then
           echo "[agent-branch-finish] Remote branch '${SOURCE_BRANCH}' was already deleted; continuing cleanup." >&2
         else
+          echo "[agent-branch-finish] Warning: remote branch cleanup failed for '${SOURCE_BRANCH}' after merge; continuing local cleanup." >&2
           echo "$remote_delete_output" >&2
-          exit 1
         fi
       fi
     fi
