@@ -265,6 +265,15 @@ Being honest about where this still has issues:
 <details open>
 <summary><strong>v7.x</strong></summary>
 
+### v7.0.41
+- Bumped `@imdeadpool/guardex` from `7.0.40` to `7.0.41` so the current
+  `main` payload can publish under a fresh npm version after the `v7.0.40`
+  GitHub release landed without a matching npm registry package.
+- Ships the Colony companion setup as the default global companion surface:
+  `colony` maps to `@imdeadpool/colony-cli`, README setup documents
+  `colony install --ide ...`, and status tests/images expect Colony instead
+  of cavemem.
+
 ### v7.0.40
 - Bumped `@imdeadpool/guardex` from `7.0.39` to `7.0.40` so the current
   `main` payload can publish under a fresh npm version after `7.0.39` reached
