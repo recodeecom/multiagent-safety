@@ -8,8 +8,7 @@ This change is complete only when **all** of the following are true:
 
 ## Handoff
 
-- Handoff: change=`agent-codex-block-shell-output-redirect-hook-bypass-2026-04-28-11-01`; branch=`agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01`; scope=`TODO`; action=`continue this sandbox or finish cleanup after a usage-limit/manual takeover`.
-- Copy prompt: Continue `agent-codex-block-shell-output-redirect-hook-bypass-2026-04-28-11-01` on branch `agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01`. Work inside the existing sandbox, review `openspec/changes/agent-codex-block-shell-output-redirect-hook-bypass-2026-04-28-11-01/tasks.md`, continue from the current state instead of creating a new sandbox, and when the work is done run `gx branch finish --branch agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01 --base main --via-pr --wait-for-merge --cleanup`.
+- Handoff: change=`agent-codex-block-shell-output-redirect-hook-bypass-2026-04-28-11-01`; branch=`agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01`; scope=`hook guard shell output redirection bypass`; action=`completed and merged via PR #446`; evidence=`https://github.com/recodeee/gitguardex/pull/446`, state=`MERGED`, merge_commit=`f885a248b583c0710cb0684aceae3e7c13904433`.
 
 ## 1. Specification
 
@@ -29,7 +28,6 @@ This change is complete only when **all** of the following are true:
 
 ## 4. Cleanup (mandatory; run before claiming completion)
 
-- [ ] 4.1 Run the cleanup pipeline: `gx branch finish --branch agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01 --base main --via-pr --wait-for-merge --cleanup`. This handles commit -> push -> PR create -> merge wait -> worktree prune in one invocation.
-  - BLOCKED: `gx branch finish --branch agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01 --base main --via-pr --wait-for-merge --cleanup` needs network approval, but escalation was rejected because the account hit the usage limit until 3:40 PM. Next step: rerun the same finish command after approval quota resets.
-- [ ] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff.
-- [ ] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch).
+- [x] 4.1 Run the cleanup pipeline: `gx branch finish --branch agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01 --base main --via-pr --wait-for-merge --cleanup`. Evidence: completed with exit 0 and merged PR #446.
+- [x] 4.2 Record the PR URL and final merge state (`MERGED`) in the completion handoff. Evidence: `gh pr view agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01 --repo recodeee/gitguardex --json number,url,state,mergedAt,headRefName,baseRefName,mergeCommit` -> `https://github.com/recodeee/gitguardex/pull/446`, `MERGED`, `mergedAt=2026-04-28T09:13:19Z`, `mergeCommit=f885a248b583c0710cb0684aceae3e7c13904433`.
+- [x] 4.3 Confirm the sandbox worktree is gone (`git worktree list` no longer shows the agent path; `git branch -a` shows no surviving local/remote refs for the branch). Evidence: `git worktree list --porcelain` no longer lists `.omx/agent-worktrees/gitguardex__codex__block-shell-output-redirect-hook-bypass-2026-04-28-11-01`; `git fetch --prune origin` pruned `origin/agent/codex/block-shell-output-redirect-hook-bypass-2026-04-28-11-01`.
