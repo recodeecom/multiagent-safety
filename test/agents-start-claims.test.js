@@ -10,6 +10,8 @@ const {
   extractCreatedWorktree,
   defineSpawnSuite,
 } = require('./helpers/install-test-helpers');
+const { finishAgentSession } = require('../src/agents/finish');
+const { listAgentSessions, readAgentSession } = require('../src/agents/sessions');
 
 function readLocks(worktreePath) {
   const lockPath = path.join(worktreePath, '.omx', 'state', 'agent-file-locks.json');
@@ -31,6 +33,13 @@ defineSpawnSuite('agents start claim suite', () => {
 
     const worktreePath = extractCreatedWorktree(result.stdout);
     assert.equal(fs.existsSync(path.join(worktreePath, '.omx', 'state', 'agent-file-locks.json')), false);
+
+    const [session] = listAgentSessions(repoDir);
+    assert.equal(session.task, 'fix auth');
+    assert.equal(session.agent, 'codex');
+    assert.equal(session.branch, extractCreatedBranch(result.stdout));
+    assert.equal(session.worktreePath, worktreePath);
+    assert.equal(session.status, 'active');
   });
 
   test('agents start claims one file after branch creation', () => {
@@ -94,15 +103,30 @@ defineSpawnSuite('agents start claim suite', () => {
     assert.match(result.stdout, /Recovery: gx locks claim --branch /);
 
     const branch = extractCreatedBranch(result.stdout);
-    const sessionPath = path.join(
-      repoDir,
-      '.omx',
-      'state',
-      'active-sessions',
-      `${branch.replace(/[^a-zA-Z0-9._-]+/g, '__').replace(/^_+|_+$/g, '')}.json`,
-    );
-    const session = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
-    assert.equal(session.state, 'claim-failed');
+    const [session] = listAgentSessions(repoDir);
+    assert.equal(session.branch, branch);
+    assert.equal(session.status, 'claim-failed');
     assert.deepEqual(session.claimFailure.claims, [outsidePath]);
+    assert.equal(fs.existsSync(path.join(repoDir, '.omx', 'state', 'active-sessions')), false);
+  });
+
+  test('agents finish resolves a canonical session created by agents start', () => {
+    const repoDir = initRepo();
+    seedCommit(repoDir);
+
+    const startResult = runNode(['agents', 'start', 'finish started session', '--agent', 'codex', '--target', repoDir], repoDir);
+    assert.equal(startResult.status, 0, startResult.stderr || startResult.stdout);
+
+    const [session] = listAgentSessions(repoDir);
+    const calls = [];
+    const output = { write() {} };
+    const result = finishAgentSession(repoDir, { sessionId: session.id, branch: '', finishArgs: ['--no-wait-for-merge'] }, {
+      output,
+      finishRunner(args) { calls.push(args); return { ok: true }; },
+    });
+
+    assert.equal(result.status, 'pr-opened');
+    assert.deepEqual(calls, [['--target', repoDir, '--branch', extractCreatedBranch(startResult.stdout), '--no-wait-for-merge']]);
+    assert.equal(readAgentSession(repoDir, session.id).status, 'pr-opened');
   });
 });

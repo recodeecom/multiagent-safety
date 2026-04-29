@@ -1,5 +1,4 @@
 const {
-  fs,
   path,
   TOOL_NAME,
   SHORT_TOOL_NAME,
@@ -8,8 +7,12 @@ const { runPackageAsset } = require('../core/runtime');
 const { currentBranchName } = require('../git');
 const { buildAgentLaunchCommand } = require('./launch');
 const { resolveAgent } = require('./registry');
-
-const ACTIVE_SESSIONS_RELATIVE_DIR = path.join('.omx', 'state', 'active-sessions');
+const {
+  createAgentSession,
+  listAgentSessions,
+  sessionFilePath,
+  updateAgentSession,
+} = require('./sessions');
 
 function sanitizeSlug(value, fallback = 'task') {
   const slug = String(value || '')
@@ -114,42 +117,55 @@ function sanitizeBranchForFile(branch) {
     .replace(/^_+|_+$/g, '') || 'session';
 }
 
-function sessionFilePathForBranch(repoRoot, branch) {
-  return path.join(
-    path.resolve(repoRoot),
-    ACTIVE_SESSIONS_RELATIVE_DIR,
-    `${sanitizeBranchForFile(branch)}.json`,
-  );
+function agentSessionIdForBranch(branch) {
+  return sanitizeBranchForFile(branch);
+}
+
+function buildSessionPayload(options, metadata, status, extra = {}) {
+  if (!metadata.branch || !metadata.worktreePath) {
+    return null;
+  }
+
+  return {
+    id: extra.id || agentSessionIdForBranch(metadata.branch),
+    task: options.task,
+    agent: options.agent || 'codex',
+    branch: metadata.branch,
+    worktreePath: path.resolve(metadata.worktreePath),
+    base: options.base || null,
+    status,
+    ...extra,
+  };
+}
+
+function findSessionByBranch(repoRoot, branch) {
+  return listAgentSessions(repoRoot).find((session) => session.branch === branch) || null;
+}
+
+function writeAgentSession(repoRoot, options, metadata, status, extra = {}) {
+  const payload = buildSessionPayload(options, metadata, status, extra);
+  if (!payload) {
+    return null;
+  }
+
+  const existing = findSessionByBranch(repoRoot, metadata.branch);
+  if (existing) {
+    return updateAgentSession(repoRoot, existing.id, payload);
+  }
+
+  return createAgentSession(repoRoot, payload);
 }
 
 function writeClaimFailedSession(repoRoot, options, metadata, claimResult) {
-  if (!metadata.branch || !metadata.worktreePath) {
-    return '';
-  }
-  const targetPath = sessionFilePathForBranch(repoRoot, metadata.branch);
-  const now = new Date().toISOString();
-  const record = {
-    schemaVersion: 1,
-    repoRoot: path.resolve(repoRoot),
-    branch: metadata.branch,
-    taskName: options.task,
-    agentName: options.agent || 'codex',
-    worktreePath: path.resolve(metadata.worktreePath),
-    pid: process.pid,
-    cliName: SHORT_TOOL_NAME,
-    startedAt: now,
-    lastHeartbeatAt: now,
-    state: 'claim-failed',
+  const session = writeAgentSession(repoRoot, options, metadata, 'claim-failed', {
     claimFailure: {
       claims: options.claims,
       exitCode: typeof claimResult.status === 'number' ? claimResult.status : 1,
       stderr: String(claimResult.stderr || '').trim(),
       stdout: String(claimResult.stdout || '').trim(),
     },
-  };
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-  return targetPath;
+  });
+  return session ? sessionFilePath(repoRoot, session.id) : '';
 }
 
 function buildBranchStartArgs(options) {
@@ -200,6 +216,7 @@ function startAgentLane(repoRoot, options) {
 
   const metadata = extractAgentBranchStartMetadata(stdout);
   if (options.claims.length === 0) {
+    writeAgentSession(repoRoot, options, metadata, 'active');
     return { status: 0, stdout, stderr };
   }
 
@@ -219,6 +236,7 @@ function startAgentLane(repoRoot, options) {
   stdout += String(claimResult.stdout || '');
   stderr += String(claimResult.stderr || '');
   if (!isSpawnFailure(claimResult) && claimResult.status === 0) {
+    writeAgentSession(repoRoot, options, metadata, 'active');
     return { status: 0, stdout, stderr };
   }
 
@@ -240,8 +258,9 @@ module.exports = {
   buildRecoveryLines,
   dryRunStart,
   extractAgentBranchStartMetadata,
+  agentSessionIdForBranch,
   renderDryRunPlan,
   sanitizeSlug,
-  sessionFilePathForBranch,
+  writeAgentSession,
   startAgentLane,
 };

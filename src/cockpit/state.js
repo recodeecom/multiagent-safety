@@ -1,6 +1,10 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
+const {
+  listAgentSessions,
+  sessionFilePath,
+} = require('../agents/sessions');
 
 const ACTIVE_SESSIONS_DIR = path.join('.omx', 'state', 'active-sessions');
 const LOCK_FILE = path.join('.omx', 'state', 'agent-file-locks.json');
@@ -67,7 +71,7 @@ function normalizeSession(input, filePath) {
   };
 }
 
-function readActiveSessions(repoPath) {
+function readLegacyActiveSessions(repoPath) {
   const sessionsDir = path.join(repoPath, ACTIVE_SESSIONS_DIR);
   if (!fs.existsSync(sessionsDir)) {
     return [];
@@ -80,6 +84,28 @@ function readActiveSessions(repoPath) {
       return normalizeSession(readJson(filePath), filePath);
     })
     .filter(Boolean)
+}
+
+function readCanonicalActiveSessions(repoPath) {
+  return listAgentSessions(repoPath)
+    .map((session) => normalizeSession(session, sessionFilePath(repoPath, session.id)))
+    .filter(Boolean);
+}
+
+function sessionKey(session) {
+  return `${session.branch}\0${session.worktreePath}`;
+}
+
+function readActiveSessions(repoPath) {
+  const byKey = new Map();
+  for (const session of readLegacyActiveSessions(repoPath)) {
+    byKey.set(sessionKey(session), session);
+  }
+  for (const session of readCanonicalActiveSessions(repoPath)) {
+    byKey.set(sessionKey(session), session);
+  }
+
+  return Array.from(byKey.values())
     .sort((left, right) => left.branch.localeCompare(right.branch));
 }
 
@@ -128,6 +154,7 @@ module.exports = {
   LOCK_FILE,
   readCockpitState,
   readActiveSessions,
+  readLegacyActiveSessions,
   readBaseBranch,
   readLocksByBranch,
 };

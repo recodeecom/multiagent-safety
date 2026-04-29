@@ -8,6 +8,7 @@ const cp = require('node:child_process');
 const { renderCockpit } = require('../src/cockpit/render');
 const { readCockpitState } = require('../src/cockpit/state');
 const { render } = require('../src/cockpit');
+const { createAgentSession } = require('../src/agents/sessions');
 
 function initRepo() {
   const repoPath = fs.mkdtempSync(path.join(os.tmpdir(), 'guardex-cockpit-'));
@@ -43,7 +44,40 @@ test('renderCockpit returns a readable terminal string', () => {
   assert.match(output, /task: implement cockpit/);
 });
 
-test('readCockpitState reads active sessions and lock summaries', () => {
+test('readCockpitState reads canonical sessions and lock summaries', () => {
+  const repoPath = initRepo();
+  createAgentSession(repoPath, {
+    id: 'canonical-cockpit',
+    agent: 'codex',
+    branch: 'agent/codex/example',
+    worktreePath: path.join(repoPath, '.omx', 'agent-worktrees', 'example'),
+    status: 'working',
+    task: 'implement cockpit',
+  });
+  fs.mkdirSync(path.join(repoPath, '.omx', 'state'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repoPath, '.omx', 'state', 'agent-file-locks.json'),
+    JSON.stringify({
+      locks: {
+        'src/cockpit/render.js': { branch: 'agent/codex/example' },
+        'src/cockpit/state.js': { branch: 'agent/codex/example' },
+        'README.md': { branch: 'agent/other/example' },
+      },
+    }),
+    'utf8',
+  );
+
+  const state = readCockpitState(repoPath);
+
+  assert.equal(state.repoPath, repoPath);
+  assert.equal(state.baseBranch, 'main');
+  assert.equal(state.sessions.length, 1);
+  assert.equal(state.sessions[0].status, 'working');
+  assert.equal(state.sessions[0].task, 'implement cockpit');
+  assert.deepEqual(state.sessions[0].locks, ['src/cockpit/render.js', 'src/cockpit/state.js']);
+});
+
+test('readCockpitState still reads legacy .omx active sessions', () => {
   const repoPath = initRepo();
   const sessionsDir = path.join(repoPath, '.omx', 'state', 'active-sessions');
   fs.mkdirSync(sessionsDir, { recursive: true });

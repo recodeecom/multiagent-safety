@@ -10,6 +10,7 @@ const SESSION_FIELDS = [
   'worktreePath',
   'base',
   'status',
+  'claimFailure',
   'createdAt',
   'updatedAt',
 ];
@@ -133,6 +134,8 @@ function removeAgentSession(repoRoot, sessionId) {
 }
 
 module.exports = {
+  sessionFilePath,
+  sessionsDir,
   createAgentSession,
   readAgentSession,
   updateAgentSession,
