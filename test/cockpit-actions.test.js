@@ -20,8 +20,9 @@ test('startAgentLane delegates to the gx agents start implementation', () => {
       claims: ['src/foo.js', 'test/foo.test.js'],
     },
     {
-      startImplementation(request) {
-        calls.push(request);
+      repoRoot: '/repo',
+      startImplementation(repoRoot, request) {
+        calls.push({ repoRoot, request });
         return {
           ok: true,
           sessionId: 'session-123',
@@ -35,10 +36,13 @@ test('startAgentLane delegates to the gx agents start implementation', () => {
 
   assert.deepEqual(calls, [
     {
-      task: 'fix flaky test',
-      agent: 'codex',
-      base: 'main',
-      claims: ['src/foo.js', 'test/foo.test.js'],
+      repoRoot: '/repo',
+      request: {
+        task: 'fix flaky test',
+        agent: 'codex',
+        base: 'main',
+        claims: ['src/foo.js', 'test/foo.test.js'],
+      },
     },
   ]);
   assert.deepEqual(result, {
@@ -50,11 +54,63 @@ test('startAgentLane delegates to the gx agents start implementation', () => {
   });
 });
 
+test('startAgentLane falls back to cwd repo root and normalizes missing claims', () => {
+  const calls = [];
+  const previousCwd = process.cwd();
+
+  try {
+    process.chdir(__dirname);
+    const result = startAgentLane(
+      {
+        task: 'fix auth',
+        agent: 'codex',
+        base: 'main',
+      },
+      {
+        startImplementation(repoRoot, request) {
+          calls.push({ repoRoot, request });
+          return {
+            status: 0,
+            stdout:
+              '[agent-branch-start] Created branch: agent/codex/fix-auth\n' +
+              '[agent-branch-start] Worktree: /repo/.omx/agent-worktrees/fix-auth\n',
+          };
+        },
+      },
+    );
+
+    assert.deepEqual(calls, [
+      {
+        repoRoot: __dirname,
+        request: {
+          task: 'fix auth',
+          agent: 'codex',
+          base: 'main',
+          claims: [],
+        },
+      },
+    ]);
+    assert.deepEqual(result, {
+      ok: true,
+      sessionId: undefined,
+      branch: 'agent/codex/fix-auth',
+      worktreePath: '/repo/.omx/agent-worktrees/fix-auth',
+      message:
+        '[agent-branch-start] Created branch: agent/codex/fix-auth\n' +
+        '[agent-branch-start] Worktree: /repo/.omx/agent-worktrees/fix-auth\n',
+    });
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
 test('startAgentLane normalizes async implementation results', async () => {
+  const calls = [];
   const result = await startAgentLane(
-    { task: 'ship feature', agent: 'claude', base: 'dev', claims: [] },
+    { repoRoot: '/repo', task: 'ship feature', agent: 'claude', base: 'dev', claims: [] },
     {
-      async startAgentLane() {
+      async startAgentLane(repoRoot, request) {
+        calls.push({ repoRoot, request });
         return {
           session: { id: 'session-async' },
           lane: { branch: 'agent/claude/ship-feature' },
@@ -64,6 +120,17 @@ test('startAgentLane normalizes async implementation results', async () => {
     },
   );
 
+  assert.deepEqual(calls, [
+    {
+      repoRoot: '/repo',
+      request: {
+        task: 'ship feature',
+        agent: 'claude',
+        base: 'dev',
+        claims: [],
+      },
+    },
+  ]);
   assert.deepEqual(result, {
     ok: true,
     sessionId: 'session-async',

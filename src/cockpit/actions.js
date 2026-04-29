@@ -1,5 +1,15 @@
 'use strict';
 
+function parseAgentBranchStartMetadata(output) {
+  const outputText = String(output || '');
+  const branchMatch = outputText.match(/^\[agent-branch-start\] (?:Created branch|Reusing existing branch): (.+)$/m);
+  const worktreeMatch = outputText.match(/^\[agent-branch-start\] Worktree: (.+)$/m);
+  return {
+    branch: branchMatch ? branchMatch[1].trim() : undefined,
+    worktreePath: worktreeMatch ? worktreeMatch[1].trim() : undefined,
+  };
+}
+
 function firstString(...values) {
   for (const value of values) {
     if (typeof value === 'string' && value.length > 0) return value;
@@ -9,17 +19,21 @@ function firstString(...values) {
 
 function normalizeStartResult(result) {
   const payload = result && typeof result === 'object' ? result : {};
+  const metadata = parseAgentBranchStartMetadata(payload.stdout);
   const ok = Object.prototype.hasOwnProperty.call(payload, 'ok')
     ? Boolean(payload.ok)
+    : typeof payload.status === 'number'
+      ? payload.status === 0
     : true;
 
   return {
     ok,
     sessionId: firstString(payload.sessionId, payload.session?.id, payload.id),
-    branch: firstString(payload.branch, payload.lane?.branch),
-    worktreePath: firstString(payload.worktreePath, payload.worktree?.path, payload.path),
+    branch: firstString(payload.branch, payload.lane?.branch, metadata.branch),
+    worktreePath: firstString(payload.worktreePath, payload.worktree?.path, payload.path, metadata.worktreePath),
     message: firstString(
       payload.message,
+      ok ? payload.stdout : payload.stderr,
       ok ? 'Started agent lane.' : 'Failed to start agent lane.',
     ),
   };
@@ -40,14 +54,15 @@ function resolveStartImplementation(deps = {}) {
 }
 
 function startAgentLane(options = {}, deps = {}) {
-  const request = {
+  const repoRoot = firstString(options.repoRoot, deps.repoRoot, process.cwd());
+  const normalizedOptions = {
     task: options.task,
     agent: options.agent,
     base: options.base,
-    claims: options.claims,
+    claims: Array.isArray(options.claims) ? options.claims : [],
   };
   const startImplementation = resolveStartImplementation(deps);
-  const result = startImplementation(request);
+  const result = startImplementation(repoRoot, normalizedOptions);
 
   if (result && typeof result.then === 'function') {
     return result.then(normalizeStartResult);
@@ -59,5 +74,6 @@ function startAgentLane(options = {}, deps = {}) {
 module.exports = {
   startAgentLane,
   normalizeStartResult,
+  parseAgentBranchStartMetadata,
   resolveStartImplementation,
 };
