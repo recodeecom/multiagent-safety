@@ -9,6 +9,7 @@ const AGENT_DEFINITIONS = [
     defaultEnabled: true,
     promptMode: 'argument',
     resumeCommandTemplate: 'codex resume {sessionId}',
+    worktreeRoot: '.omx/agent-worktrees',
   },
   {
     id: 'claude',
@@ -20,6 +21,7 @@ const AGENT_DEFINITIONS = [
     defaultEnabled: true,
     promptMode: 'argument',
     resumeCommandTemplate: 'claude --resume {sessionId}',
+    worktreeRoot: '.omc/agent-worktrees',
   },
   {
     id: 'opencode',
@@ -30,6 +32,7 @@ const AGENT_DEFINITIONS = [
     detectCommand: 'opencode --version',
     defaultEnabled: true,
     promptMode: 'argument',
+    worktreeRoot: '.omx/agent-worktrees',
   },
   {
     id: 'cursor',
@@ -40,6 +43,7 @@ const AGENT_DEFINITIONS = [
     detectCommand: 'cursor-agent --version',
     defaultEnabled: true,
     promptMode: 'argument',
+    worktreeRoot: '.omx/agent-worktrees',
   },
   {
     id: 'gemini',
@@ -50,6 +54,7 @@ const AGENT_DEFINITIONS = [
     detectCommand: 'gemini --version',
     defaultEnabled: true,
     promptMode: 'argument',
+    worktreeRoot: '.omx/agent-worktrees',
   },
 ];
 
@@ -82,6 +87,10 @@ const AGENT_REGISTRY = Object.freeze(
   ),
 );
 
+function normalizeAgentId(rawAgentId) {
+  return String(rawAgentId || 'codex').trim().toLowerCase();
+}
+
 function isAgentId(value) {
   return Object.prototype.hasOwnProperty.call(AGENT_REGISTRY, value);
 }
@@ -98,6 +107,19 @@ function getDefaultEnabledAgents() {
   return getAgentDefinitions().filter((definition) => definition.defaultEnabled);
 }
 
+function listAgentIds() {
+  return [...AGENT_IDS];
+}
+
+function resolveAgent(rawAgentId) {
+  const agentId = normalizeAgentId(rawAgentId);
+  const agent = getAgentDefinition(agentId);
+  if (!agent) {
+    throw new Error(`Unknown agent id: ${rawAgentId || '(empty)'} (expected one of: ${listAgentIds().join(', ')})`);
+  }
+  return agent;
+}
+
 module.exports = {
   AGENT_IDS,
   AGENT_REGISTRY,
@@ -105,4 +127,7 @@ module.exports = {
   getAgentDefinition,
   getAgentDefinitions,
   getDefaultEnabledAgents,
+  listAgentIds,
+  normalizeAgentId,
+  resolveAgent,
 };

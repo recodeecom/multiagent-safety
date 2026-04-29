@@ -7,6 +7,7 @@ const finishCommands = require('../finish');
 const doctorModule = require('../doctor');
 const sessionSeverityReport = require('../report/session-severity');
 const cockpitModule = require('../cockpit');
+const agentsStart = require('../agents/start');
 const {
   fs,
   path,
@@ -2647,6 +2648,12 @@ function agents(rawArgs) {
   const statePath = agentsStatePathForRepo(repoRoot);
 
   if (options.subcommand === 'start') {
+    if (options.dryRun) {
+      console.log(agentsStart.dryRunStart(options, repoRoot));
+      process.exitCode = 0;
+      return;
+    }
+
     const existingState = readAgentsState(repoRoot);
     const existingReviewPid = Number.parseInt(String(existingState?.review?.pid || ''), 10);
     const existingCleanupPid = Number.parseInt(String(existingState?.cleanup?.pid || ''), 10);

@@ -105,11 +105,30 @@ test('parseAgentsArgs applies interval overrides and validates the subcommand', 
   assert.deepEqual(options, {
     target: '/tmp/guardex-repo',
     subcommand: 'start',
+    task: '',
+    agent: '',
+    base: '',
+    dryRun: false,
     reviewIntervalSeconds: 15,
     cleanupIntervalSeconds: 45,
     idleMinutes: 12,
     pid: null,
   });
+
+  const dryRunOptions = parseAgentsArgs([
+    'start',
+    'fix auth tests',
+    '--agent',
+    'codex',
+    '--base',
+    'main',
+    '--dry-run',
+  ]);
+
+  assert.equal(dryRunOptions.task, 'fix auth tests');
+  assert.equal(dryRunOptions.agent, 'codex');
+  assert.equal(dryRunOptions.base, 'main');
+  assert.equal(dryRunOptions.dryRun, true);
 });
 
 test('parseReportArgs accepts the session-severity flag set', () => {

@@ -50,7 +50,7 @@ const FALLBACK_AGENTS = {
   },
 };
 
-const SUPPORTED_PROMPT_MODES = new Set(['positional', 'option', 'stdin']);
+const SUPPORTED_PROMPT_MODES = new Set(['positional', 'option', 'stdin', 'argument']);
 
 function shellQuote(value) {
   const stringValue = String(value);

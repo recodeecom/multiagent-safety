@@ -268,6 +268,10 @@ function parseAgentsArgs(rawArgs) {
   const options = {
     target: parsed.target,
     subcommand,
+    task: '',
+    agent: '',
+    base: '',
+    dryRun: false,
     reviewIntervalSeconds: 30,
     cleanupIntervalSeconds: 60,
     idleMinutes: DEFAULT_SHADOW_CLEANUP_IDLE_MINUTES,
@@ -328,6 +332,32 @@ function parseAgentsArgs(rawArgs) {
       index += 1;
       continue;
     }
+    if (arg === '--agent') {
+      const next = rest[index + 1];
+      if (!next || next.startsWith('-')) {
+        throw new Error('--agent requires an agent id');
+      }
+      options.agent = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--base') {
+      const next = rest[index + 1];
+      if (!next || next.startsWith('-')) {
+        throw new Error('--base requires a branch name');
+      }
+      options.base = next;
+      index += 1;
+      continue;
+    }
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+      continue;
+    }
+    if (!arg.startsWith('-') && options.subcommand === 'start' && !options.task) {
+      options.task = arg;
+      continue;
+    }
     throw new Error(`Unknown option: ${arg}`);
   }
 
@@ -336,6 +366,15 @@ function parseAgentsArgs(rawArgs) {
   }
   if (options.pid !== null && options.subcommand !== 'stop') {
     throw new Error('--pid is only supported with `gx agents stop`');
+  }
+  if ((options.task || options.agent || options.base || options.dryRun) && options.subcommand !== 'start') {
+    throw new Error('--task, --agent, --base, and --dry-run are only supported with `gx agents start`');
+  }
+  if (options.task && !options.dryRun) {
+    throw new Error('gx agents start <task> is currently supported only with --dry-run');
+  }
+  if (options.dryRun && !options.task) {
+    throw new Error('gx agents start --dry-run requires a task');
   }
 
   return options;
