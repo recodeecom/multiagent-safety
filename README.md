@@ -301,6 +301,18 @@ Being honest about where this still has issues:
 <details open>
 <summary><strong>v7.x</strong></summary>
 
+### v7.0.42
+- Bumped `@imdeadpool/guardex` from `7.0.41` to `7.0.42` so the current
+  `main` payload can publish under a fresh npm version after `7.0.41` reached
+  the registry.
+- Improves the agent-session and cockpit workflow: `gx agents start/status`
+  now share canonical session storage, agent lanes can be previewed, claimed,
+  finished by session, and launched through safer supported-agent metadata,
+  and cockpit can render live session state through tmux-backed panes.
+- Hardens setup and status hygiene by ignoring local `.codex/` state during
+  setup/doctor, avoiding generic OpenSpec dirty-worktree reuse, and pruning
+  stale agent sessions from user-facing status surfaces.
+
 ### v7.0.41
 - Bumped `@imdeadpool/guardex` from `7.0.40` to `7.0.41` so the current
   `main` payload can publish under a fresh npm version after the `v7.0.40`
