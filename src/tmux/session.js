@@ -16,6 +16,11 @@ function addCwd(args, cwd) {
   }
 }
 
+function ensureTmuxAvailable() {
+  if (tmux.isTmuxAvailable()) return;
+  throw new Error('tmux is required for gx cockpit. Install tmux and retry.');
+}
+
 function sessionExists(name) {
   const result = tmux.runTmux(['has-session', '-t', requireName(name)], {
     stdio: 'pipe',
@@ -75,6 +80,7 @@ function sendKeys(paneId, command) {
 }
 
 module.exports = {
+  ensureTmuxAvailable,
   sessionExists,
   createSession,
   attachSession,

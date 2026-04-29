@@ -6,6 +6,7 @@ const toolchainModule = require('../toolchain');
 const finishCommands = require('../finish');
 const doctorModule = require('../doctor');
 const sessionSeverityReport = require('../report/session-severity');
+const cockpitModule = require('../cockpit');
 const {
   fs,
   path,
@@ -3616,6 +3617,14 @@ function sync(rawArgs) {
   return finishCommands.sync(rawArgs);
 }
 
+function cockpit(rawArgs) {
+  cockpitModule.openCockpit(rawArgs, {
+    resolveRepoRoot,
+    toolName: TOOL_NAME,
+  });
+  process.exitCode = 0;
+}
+
 function protect(rawArgs) {
   const parsed = parseTargetFlag(rawArgs, process.cwd());
   const [subcommand, ...rest] = parsed.args;
@@ -3758,6 +3767,7 @@ async function main() {
   if (command === 'install-agent-skills') return installAgentSkills(rest);
   if (command === 'internal') return internal(rest);
   if (command === 'agents') return agents(rest);
+  if (command === 'cockpit') return cockpit(rest);
   if (command === 'merge') return merge(rest);
   if (command === 'finish') return finish(rest);
   if (command === 'report') return report(rest);

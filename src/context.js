@@ -346,6 +346,7 @@ const SUGGESTIBLE_COMMANDS = [
   'hook',
   'migrate',
   'install-agent-skills',
+  'cockpit',
   'agents',
   'merge',
   'finish',
@@ -410,6 +411,7 @@ const CLI_COMMAND_GROUPS = [
     description: 'Review / cleanup bots, AI setup prompts, and safety reports.',
     commands: [
       ['agents', 'Start/stop repo-scoped review + cleanup bots'],
+      ['cockpit', 'Create or attach to a repo tmux cockpit session'],
       ['install-agent-skills', 'Install Guardex Codex/Claude skills into the user home'],
       ['prompt', 'Print AI setup checklist or named slices (--exec, --part, --list-parts, --snippet)'],
       ['report', 'Security/safety reports (e.g. OpenSSF scorecard, session severity)'],

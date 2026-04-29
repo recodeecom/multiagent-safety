@@ -13,7 +13,7 @@ function assertArgs(args) {
 
 function runTmux(args, options = {}) {
   assertArgs(args);
-  return runtime.run('tmux', args, options);
+  return runtime.run(process.env.GUARDEX_TMUX_BIN || 'tmux', args, options);
 }
 
 function isTmuxAvailable() {
