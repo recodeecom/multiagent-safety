@@ -198,8 +198,9 @@ function buildRecoveryLines(metadata, claims, session) {
   return `${lines.join('\n')}\n`;
 }
 
-function startAgentLane(repoRoot, options) {
-  const startResult = runPackageAsset('branchStart', buildBranchStartArgs(options), { cwd: repoRoot });
+function startAgentLane(repoRoot, options, deps = {}) {
+  const packageAssetRunner = deps.packageAssetRunner || runPackageAsset;
+  const startResult = packageAssetRunner('branchStart', buildBranchStartArgs(options), { cwd: repoRoot });
   let stdout = String(startResult.stdout || '');
   let stderr = String(startResult.stderr || '');
   if (isSpawnFailure(startResult)) {
@@ -232,7 +233,7 @@ function startAgentLane(repoRoot, options) {
     };
   }
 
-  const claimResult = runPackageAsset(
+  const claimResult = packageAssetRunner(
     'lockTool',
     ['claim', '--branch', metadata.branch, ...options.claims],
     { cwd: metadata.worktreePath },
