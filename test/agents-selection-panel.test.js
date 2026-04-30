@@ -2,10 +2,14 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  applyAgentSelectionKey,
   countForAgent,
+  createAgentSelectionPanelState,
   normalizeAgentSelections,
   parseAgentSelectionSpec,
+  renderInteractiveAgentSelectionPanel,
   renderAgentSelectionPanel,
+  selectionsFromPanelState,
   selectedAgentCount,
 } = require('../src/agents/selection-panel');
 
@@ -46,4 +50,29 @@ test('renderAgentSelectionPanel shows selected count and codex account setting',
   assert.match(output, /task: repair auth/);
   assert.match(output, /base: main/);
   assert.match(output, /claims: src\/auth\.js/);
+});
+
+test('interactive panel keys move focus, toggle agents, and adjust codex accounts', () => {
+  let state = createAgentSelectionPanelState({
+    task: 'repair auth',
+    base: 'main',
+    agentSelectionSpecs: ['codex:2'],
+  });
+
+  assert.equal(selectedAgentCount(selectionsFromPanelState(state)), 2);
+  assert.match(renderInteractiveAgentSelectionPanel(state), /› ● Codex cx x2/);
+
+  state = applyAgentSelectionKey(state, '\u001b[B').state;
+  assert.match(renderInteractiveAgentSelectionPanel(state), /› ○ Claude Code cc/);
+
+  state = applyAgentSelectionKey(state, ' ').state;
+  assert.equal(countForAgent(selectionsFromPanelState(state), 'claude'), 1);
+
+  state = applyAgentSelectionKey(state, '+').state;
+  assert.equal(countForAgent(selectionsFromPanelState(state), 'codex'), 3);
+
+  state = applyAgentSelectionKey(state, '-').state;
+  assert.equal(countForAgent(selectionsFromPanelState(state), 'codex'), 2);
+  assert.equal(applyAgentSelectionKey(state, '\r').action, 'launch');
+  assert.equal(applyAgentSelectionKey(state, '\u001b').action, 'cancel');
 });

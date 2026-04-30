@@ -72,6 +72,139 @@ function countForAgent(selections, agentId) {
   return selection ? selection.count : 0;
 }
 
+function countsFromSelections(selections) {
+  const counts = {};
+  for (const selection of selections) {
+    counts[selection.agent.id] = selection.count;
+  }
+  return counts;
+}
+
+function clampIndex(index, length) {
+  if (length <= 0) return 0;
+  if (!Number.isInteger(index)) return 0;
+  return Math.max(0, Math.min(index, length - 1));
+}
+
+function createAgentSelectionPanelState(options = {}) {
+  const definitions = getAgentDefinitions();
+  const maxSelected = options.maxSelected || DEFAULT_MAX_SELECTED_AGENTS;
+  const selections = normalizeAgentSelections({ ...options, maxSelected });
+  const counts = countsFromSelections(selections);
+  const firstSelectedIndex = definitions.findIndex((agent) => (counts[agent.id] || 0) > 0);
+  return {
+    task: options.task || '',
+    base: options.base || '',
+    claims: Array.isArray(options.claims) ? [...options.claims] : [],
+    maxSelected,
+    focusIndex: firstSelectedIndex >= 0 ? firstSelectedIndex : 0,
+    counts,
+    message: '',
+  };
+}
+
+function selectionsFromPanelState(state = {}) {
+  const counts = state.counts || {};
+  return getAgentDefinitions()
+    .map((agent) => ({
+      agent,
+      count: Number.isInteger(counts[agent.id]) ? counts[agent.id] : 0,
+    }))
+    .filter((selection) => selection.count > 0);
+}
+
+function selectedCountFromPanelState(state = {}) {
+  return selectedAgentCount(selectionsFromPanelState(state));
+}
+
+function focusedAgent(state = {}) {
+  const definitions = getAgentDefinitions();
+  return definitions[clampIndex(state.focusIndex, definitions.length)] || definitions[0];
+}
+
+function withCount(state, agentId, count, message = '') {
+  return {
+    ...state,
+    counts: {
+      ...(state.counts || {}),
+      [agentId]: Math.max(0, count),
+    },
+    message,
+  };
+}
+
+function normalizePanelKey(value) {
+  if (!value) return '';
+  const raw = Buffer.isBuffer(value) ? value.toString('utf8') : String(value);
+  if (raw === '\u0003') return 'ctrl-c';
+  if (raw === '\u001b') return 'escape';
+  if (raw === '\r' || raw === '\n') return 'enter';
+  if (raw === '\u001b[A') return 'up';
+  if (raw === '\u001b[B') return 'down';
+  return raw.toLowerCase();
+}
+
+function applyAgentSelectionKey(state = {}, rawKey) {
+  const definitions = getAgentDefinitions();
+  const current = {
+    ...state,
+    focusIndex: clampIndex(state.focusIndex, definitions.length),
+    counts: { ...(state.counts || {}) },
+    message: '',
+  };
+  const key = normalizePanelKey(rawKey);
+
+  if (key === 'ctrl-c' || key === 'escape' || key === 'q') {
+    return { state: current, action: 'cancel' };
+  }
+  if (key === 'enter') {
+    if (selectedCountFromPanelState(current) <= 0) {
+      return { state: { ...current, message: 'Select at least one agent before launch.' }, action: 'render' };
+    }
+    return { state: current, action: 'launch' };
+  }
+  if (key === 'up' || key === 'k') {
+    return {
+      state: {
+        ...current,
+        focusIndex: (current.focusIndex - 1 + definitions.length) % definitions.length,
+      },
+      action: 'render',
+    };
+  }
+  if (key === 'down' || key === 'j') {
+    return {
+      state: {
+        ...current,
+        focusIndex: (current.focusIndex + 1) % definitions.length,
+      },
+      action: 'render',
+    };
+  }
+
+  const codexCount = current.counts.codex || 0;
+  const selectedCount = selectedCountFromPanelState(current);
+  if (key === '+') {
+    if (selectedCount >= current.maxSelected) {
+      return { state: { ...current, message: `Selected agent count cannot exceed ${current.maxSelected}.` }, action: 'render' };
+    }
+    return { state: withCount(current, 'codex', codexCount + 1), action: 'render' };
+  }
+  if (key === '-') {
+    return { state: withCount(current, 'codex', Math.max(0, codexCount - 1)), action: 'render' };
+  }
+  if (key === ' ' || key === 'space') {
+    const agent = focusedAgent(current);
+    const nextCount = current.counts[agent.id] > 0 ? 0 : 1;
+    if (nextCount > 0 && selectedCount >= current.maxSelected) {
+      return { state: { ...current, message: `Selected agent count cannot exceed ${current.maxSelected}.` }, action: 'render' };
+    }
+    return { state: withCount(current, agent.id, nextCount), action: 'render' };
+  }
+
+  return { state: current, action: 'render' };
+}
+
 function padLine(value, width) {
   const text = String(value || '');
   if (text.length >= width) return text.slice(0, width);
@@ -107,7 +240,8 @@ function renderAgentSelectionPanel(options = {}) {
       const count = countForAgent(selections, agent.id);
       const marker = count > 0 ? '●' : '○';
       const suffix = count > 1 ? ` x${count}` : '';
-      return `${marker} ${agent.label} ${agent.shortLabel.toLowerCase()}${suffix}`;
+      const focus = options.focusedAgentId === agent.id ? '› ' : '';
+      return `${focus}${marker} ${agent.label} ${agent.shortLabel.toLowerCase()}${suffix}`;
     }),
     '',
     'Settings',
@@ -115,18 +249,35 @@ function renderAgentSelectionPanel(options = {}) {
     `base: ${options.base || 'current branch'}`,
     `Codex accounts: ${codexAccounts}`,
     `claims: ${claims}`,
+    options.message ? `status: ${options.message}` : null,
     '',
     '↑/↓ navigate · Space toggle · +/- Codex accounts · Enter launch · ESC cancel',
-  ];
+  ].filter((row) => row !== null);
   return `${framePanel('Select Agent(s)', rows)}\n`;
 }
 
+function renderInteractiveAgentSelectionPanel(state = {}) {
+  return renderAgentSelectionPanel({
+    task: state.task,
+    base: state.base,
+    claims: state.claims,
+    maxSelected: state.maxSelected,
+    selections: selectionsFromPanelState(state),
+    focusedAgentId: focusedAgent(state)?.id,
+    message: state.message,
+  });
+}
+
 module.exports = {
+  applyAgentSelectionKey,
+  createAgentSelectionPanelState,
   DEFAULT_MAX_SELECTED_AGENTS,
   countForAgent,
   framePanel,
   normalizeAgentSelections,
   parseAgentSelectionSpec,
+  renderInteractiveAgentSelectionPanel,
   renderAgentSelectionPanel,
+  selectionsFromPanelState,
   selectedAgentCount,
 };

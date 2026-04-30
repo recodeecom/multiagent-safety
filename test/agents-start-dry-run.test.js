@@ -9,6 +9,9 @@ const {
   initRepo,
   seedCommit,
 } = require('./helpers/install-test-helpers');
+const { EventEmitter } = require('node:events');
+
+const { startInteractiveAgentPanel } = require('../src/agents/start');
 
 test('gx agents start dry-run prints the planned codex branch, worktree, and launch without side effects', () => {
   const repoDir = initRepo();
@@ -146,4 +149,76 @@ test('gx agents start --dry-run --json emits Colony-ready launch plan', () => {
     'colony.subtask': '2',
     'colony.task_id': '42',
   });
+});
+
+class FakeInput extends EventEmitter {
+  constructor() {
+    super();
+    this.isTTY = true;
+    this.rawModes = [];
+    this.encodings = [];
+    this.resumed = false;
+  }
+
+  setEncoding(encoding) {
+    this.encodings.push(encoding);
+  }
+
+  setRawMode(enabled) {
+    this.rawModes.push(enabled);
+  }
+
+  resume() {
+    this.resumed = true;
+  }
+}
+
+test('interactive launcher panel handles keys before emitting dry-run plans', () => {
+  const input = new FakeInput();
+  const stdout = {
+    isTTY: true,
+    chunks: [],
+    write(chunk) {
+      this.chunks.push(String(chunk));
+    },
+  };
+  const stderr = {
+    chunks: [],
+    write(chunk) {
+      this.chunks.push(String(chunk));
+    },
+  };
+  let done = null;
+
+  const controller = startInteractiveAgentPanel('/repo', {
+    task: 'fix auth tests',
+    agent: 'codex',
+    base: 'main',
+    count: 1,
+    panel: true,
+    dryRun: true,
+    claims: [],
+  }, {
+    stdin: input,
+    stdout,
+    stderr,
+    onDone(result) {
+      done = result;
+    },
+  });
+
+  assert.equal(input.resumed, true);
+  assert.deepEqual(input.rawModes, [true]);
+  assert.match(stdout.chunks.join(''), /Select Agent\(s\)/);
+
+  controller.dispatch('+');
+  controller.dispatch('\r');
+
+  assert.deepEqual(input.rawModes, [true, false]);
+  assert.equal(done.status, 0);
+  assert.equal(stderr.chunks.join(''), '');
+  const output = stdout.chunks.join('');
+  assert.match(output, /Codex cx x2/);
+  assert.match(output, /branch: agent\/codex\/fix-auth-tests-codex-01-/);
+  assert.match(output, /branch: agent\/codex\/fix-auth-tests-codex-02-/);
 });

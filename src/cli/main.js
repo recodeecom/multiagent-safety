@@ -2673,6 +2673,14 @@ function agents(rawArgs) {
   }
 
   if (options.subcommand === 'start') {
+    if (options.task && agentsStart.shouldUseInteractivePanel(options, process.stdin, process.stdout)) {
+      agentsStart.startInteractiveAgentPanel(repoRoot, options, {
+        onDone(result) {
+          process.exitCode = result.status;
+        },
+      });
+      return;
+    }
     if (options.dryRun) {
       const output = agentsStart.dryRunStart(options, repoRoot);
       process.stdout.write(output.endsWith('\n') ? output : `${output}\n`);

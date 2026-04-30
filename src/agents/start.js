@@ -8,8 +8,12 @@ const { currentBranchName } = require('../git');
 const { buildAgentLaunchCommand } = require('./launch');
 const { resolveAgent } = require('./registry');
 const {
+  applyAgentSelectionKey,
+  createAgentSelectionPanelState,
   normalizeAgentSelections,
+  renderInteractiveAgentSelectionPanel,
   renderAgentSelectionPanel,
+  selectionsFromPanelState,
   selectedAgentCount,
 } = require('./selection-panel');
 const {
@@ -168,6 +172,9 @@ function dryRunStart(options, repoRoot) {
   if (plans.length === 1 && !options.panel) {
     return renderDryRunPlan(plans[0]);
   }
+  if (options.noPanel) {
+    return plans.map(renderDryRunPlan).join('\n\n');
+  }
 
   return [
     renderAgentSelectionPanel({
@@ -178,6 +185,135 @@ function dryRunStart(options, repoRoot) {
     }).trimEnd(),
     ...plans.map(renderDryRunPlan),
   ].join('\n\n');
+}
+
+function panelSelectionSpecs(state) {
+  return selectionsFromPanelState(state).map((selection) => `${selection.agent.id}:${selection.count}`);
+}
+
+function panelOptions(options, state) {
+  const specs = panelSelectionSpecs(state);
+  const first = selectionsFromPanelState(state)[0];
+  return {
+    ...options,
+    agent: first ? first.agent.id : options.agent,
+    count: 1,
+    agentSelectionSpecs: specs,
+  };
+}
+
+function executePanelSelection(repoRoot, options, state, deps = {}) {
+  const selectedOptions = panelOptions(options, state);
+  if (selectedOptions.dryRun) {
+    return {
+      status: 0,
+      stdout: dryRunStart({ ...selectedOptions, panel: false, noPanel: true }, repoRoot),
+      stderr: '',
+    };
+  }
+  const startRunner = deps.startRunner || startAgentLane;
+  return startRunner(repoRoot, selectedOptions, deps);
+}
+
+function writeStream(stream, value) {
+  if (stream && typeof stream.write === 'function' && value) {
+    stream.write(String(value));
+  }
+}
+
+function shouldUseInteractivePanel(options = {}, stdin = process.stdin, stdout = process.stdout) {
+  return Boolean(options.panel && options.task && stdin && stdin.isTTY && stdout && stdout.isTTY);
+}
+
+function startInteractiveAgentPanel(repoRoot, options, deps = {}) {
+  const stdin = deps.stdin || process.stdin;
+  const stdout = deps.stdout || process.stdout;
+  const stderr = deps.stderr || process.stderr;
+  const onDone = typeof deps.onDone === 'function' ? deps.onDone : null;
+  let state = createAgentSelectionPanelState(options);
+  let stopped = false;
+  let rawModeEnabled = false;
+
+  function paint() {
+    if (stdout && stdout.isTTY) {
+      writeStream(stdout, '\x1b[?25l\x1b[H\x1b[2J\x1b[3J');
+    }
+    writeStream(stdout, renderInteractiveAgentSelectionPanel(state));
+  }
+
+  function finish(result) {
+    if (onDone) onDone(result);
+    return result;
+  }
+
+  function stop() {
+    if (stopped) return;
+    stopped = true;
+    if (stdin && typeof stdin.off === 'function') {
+      stdin.off('data', onData);
+    } else if (stdin && typeof stdin.removeListener === 'function') {
+      stdin.removeListener('data', onData);
+    }
+    if (rawModeEnabled && typeof stdin.setRawMode === 'function') {
+      stdin.setRawMode(false);
+    }
+    if (stdout && stdout.isTTY) {
+      writeStream(stdout, '\x1b[?25h');
+    }
+  }
+
+  function launch() {
+    stop();
+    writeStream(stdout, '\n');
+    const result = executePanelSelection(repoRoot, options, state, deps);
+    writeStream(stdout, result.stdout);
+    writeStream(stderr, result.stderr);
+    return finish(result);
+  }
+
+  function cancel() {
+    stop();
+    const result = {
+      status: 130,
+      stdout: `[${TOOL_NAME}] Agent launch cancelled.\n`,
+      stderr: '',
+    };
+    writeStream(stdout, '\n');
+    writeStream(stdout, result.stdout);
+    return finish(result);
+  }
+
+  function dispatch(rawKey) {
+    const next = applyAgentSelectionKey(state, rawKey);
+    state = next.state;
+    if (next.action === 'launch') return launch();
+    if (next.action === 'cancel') return cancel();
+    paint();
+    return null;
+  }
+
+  function onData(chunk) {
+    dispatch(chunk);
+  }
+
+  if (!shouldUseInteractivePanel(options, stdin, stdout)) {
+    return finish(executePanelSelection(repoRoot, options, state, deps));
+  }
+
+  if (typeof stdin.setEncoding === 'function') stdin.setEncoding('utf8');
+  if (typeof stdin.setRawMode === 'function') {
+    stdin.setRawMode(true);
+    rawModeEnabled = true;
+  }
+  if (typeof stdin.resume === 'function') stdin.resume();
+  if (typeof stdin.on === 'function') stdin.on('data', onData);
+  paint();
+
+  return {
+    dispatch,
+    stop,
+    getState: () => state,
+  };
 }
 
 function isSpawnFailure(result) {
@@ -389,11 +525,14 @@ module.exports = {
   buildStartPlan,
   buildRecoveryLines,
   dryRunStart,
+  executePanelSelection,
   extractAgentBranchStartMetadata,
   agentSessionIdForBranch,
   renderDryRunPlan,
   sanitizeSlug,
+  shouldUseInteractivePanel,
   startSingleAgentLane,
+  startInteractiveAgentPanel,
   writeAgentSession,
   startAgentLane,
 };
