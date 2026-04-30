@@ -28,5 +28,7 @@
 
 ## 5. Cleanup
 
-- [ ] 5.1 Run the finish pipeline: `gx branch finish --branch agent/codex/gx-dmux-home-launcher-2026-04-30-11-31 --base main --via-pr --wait-for-merge --cleanup`.
-- [ ] 5.2 Record PR URL, final `MERGED` state, and sandbox cleanup evidence.
+- [x] 5.1 Run the finish pipeline: `gx branch finish --branch agent/codex/gx-dmux-home-launcher-2026-04-30-11-31 --base main --via-pr --wait-for-merge --cleanup`.
+  - Evidence: PR #493 merged as https://github.com/recodeee/gitguardex/pull/493 (`MERGED`, merge commit `efbb540d30981ceee2cf10ff5da6e2826e656b92`, merged at `2026-04-30T09:51:50Z`).
+- [x] 5.2 Record PR URL, final `MERGED` state, and sandbox cleanup evidence.
+  - Evidence: `gx cleanup --base main` removed `/home/deadpool/Documents/recodee/gitguardex/.omx/agent-worktrees/gitguardex__codex__gx-dmux-home-launcher-2026-04-30-11-31`; `git worktree list` shows only `/home/deadpool/Documents/recodee/gitguardex`; local and remote `agent/codex/gx-dmux-home-launcher-2026-04-30-11-31` refs are absent.
