@@ -49,6 +49,7 @@ test('renderAgentSelectionPanel shows a dmux-style GitGuardex shell', () => {
   assert.match(output, /gitguardex/);
   assert.match(output, /\[n\] launch/);
   assert.match(output, /\[t\] terminal/);
+  assert.match(output, /multi-agent terminals: Kitty/);
   assert.match(output, /Alt\+Shift\+M/);
   assert.match(output, /Files/);
   assert.match(output, /Selected: 3\/10/);
@@ -124,10 +125,10 @@ test('interactive panel keys move focus, toggle agents, and adjust codex account
   assert.equal(countForAgent(selectionsFromPanelState(state), 'codex'), 2);
   const terminalHelp = applyAgentSelectionKey(state, 't');
   assert.equal(terminalHelp.action, 'render');
-  assert.match(terminalHelp.state.message, /Terminal panes are managed in gx cockpit/);
+  assert.match(terminalHelp.state.message, /Kitty agent terminals open after multi-agent launch/);
   const paneMenuHelp = applyAgentSelectionKey(state, '\u001bM');
   assert.equal(paneMenuHelp.action, 'render');
-  assert.match(paneMenuHelp.state.message, /Pane menu is available in gx cockpit/);
+  assert.match(paneMenuHelp.state.message, /selected pane/);
   assert.equal(applyAgentSelectionKey(state, 'n').action, 'launch');
   assert.equal(applyAgentSelectionKey(state, '\r').action, 'launch');
   assert.equal(applyAgentSelectionKey(state, '\u001b').action, 'cancel');

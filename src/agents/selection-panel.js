@@ -11,9 +11,9 @@ const DEFAULT_PANEL_HEIGHT = 30;
 const SIDEBAR_WIDTH = 36;
 const PANEL_ACTIONS = [
   ['n', 'New agent', 'create an agent pane in this repo'],
-  ['t', 'Terminal', 'open a shell pane from gx cockpit'],
+  ['t', 'Terminal', 'open Kitty agent terminal'],
   ['p', 'Project', 'create pane in another project'],
-  ['Alt+Shift+M', 'Pane menu', 'act on the focused tmux pane'],
+  ['Alt+Shift+M', 'Pane menu', 'act on the selected pane'],
   ['j/k', 'Jump', 'move between panes in the list'],
   ['m', 'Menu', 'open pane context actions'],
   ['x', 'Close', 'close selected pane'],
@@ -27,10 +27,10 @@ const PANEL_ACTIONS = [
 
 const PANEL_SHORTCUT_MESSAGES = {
   '?': 'Shortcut map is shown on the right.',
-  t: 'Terminal panes are managed in gx cockpit; open cockpit, then press t.',
+  t: 'Kitty agent terminals open after multi-agent launch; pass --terminal none to skip.',
   p: 'Project panes are managed in gx cockpit; open cockpit, then press p.',
   m: 'Pane menu is available in gx cockpit with m or Alt+Shift+M.',
-  'alt-shift-m': 'Pane menu is available in gx cockpit for the focused tmux pane.',
+  'alt-shift-m': 'Pane menu is available in gx cockpit for the selected pane.',
   x: 'Close is available from gx cockpit pane menu.',
   b: 'Child worktrees are available from gx cockpit pane menu.',
   f: 'File browser is available from gx cockpit pane menu.',
@@ -422,7 +422,7 @@ function renderSidebarRows(options, selections, definitions, width, height) {
     '─'.repeat(width),
     '  [l]ogs [p]rojects [s]ettings',
     '  Press [?] for keyboard shortcuts',
-    '  Tip: live panes: gx cockpit',
+    '  Tip: multi-agent terminals: Kitty',
     '',
   );
 

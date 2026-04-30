@@ -21,6 +21,7 @@ const {
   listAgentSessions,
   updateAgentSession,
 } = require('./sessions');
+const { launchAgentTerminal } = require('./terminal');
 
 function sanitizeSlug(value, fallback = 'task') {
   const slug = String(value || '')
@@ -473,7 +474,7 @@ function startSingleAgentLane(repoRoot, options, deps = {}) {
   const session = writeAgentSession(repoRoot, options, metadata, 'active');
   stdout = appendSessionId(stdout, session);
   if (options.claims.length === 0) {
-    return { status: 0, stdout, stderr };
+    return { status: 0, stdout, stderr, session };
   }
 
   if (!metadata.branch || !metadata.worktreePath) {
@@ -492,7 +493,7 @@ function startSingleAgentLane(repoRoot, options, deps = {}) {
   stdout += String(claimResult.stdout || '');
   stderr += String(claimResult.stderr || '');
   if (!isSpawnFailure(claimResult) && claimResult.status === 0) {
-    return { status: 0, stdout, stderr };
+    return { status: 0, stdout, stderr, session };
   }
 
   if (isSpawnFailure(claimResult)) {
@@ -520,6 +521,7 @@ function startAgentLane(repoRoot, options, deps = {}) {
     selections: normalizeAgentSelections(options),
   });
   let stderr = '';
+  const sessions = [];
 
   for (const launchOption of launchOptions) {
     const result = startSingleAgentLane(repoRoot, launchOption, deps);
@@ -532,12 +534,24 @@ function startAgentLane(repoRoot, options, deps = {}) {
         stderr,
       };
     }
+    if (result.session) {
+      sessions.push(result.session);
+    }
   }
+
+  const terminalResult = launchAgentTerminal(repoRoot, sessions, {
+    terminal: options.terminal,
+    runner: deps.terminalRunner,
+    kittyBin: deps.kittyBin,
+  });
+  stdout += String(terminalResult.stdout || '');
+  stderr += String(terminalResult.stderr || '');
 
   return {
     status: 0,
     stdout,
     stderr,
+    terminal: terminalResult,
   };
 }
 

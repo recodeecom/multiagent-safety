@@ -275,6 +275,7 @@ function parseAgentsArgs(rawArgs) {
     count: 1,
     agentSelectionSpecs: [],
     panel: false,
+    terminal: process.env.GUARDEX_AGENT_TERMINAL || 'kitty',
     dryRun: false,
     reviewIntervalSeconds: 30,
     cleanupIntervalSeconds: 60,
@@ -287,6 +288,7 @@ function parseAgentsArgs(rawArgs) {
     finishArgs: [],
     metadata: {},
   };
+  let terminalProvided = false;
 
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
@@ -451,6 +453,16 @@ function parseAgentsArgs(rawArgs) {
       options.panel = true;
       continue;
     }
+    if (arg === '--terminal') {
+      const next = rest[index + 1];
+      if (!next || next.startsWith('-')) {
+        throw new Error('--terminal requires kitty or none');
+      }
+      options.terminal = next;
+      terminalProvided = true;
+      index += 1;
+      continue;
+    }
     if (arg === '--base') {
       const next = rest[index + 1];
       if (!next || next.startsWith('-')) {
@@ -501,10 +513,10 @@ function parseAgentsArgs(rawArgs) {
     throw new Error('--pid is only supported with `gx agents stop`');
   }
   if (
-    (options.task || options.agent || options.base || options.claims.length > 0 || Object.keys(options.metadata).length > 0) &&
+    (options.task || options.agent || options.base || options.claims.length > 0 || Object.keys(options.metadata).length > 0 || terminalProvided) &&
     options.subcommand !== 'start'
   ) {
-    throw new Error('--task, --agent, --agents, --count, --base, --claim, --meta, and --panel are only supported with `gx agents start`');
+    throw new Error('--task, --agent, --agents, --count, --base, --claim, --meta, --terminal, and --panel are only supported with `gx agents start`');
   }
   if (
     (options.agentSelectionSpecs.length > 0 || options.count !== 1 || options.panel) &&

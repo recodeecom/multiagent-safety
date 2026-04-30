@@ -113,6 +113,7 @@ test('parseAgentsArgs applies interval overrides and validates the subcommand', 
     count: 1,
     agentSelectionSpecs: [],
     panel: false,
+    terminal: 'kitty',
     dryRun: false,
     reviewIntervalSeconds: 15,
     cleanupIntervalSeconds: 45,
@@ -170,7 +171,20 @@ test('parseAgentsArgs applies interval overrides and validates the subcommand', 
   assert.equal(panelOptions.panel, true);
   assert.equal(panelOptions.agent, 'codex');
   assert.equal(panelOptions.count, 3);
+  assert.equal(panelOptions.terminal, 'kitty');
   assert.deepEqual(panelOptions.agentSelectionSpecs, ['codex:2,claude']);
+
+  const noTerminalOptions = parseAgentsArgs([
+    'start',
+    'fix auth tests',
+    '--panel',
+    '--codex-accounts',
+    '3',
+    '--terminal',
+    'none',
+  ]);
+
+  assert.equal(noTerminalOptions.terminal, 'none');
 
   const emptyPanelOptions = parseAgentsArgs([
     'start',
