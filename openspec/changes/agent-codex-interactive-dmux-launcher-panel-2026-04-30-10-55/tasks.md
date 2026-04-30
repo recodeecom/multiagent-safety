@@ -22,5 +22,7 @@
 
 ## 5. Cleanup
 
-- [ ] 5.1 Commit, push, PR, merge, and cleanup the agent worktree.
-- [ ] 5.2 Record merged PR URL and final cleanup evidence.
+- [x] 5.1 Commit, push, PR, merge, and cleanup the agent worktree.
+  - Evidence: PR #489 merged as https://github.com/recodeee/gitguardex/pull/489 with merge commit `b1e0a8c3880e7bb89e24db1c5db4c6b0dbe7c199`.
+- [x] 5.2 Record merged PR URL and final cleanup evidence.
+  - Evidence: `gx cleanup --base main` removed `/home/deadpool/Documents/recodee/gitguardex/.omx/agent-worktrees/gitguardex__codex__interactive-dmux-launcher-panel-2026-04-30-10-55`; `git worktree list` showed only the main checkout, and local/remote source branch lookups returned no branch.
