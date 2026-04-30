@@ -86,6 +86,9 @@ test('gx agents start dry-run renders a terminal panel for multiple codex accoun
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Select Agent\(s\)/);
+  assert.match(result.stdout, /gitguardex/);
+  assert.match(result.stdout, /Welcome/);
+  assert.match(result.stdout, /Press \[n\] or Enter to create a new agent/);
   assert.match(result.stdout, /Selected: 3\/10/);
   assert.match(result.stdout, /Codex cx x3/);
   assert.match(result.stdout, /Codex accounts: 3/);
@@ -177,6 +180,8 @@ test('interactive launcher panel handles keys before emitting dry-run plans', ()
   const input = new FakeInput();
   const stdout = {
     isTTY: true,
+    columns: 120,
+    rows: 32,
     chunks: [],
     write(chunk) {
       this.chunks.push(String(chunk));
@@ -210,9 +215,10 @@ test('interactive launcher panel handles keys before emitting dry-run plans', ()
   assert.equal(input.resumed, true);
   assert.deepEqual(input.rawModes, [true]);
   assert.match(stdout.chunks.join(''), /Select Agent\(s\)/);
+  assert.match(stdout.chunks.join(''), /\x1b\[94m/);
 
   controller.dispatch('+');
-  controller.dispatch('\r');
+  controller.dispatch('n');
 
   assert.deepEqual(input.rawModes, [true, false]);
   assert.equal(done.status, 0);

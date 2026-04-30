@@ -238,7 +238,11 @@ function startInteractiveAgentPanel(repoRoot, options, deps = {}) {
     if (stdout && stdout.isTTY) {
       writeStream(stdout, '\x1b[?25l\x1b[H\x1b[2J\x1b[3J');
     }
-    writeStream(stdout, renderInteractiveAgentSelectionPanel(state));
+    writeStream(stdout, renderInteractiveAgentSelectionPanel(state, {
+      color: Boolean(stdout && stdout.isTTY),
+      width: stdout && stdout.columns,
+      height: stdout && stdout.rows,
+    }));
   }
 
   function finish(result) {

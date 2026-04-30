@@ -35,7 +35,7 @@ test('normalizeAgentSelections merges repeated agents and enforces the max', () 
   );
 });
 
-test('renderAgentSelectionPanel shows selected count and codex account setting', () => {
+test('renderAgentSelectionPanel shows a dmux-style GitGuardex shell', () => {
   const output = renderAgentSelectionPanel({
     task: 'repair auth',
     base: 'main',
@@ -44,12 +44,23 @@ test('renderAgentSelectionPanel shows selected count and codex account setting',
   });
 
   assert.match(output, /Select Agent\(s\)/);
+  assert.match(output, /Welcome/);
+  assert.match(output, /gitguardex/);
+  assert.match(output, /\[n\]ew agent/);
   assert.match(output, /Selected: 3\/10/);
   assert.match(output, /● Codex cx x3/);
   assert.match(output, /Codex accounts: 3/);
   assert.match(output, /task: repair auth/);
   assert.match(output, /base: main/);
   assert.match(output, /claims: src\/auth\.js/);
+
+  const blueOutput = renderAgentSelectionPanel({
+    task: 'repair auth',
+    agentSelectionSpecs: ['codex:1'],
+    color: true,
+  });
+  assert.match(blueOutput, /\x1b\[36m/);
+  assert.match(blueOutput, /\x1b\[94m/);
 });
 
 test('interactive panel keys move focus, toggle agents, and adjust codex accounts', () => {
@@ -73,6 +84,7 @@ test('interactive panel keys move focus, toggle agents, and adjust codex account
 
   state = applyAgentSelectionKey(state, '-').state;
   assert.equal(countForAgent(selectionsFromPanelState(state), 'codex'), 2);
+  assert.equal(applyAgentSelectionKey(state, 'n').action, 'launch');
   assert.equal(applyAgentSelectionKey(state, '\r').action, 'launch');
   assert.equal(applyAgentSelectionKey(state, '\u001b').action, 'cancel');
 });
