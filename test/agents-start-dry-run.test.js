@@ -88,7 +88,9 @@ test('gx agents start dry-run renders a terminal panel for multiple codex accoun
   assert.match(result.stdout, /Select Agent\(s\)/);
   assert.match(result.stdout, /gitguardex/);
   assert.match(result.stdout, /Welcome/);
-  assert.match(result.stdout, /Press \[n\] or Enter to create a new agent/);
+  assert.match(result.stdout, /Pane Management/);
+  assert.match(result.stdout, /Terminal/);
+  assert.match(result.stdout, /Alt\+Shift\+M/);
   assert.match(result.stdout, /Selected: 3\/10/);
   assert.match(result.stdout, /Codex cx x3/);
   assert.match(result.stdout, /Codex accounts: 3/);
@@ -118,7 +120,8 @@ test('gx agents start --panel --dry-run can render the home panel before a task 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Select Agent\(s\)/);
   assert.match(result.stdout, /gitguardex/);
-  assert.match(result.stdout, /Type task, then press Enter/);
+  assert.match(result.stdout, /type a task to start/);
+  assert.match(result.stdout, /Type task text directly/);
   assert.match(result.stdout, /task: _/);
   assert.doesNotMatch(result.stdout, /Agents start dry-run:/);
 });
@@ -283,7 +286,8 @@ test('interactive launcher panel asks for a task when opened empty', () => {
   });
 
   assert.equal(input.resumed, true);
-  assert.match(stdout.chunks.join(''), /Type task, then press Enter/);
+  assert.match(stdout.chunks.join(''), /type a task to start/);
+  assert.match(stdout.chunks.join(''), /Type task text directly/);
 
   for (const key of ['f', 'i', 'x', ' ', 'a', 'u', 't', 'h']) {
     controller.dispatch(key);

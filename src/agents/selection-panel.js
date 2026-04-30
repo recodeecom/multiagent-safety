@@ -9,6 +9,41 @@ const DEFAULT_MAX_SELECTED_AGENTS = 10;
 const DEFAULT_PANEL_WIDTH = 118;
 const DEFAULT_PANEL_HEIGHT = 30;
 const SIDEBAR_WIDTH = 36;
+const PANEL_ACTIONS = [
+  ['n', 'New agent', 'create an agent pane in this repo'],
+  ['t', 'Terminal', 'open a shell pane from gx cockpit'],
+  ['p', 'Project', 'create pane in another project'],
+  ['Alt+Shift+M', 'Pane menu', 'act on the focused tmux pane'],
+  ['j/k', 'Jump', 'move between panes in the list'],
+  ['m', 'Menu', 'open pane context actions'],
+  ['x', 'Close', 'close selected pane'],
+  ['b', 'Child worktree', 'branch from selected pane'],
+  ['f', 'Files', 'browse selected worktree read-only'],
+  ['h/H', 'Hide panes', 'hide one or isolate selected pane'],
+  ['P', 'Project focus', 'show only one project'],
+  ['a/A', 'Add to pane', 'agent or terminal in worktree'],
+  ['r', 'Reopen', 'restore a closed worktree'],
+];
+
+const PANEL_SHORTCUT_MESSAGES = {
+  '?': 'Shortcut map is shown on the right.',
+  t: 'Terminal panes are managed in gx cockpit; open cockpit, then press t.',
+  p: 'Project panes are managed in gx cockpit; open cockpit, then press p.',
+  m: 'Pane menu is available in gx cockpit with m or Alt+Shift+M.',
+  'alt-shift-m': 'Pane menu is available in gx cockpit for the focused tmux pane.',
+  x: 'Close is available from gx cockpit pane menu.',
+  b: 'Child worktrees are available from gx cockpit pane menu.',
+  f: 'File browser is available from gx cockpit pane menu.',
+  h: 'Hide/show panes from gx cockpit pane menu.',
+  H: 'Hide/show panes from gx cockpit pane menu.',
+  P: 'Project focus is available from gx cockpit pane menu.',
+  a: 'Add agent to worktree from gx cockpit pane menu.',
+  A: 'Add terminal to worktree from gx cockpit pane menu.',
+  r: 'Reopen closed worktrees from gx cockpit pane menu.',
+  s: 'Settings are available from gx cockpit.',
+  l: 'Logs are available from gx cockpit.',
+  L: 'Layout reset is available from gx cockpit.',
+};
 
 const ANSI = {
   reset: '\x1b[0m',
@@ -157,12 +192,14 @@ function normalizePanelKey(value) {
   const raw = rawPanelKey(value);
   if (raw === '\u0003') return 'ctrl-c';
   if (raw === '\u0015') return 'ctrl-u';
+  if (raw === '\u001bM') return 'alt-shift-m';
   if (raw === '\u001b') return 'escape';
   if (raw === '\r' || raw === '\n') return 'enter';
   if (raw === '\u007f' || raw === '\b') return 'backspace';
   if (raw === '\u001b[A') return 'up';
   if (raw === '\u001b[B') return 'down';
-  return raw.toLowerCase();
+  if (raw.length === 1 && raw !== raw.toUpperCase()) return raw.toLowerCase();
+  return raw;
 }
 
 function printableTaskInput(value) {
@@ -214,6 +251,15 @@ function applyAgentSelectionKey(state = {}, rawKey) {
   }
 
   if (current.taskInputActive) {
+    if (key === '?') {
+      return {
+        state: {
+          ...current,
+          message: PANEL_SHORTCUT_MESSAGES['?'],
+        },
+        action: 'render',
+      };
+    }
     if (key === 'enter') {
       return taskLaunchState(current);
     }
@@ -248,6 +294,9 @@ function applyAgentSelectionKey(state = {}, rawKey) {
 
   if (key === 'enter' || key === 'n') {
     return taskLaunchState(current);
+  }
+  if (PANEL_SHORTCUT_MESSAGES[key]) {
+    return { state: { ...current, message: PANEL_SHORTCUT_MESSAGES[key] }, action: 'render' };
   }
   if (key === 'up' || key === 'k') {
     return {
@@ -297,13 +346,6 @@ function padLine(value, width) {
   return `${text}${' '.repeat(width - text.length)}`;
 }
 
-function centerLine(value, width) {
-  const text = String(value || '');
-  if (text.length >= width) return text.slice(0, width);
-  const left = Math.floor((width - text.length) / 2);
-  return `${' '.repeat(left)}${text}${' '.repeat(width - text.length - left)}`;
-}
-
 function colorize(value, color, options = {}) {
   if (!options.color) return value;
   const code = ANSI[color];
@@ -335,27 +377,6 @@ function framePanel(title, rows, width = 92) {
   ].join('\n');
 }
 
-function matrixChar(row, column, seed) {
-  const value = (row * 17 + column * 31 + seed * 13 + row * column) % 41;
-  if (value === 0 || value === 7) return '1';
-  if (value === 3 || value === 11) return '0';
-  return '.';
-}
-
-function renderMatrixLine(width, row, seed) {
-  let line = '';
-  for (let column = 0; column < width; column += 1) {
-    line += matrixChar(row, column, seed);
-  }
-  return line;
-}
-
-function overlay(line, segment, column) {
-  const start = Math.max(0, Math.min(column, line.length));
-  const text = String(segment || '').slice(0, Math.max(0, line.length - start));
-  return `${line.slice(0, start)}${text}${line.slice(start + text.length)}`;
-}
-
 function renderSidebarRows(options, selections, definitions, width, height) {
   const total = selectedAgentCount(selections);
   const maxSelected = options.maxSelected || DEFAULT_MAX_SELECTED_AGENTS;
@@ -368,7 +389,9 @@ function renderSidebarRows(options, selections, definitions, width, height) {
   const rows = [
     `─ gx ${'─'.repeat(Math.max(0, width - 5))}`,
     `▦ gitguardex ${topBars}`.slice(0, width),
-    '  [n]ew agent  [t]erminal',
+    options.taskInputActive
+      ? '  Type task  [?]help  Esc cancel'
+      : '  [n] launch  [t] terminal  [?] help',
     '',
     '  Select Agent(s)',
     `  Selected: ${total}/${maxSelected}`,
@@ -388,7 +411,7 @@ function renderSidebarRows(options, selections, definitions, width, height) {
     `  claims: ${claims}`,
     options.message
       ? `  status: ${options.message}`
-      : (options.taskInputActive ? '  status: Type task, then Enter.' : ''),
+      : (options.taskInputActive ? '  status: Type task, then Enter.' : '  status: Enter launches selected agent.'),
   ];
 
   while (rows.length < height - 5) {
@@ -397,70 +420,55 @@ function renderSidebarRows(options, selections, definitions, width, height) {
 
   rows.push(
     '─'.repeat(width),
-    '  [l]ogs  •  [p]rojects',
+    '  [l]ogs [p]rojects [s]ettings',
     '  Press [?] for keyboard shortcuts',
-    '  Tip: Hidden panes keep running.',
+    '  Tip: live panes: gx cockpit',
     '',
   );
 
   return rows.slice(0, height).map((row) => padLine(row, width));
 }
 
-function renderLogoCardRows(options, selections, width) {
+function boundedText(value, width) {
+  const text = String(value || '');
+  if (text.length <= width) return text;
+  if (width <= 3) return text.slice(0, width);
+  return `${text.slice(0, width - 3)}...`;
+}
+
+function renderPaneManagementRows(options, selections, width, height) {
   const total = selectedAgentCount(selections);
   const maxSelected = options.maxSelected || DEFAULT_MAX_SELECTED_AGENTS;
-  const innerWidth = Math.max(46, width - 2);
-  const logoRows = [
-    ' ██████╗ ██╗  ██╗',
-    '██╔════╝ ╚██╗██╔╝',
-    '██║  ███╗ ╚███╔╝ ',
-    '██║   ██║ ██╔██╗ ',
-    '╚██████╔╝██╔╝ ██╗',
-    ' ╚═════╝ ╚═╝  ╚═╝',
-  ];
-  const body = [
-    ...logoRows.map((line) => centerLine(line, innerWidth)),
-    centerLine('gitguardex', innerWidth),
-    centerLine('AI developer agent guardrail multiplexer', innerWidth),
-    centerLine(`Select Agent(s) · Selected: ${total}/${maxSelected}`, innerWidth),
-    centerLine(options.taskInputActive
-      ? 'Type task, then press Enter'
-      : 'Press [n] or Enter to create a new agent', innerWidth),
+  const task = String(options.task || '').trim();
+  const bodyWidth = Math.max(24, width - 2);
+  const actionWidth = Math.min(17, Math.max(12, Math.floor(bodyWidth * 0.24)));
+  const labelWidth = Math.min(18, Math.max(12, Math.floor(bodyWidth * 0.25)));
+  const detailWidth = Math.max(12, bodyWidth - actionWidth - labelWidth - 4);
+  const rows = [
+    `─ Welcome / Pane Management ${'─'.repeat(Math.max(0, bodyWidth - 27))}`,
+    `Selected ${total}/${maxSelected} · ${task ? `task ${boundedText(task, Math.max(8, bodyWidth - 22))}` : 'type a task to start'}`,
+    '',
+    `${padLine('Key', actionWidth)}  ${padLine('Action', labelWidth)}  Detail`,
+    `${'─'.repeat(actionWidth)}  ${'─'.repeat(labelWidth)}  ${'─'.repeat(detailWidth)}`,
+    ...PANEL_ACTIONS.map(([key, label, detail]) => (
+      `${padLine(key, actionWidth)}  ${padLine(label, labelWidth)}  ${boundedText(detail, detailWidth)}`
+    )),
+    '',
+    'Navigation',
+    '↑/↓ or j/k move agent focus · Space toggles selected agent',
+    '+/- adjusts Codex account count · Enter launches new agent',
+    '',
+    'Text input',
+    'Type task text directly · Backspace edits · Ctrl+U clears',
+    '? keeps this shortcut map visible · Esc cancels',
   ];
 
-  return [
-    `┌${'─'.repeat(innerWidth)}┐`,
-    ...body.map((row) => `│${row}│`),
-    `└${'─'.repeat(innerWidth)}┘`,
-  ];
+  while (rows.length < height) rows.push('');
+  return rows.slice(0, height).map((row) => padLine(row, width));
 }
 
 function renderMainRows(options, selections, width, height) {
-  const seed = String(options.task || 'gitguardex')
-    .split('')
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const title = ' Welcome ';
-  const rows = [
-    `─${title}${'─'.repeat(Math.max(0, width - title.length - 1))}`,
-  ];
-
-  for (let row = 1; row < height - 1; row += 1) {
-    rows.push(renderMatrixLine(width, row, seed));
-  }
-  rows.push('─'.repeat(width));
-
-  const cardWidth = Math.min(Math.max(56, Math.floor(width * 0.45)), width - 6);
-  const cardRows = renderLogoCardRows(options, selections, cardWidth);
-  const top = Math.max(2, Math.floor((height - cardRows.length) / 2));
-  const left = Math.max(2, Math.floor((width - cardWidth) / 2));
-  cardRows.forEach((cardRow, offset) => {
-    const target = top + offset;
-    if (target >= 0 && target < rows.length) {
-      rows[target] = overlay(rows[target], cardRow, left);
-    }
-  });
-
-  return rows.map((row) => padLine(row, width));
+  return renderPaneManagementRows(options, selections, width, height);
 }
 
 function renderDmuxAgentSelectionPanel(options = {}) {

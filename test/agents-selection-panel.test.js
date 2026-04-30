@@ -45,8 +45,12 @@ test('renderAgentSelectionPanel shows a dmux-style GitGuardex shell', () => {
 
   assert.match(output, /Select Agent\(s\)/);
   assert.match(output, /Welcome/);
+  assert.match(output, /Pane Management/);
   assert.match(output, /gitguardex/);
-  assert.match(output, /\[n\]ew agent/);
+  assert.match(output, /\[n\] launch/);
+  assert.match(output, /\[t\] terminal/);
+  assert.match(output, /Alt\+Shift\+M/);
+  assert.match(output, /Files/);
   assert.match(output, /Selected: 3\/10/);
   assert.match(output, /● Codex cx x3/);
   assert.match(output, /Codex accounts: 3/);
@@ -71,8 +75,14 @@ test('empty interactive panel captures a task before launch', () => {
   });
 
   assert.equal(state.taskInputActive, true);
-  assert.match(renderInteractiveAgentSelectionPanel(state), /Type task, then press Enter/);
+  assert.match(renderInteractiveAgentSelectionPanel(state), /type a task to start/);
+  assert.match(renderInteractiveAgentSelectionPanel(state), /Type task text directly/);
   assert.match(renderInteractiveAgentSelectionPanel(state), /task: _/);
+
+  let help = applyAgentSelectionKey(state, '?');
+  assert.equal(help.action, 'render');
+  assert.equal(help.state.task, '');
+  assert.match(help.state.message, /Shortcut map is shown on the right/);
 
   let next = applyAgentSelectionKey(state, 'n');
   assert.equal(next.action, 'render');
@@ -112,6 +122,12 @@ test('interactive panel keys move focus, toggle agents, and adjust codex account
 
   state = applyAgentSelectionKey(state, '-').state;
   assert.equal(countForAgent(selectionsFromPanelState(state), 'codex'), 2);
+  const terminalHelp = applyAgentSelectionKey(state, 't');
+  assert.equal(terminalHelp.action, 'render');
+  assert.match(terminalHelp.state.message, /Terminal panes are managed in gx cockpit/);
+  const paneMenuHelp = applyAgentSelectionKey(state, '\u001bM');
+  assert.equal(paneMenuHelp.action, 'render');
+  assert.match(paneMenuHelp.state.message, /Pane menu is available in gx cockpit/);
   assert.equal(applyAgentSelectionKey(state, 'n').action, 'launch');
   assert.equal(applyAgentSelectionKey(state, '\r').action, 'launch');
   assert.equal(applyAgentSelectionKey(state, '\u001b').action, 'cancel');
