@@ -1,0 +1,20 @@
+[submodule "examples/conductor"]
+	path = examples/conductor
+	url = https://github.com/NagyVikt/conductor
+	branch = main
+[submodule "examples/dmux"]
+	path = examples/dmux
+	url = https://github.com/recodeee/dmux.git
+	branch = main
+[submodule "examples/hive"]
+	path = examples/hive
+	url = https://github.com/NagyVikt/hive.git
+	branch = main
+[submodule "examples/skills_for_claude"]
+	path = examples/skills_for_claude
+	url = https://github.com/NagyVikt/skills_for_claude.git
+	branch = main
+[submodule "vscode-material-icon-theme"]
+	path = vscode-material-icon-theme
+	url = https://github.com/NagyVikt/vscode-material-icon-theme.git
+	branch = main
