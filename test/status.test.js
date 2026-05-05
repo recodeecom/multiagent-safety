@@ -142,11 +142,36 @@ echo "unexpected gh args: $*" >&2
 exit 1
 `);
 
-  const result = runNodeWithEnv([], repoDir, {
+  const result = runNodeWithEnv(['status', '--verbose'], repoDir, {
     GUARDEX_GH_BIN: fakeGh.fakePath,
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /GitHub \(gh\): active/);
+});
+
+
+test('status prefers ghx as the GitHub CLI proxy when no explicit gh binary is set', () => {
+  const repoDir = initRepo();
+  const fakeGhx = createFakeBin('ghx', `
+if [[ "$1" == "--version" ]]; then
+  echo "ghx version 1.0.0"
+  exit 0
+fi
+echo "unexpected ghx args: $*" >&2
+exit 1
+`);
+
+  const result = runNodeWithEnv(['status', '--target', repoDir, '--json'], repoDir, {
+    PATH: `${fakeGhx.fakeBin}:${process.env.PATH}`,
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout);
+  const ghService = payload.services.find((service) => service.name === 'gh');
+  assert.ok(ghService, 'GitHub CLI service should be included in status payload');
+  assert.equal(ghService.displayName, 'GitHub (ghx proxy)');
+  assert.equal(ghService.command, 'ghx');
+  assert.equal(ghService.status, 'active');
 });
 
 
@@ -484,7 +509,7 @@ echo "unexpected npm args: $*" >&2
 exit 1
 `);
 
-  const result = runNodeWithEnv(['status', '--target', targetDir], targetDir, {
+  const result = runNodeWithEnv(['status', '--target', targetDir, '--verbose'], targetDir, {
     GUARDEX_NPM_BIN: fakeNpm,
     GUARDEX_HOME_DIR: fakeHome,
   });

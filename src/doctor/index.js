@@ -3,6 +3,7 @@ const {
   path,
   TOOL_NAME,
   SHORT_TOOL_NAME,
+  GH_BIN,
   LOCK_FILE_RELATIVE,
   REQUIRED_MANAGED_REPO_FILES,
   OMX_SCAFFOLD_DIRECTORIES,
@@ -442,7 +443,7 @@ function finishDoctorSandboxBranch(blocked, metadata, options = {}) {
     };
   }
 
-  const ghBin = process.env.GUARDEX_GH_BIN || 'gh';
+  const ghBin = GH_BIN;
   if (!isCommandAvailable(ghBin)) {
     return {
       status: 'skipped',
@@ -890,7 +891,7 @@ function autoFinishReadyAgentBranches(repoRoot, options = {}) {
 
   const originAvailable = hasOriginRemote(repoRoot);
   const explicitGhBin = Boolean(String(process.env.GUARDEX_GH_BIN || '').trim());
-  const ghBin = process.env.GUARDEX_GH_BIN || 'gh';
+  const ghBin = GH_BIN;
   const ghAvailable =
     originAvailable &&
     (explicitGhBin || originRemoteLooksLikeGithub(repoRoot)) &&

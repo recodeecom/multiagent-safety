@@ -61,11 +61,24 @@ const OPTIONAL_LOCAL_COMPANION_TOOLS = [
     installArgs: ['skills', 'add', 'JuliusBrussee/caveman'],
   },
 ];
-const GH_BIN = process.env.GUARDEX_GH_BIN || 'gh';
+function commandAvailable(command) {
+  const result = cp.spawnSync(command, ['--version'], { stdio: 'ignore' });
+  return result.status === 0;
+}
+
+function resolveGithubCliBin(env = process.env) {
+  const explicit = String(env.GUARDEX_GH_BIN || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+  return commandAvailable('ghx') ? 'ghx' : 'gh';
+}
+
+const GH_BIN = resolveGithubCliBin();
 const REQUIRED_SYSTEM_TOOLS = [
   {
     name: 'gh',
-    displayName: 'GitHub (gh)',
+    displayName: GH_BIN === 'ghx' ? 'GitHub (ghx proxy)' : 'GitHub (gh)',
     command: GH_BIN,
     installHint: 'https://cli.github.com/',
   },
@@ -698,6 +711,7 @@ module.exports = {
   GLOBAL_TOOLCHAIN_SERVICES,
   GLOBAL_TOOLCHAIN_PACKAGES,
   OPTIONAL_LOCAL_COMPANION_TOOLS,
+  resolveGithubCliBin,
   GH_BIN,
   REQUIRED_SYSTEM_TOOLS,
   MAINTAINER_RELEASE_REPO,

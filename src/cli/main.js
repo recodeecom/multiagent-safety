@@ -1957,6 +1957,7 @@ function collectServicesSnapshot() {
     ...requiredSystemTools.map((tool) => ({
       name: tool.name,
       displayName: tool.displayName || tool.name,
+      command: tool.command,
       status: tool.status,
     })),
   ];
