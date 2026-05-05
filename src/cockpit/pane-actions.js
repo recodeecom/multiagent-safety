@@ -537,7 +537,32 @@ const PANE_ACTION_HANDLERS = Object.freeze({
   'add-terminal': runAddTerminal,
   'add-agent': runAddAgent,
   'reopen-closed-worktree': () => statusMessage('Reopen Closed Worktree', 'No closed worktree was restored.'),
+  'terminal:open': runAddTerminal,
+  'agent:start': runAddAgent,
 });
+
+const COCKPIT_INTENT_ALIASES = Object.freeze({
+  'terminal:open': 'add-terminal',
+  'agent:start': 'add-agent',
+});
+
+function dispatchCockpitIntent(intent, context = {}) {
+  if (!intent || typeof intent !== 'object' || !intent.type) {
+    return resultShape({ ok: false, message: 'No cockpit intent to dispatch.' });
+  }
+  const aliased = COCKPIT_INTENT_ALIASES[intent.type] || intent.type;
+  const merged = {
+    ...context,
+    ...intent,
+    sessionId: intent.sessionId || context.sessionId,
+    branch: intent.branch || context.branch,
+    worktreePath: intent.worktreePath || context.worktreePath,
+    task: intent.task || context.task,
+    agent: intent.agent || context.agent,
+    base: intent.base || context.base,
+  };
+  return dispatchPaneAction(aliased, merged);
+}
 
 function dispatchPaneAction(action, context = {}) {
   const normalized = normalizeAction(action);
@@ -560,7 +585,9 @@ function dispatchPaneAction(action, context = {}) {
 }
 
 module.exports = {
+  COCKPIT_INTENT_ALIASES,
   PANE_ACTION_HANDLERS,
+  dispatchCockpitIntent,
   dispatchPaneAction,
   normalizeAction,
   operationContext,
