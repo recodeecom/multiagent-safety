@@ -153,6 +153,39 @@ test('applyCockpitAction handles dmux shortcut modes without launching agents', 
   assert.equal(applyCockpitAction(newAgent, { type: 'key', key: 'esc' }).mode, 'main');
   assert.equal(applyCockpitAction(terminal, { type: 'key', key: 'escape' }).mode, 'main');
   assert.equal(applyCockpitAction(baseState, { type: 'key', key: 'q' }).shouldExit, true);
+
+  const logs = applyCockpitAction(baseState, { type: 'key', key: 'l' });
+  assert.equal(logs.mode, 'logs');
+  assert.equal(logs.lastIntent, null);
+  assert.equal(applyCockpitAction(logs, { type: 'key', key: 'esc' }).mode, 'main');
+});
+
+test('p opens projects when no lane is selected, but PR action when a lane is selected', () => {
+  const noLanesState = applyCockpitAction({}, {
+    type: 'refresh',
+    cockpitState: snapshot([]),
+  });
+  const projects = applyCockpitAction(noLanesState, { type: 'key', key: 'p' });
+  assert.equal(projects.mode, 'projects');
+  assert.equal(projects.lastIntent, null);
+
+  const withLaneState = applyCockpitAction({}, {
+    type: 'refresh',
+    cockpitState: snapshot([session('one')]),
+  });
+  const paneAction = applyCockpitAction(withLaneState, { type: 'key', key: 'p' });
+  assert.notEqual(paneAction.mode, 'projects');
+});
+
+test('renderControlFrame surfaces the dmux-style logs and projects shortcut row', () => {
+  const { renderControlFrame } = require('../src/cockpit/control');
+  const baseState = applyCockpitAction({}, {
+    type: 'refresh',
+    cockpitState: snapshot([]),
+  });
+  const frame = renderControlFrame(baseState).replace(/\x1b\[[0-9;]*m/g, '');
+  assert.match(frame, /\[l\]ogs/);
+  assert.match(frame, /\[p\]rojects/);
 });
 
 test('applyCockpitAction maps enter to view selected lane', () => {
@@ -180,10 +213,11 @@ test('applyCockpitAction keeps empty-lane navigation on action rows', () => {
   assert.equal(state.selectedScope, 'action');
   assert.equal(state.actionIndex, 0);
 
+  const rowsCount = state.actionRows.length;
   state = applyCockpitAction(state, { type: 'key', key: 'k' });
   assert.equal(state.selectedScope, 'action');
   assert.equal(state.selectedIndex, 0);
-  assert.equal(state.actionIndex, 3);
+  assert.equal(state.actionIndex, rowsCount - 1);
 
   state = applyCockpitAction(state, { type: 'key', key: 'j' });
   assert.equal(state.actionIndex, 0);

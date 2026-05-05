@@ -22,6 +22,7 @@ test('renderSidebar renders an empty repo sidebar', () => {
     'gitguardex',
     '  no agent lanes',
     '  [n]ew agent  [t]erminal',
+    '  [l]ogs       [p]rojects',
     '  [s]ettings   [?] shortcuts',
   ]);
 });
@@ -162,6 +163,8 @@ test('renderSidebar keeps shortcuts visible', () => {
 
   assert.match(output, /\[n\]ew agent/);
   assert.match(output, /\[t\]erminal/);
+  assert.match(output, /\[l\]ogs/);
+  assert.match(output, /\[p\]rojects/);
   assert.match(output, /\[s\]ettings/);
   assert.match(output, /\[\?\] shortcuts/);
 });

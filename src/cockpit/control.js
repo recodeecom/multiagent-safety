@@ -23,8 +23,8 @@ const DEFAULT_SETTINGS = {
   defaultBase: 'main',
 };
 
-const MODES = new Set(['main', 'menu', 'settings', 'shortcuts', 'new-agent', 'terminal']);
-const EMPTY_ACTION_ROWS = Object.freeze(['new-agent', 'terminal', 'settings', 'shortcuts']);
+const MODES = new Set(['main', 'menu', 'settings', 'shortcuts', 'new-agent', 'terminal', 'logs', 'projects']);
+const EMPTY_ACTION_ROWS = Object.freeze(['new-agent', 'terminal', 'logs', 'projects', 'settings', 'shortcuts']);
 const SETTINGS_FIELDS = [
   'theme',
   'sidebarWidth',
@@ -346,6 +346,12 @@ function openActionRow(state, actionId) {
   if (actionId === 'shortcuts') {
     return normalizeControlState({ ...current, mode: 'shortcuts', lastIntent: null });
   }
+  if (actionId === 'logs') {
+    return normalizeControlState({ ...current, mode: 'logs', lastIntent: null });
+  }
+  if (actionId === 'projects') {
+    return normalizeControlState({ ...current, mode: 'projects', lastIntent: null });
+  }
   return normalizeControlState({ ...current, lastIntent: null });
 }
 
@@ -400,6 +406,9 @@ function applyKey(state, rawKey) {
       lastIntent: null,
     });
   }
+  if (mode === 'main' && key === 'p' && current.selectedScope === 'action') {
+    return openActionRow(current, 'projects');
+  }
   if (mode === 'main' && DIRECT_DETAIL_PANE_KEYS.has(normalizePaneMenuKey(rawKey))) {
     const result = applyPaneMenuKey(paneMenuStateFromControl(current), rawKey);
     if (result.action === 'select') {
@@ -420,6 +429,9 @@ function applyKey(state, rawKey) {
   }
   if (key === 't') {
     return openActionRow(current, 'terminal');
+  }
+  if (key === 'l') {
+    return openActionRow(current, 'logs');
   }
   if (key === '?') {
     return openActionRow(current, 'shortcuts');
@@ -619,6 +631,8 @@ function renderShortcutsPanel() {
     'enter: view selected lane / open selected action',
     'n: new agent',
     't: terminal',
+    'l: logs',
+    'p: projects (no lane selected)',
     'm or Alt+Shift+M: pane menu',
     's: settings',
     'v/h/x/p/r/c/o/a/b/f/T/A: pane actions',
@@ -658,6 +672,39 @@ function renderTerminalPanel(state) {
   ].join('\n');
 }
 
+function renderLogsPanel(state) {
+  const current = normalizeControlState(state);
+  const sessions = current.sessions.length;
+  return [
+    'gitguardex logs',
+    '',
+    `repo: ${current.repoPath || '-'}`,
+    `active lanes: ${sessions}`,
+    '',
+    '[1] All  [2] Info  [3] Warnings  [4] Errors  [5] By Pane',
+    '',
+    'Live tail of `apps/logs/*.log` and lane heartbeats lands here.',
+    'Esc: back to main',
+    '',
+  ].join('\n');
+}
+
+function renderProjectsPanel(state) {
+  const current = normalizeControlState(state);
+  return [
+    'projects',
+    '',
+    `current: ${current.repoPath || '(none)'}`,
+    '',
+    'Enter: switch to selected project',
+    'Esc:   back to main',
+    '',
+    'Picker scans for git repos under your workspace and switches the',
+    'cockpit target to the chosen one.',
+    '',
+  ].join('\n');
+}
+
 function renderMenuPanel(state) {
   const current = normalizeControlState(state);
   return renderPaneMenu(paneMenuStateFromControl(current), { width: 72, theme: current.settings.theme });
@@ -678,6 +725,8 @@ function renderPanel(state) {
   if (current.mode === 'shortcuts') return renderShortcutsPanel(current);
   if (current.mode === 'new-agent') return renderNewAgentPanel(current);
   if (current.mode === 'terminal') return renderTerminalPanel(current);
+  if (current.mode === 'logs') return renderLogsPanel(current);
+  if (current.mode === 'projects') return renderProjectsPanel(current);
   if (current.sessions.length === 0) {
     return renderWelcomePage(welcomeState(current), current.settings);
   }

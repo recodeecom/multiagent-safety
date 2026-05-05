@@ -203,6 +203,7 @@ function renderShortcutRows(width, options) {
   const theme = getCockpitTheme(options.theme, options);
   const rows = [
     '  [n]ew agent  [t]erminal',
+    '  [l]ogs       [p]rojects',
     '  [s]ettings   [?] shortcuts',
   ];
   return rows.map((row) => colorize(boundLine(row, width), 'secondary', theme));
