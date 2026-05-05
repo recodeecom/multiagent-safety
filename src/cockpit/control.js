@@ -9,6 +9,7 @@ const { stripAnsi } = require('./theme');
 const { renderWelcomePage } = require('./welcome');
 const { runCockpitAction } = require('./action-runner');
 const { findProjects } = require('./projects-finder');
+const { readKittyTree } = require('./kitty-tree');
 const { readLogs, filterEntries, LEVELS: LOG_LEVELS } = require('./logs-reader');
 const {
   PANE_MENU_ITEMS,
@@ -963,12 +964,38 @@ function readControlSnapshot(options = {}, previousState) {
   const cockpitState = stateReader(repoPath);
   const settings = readCockpitSettings(repoPath, options);
   const at = typeof options.now === 'function' ? options.now() : new Date().toISOString();
-  return applyCockpitAction(previousState || { repoPath }, {
+  const next = applyCockpitAction(previousState || { repoPath }, {
     type: 'refresh',
     cockpitState,
     settings,
     at,
   });
+  return attachKittyTree(next, options);
+}
+
+function attachKittyTree(state, options = {}) {
+  if (!state || typeof state !== 'object') return state;
+  const env = options.env || process.env;
+  if (!env || !env.KITTY_LISTEN_ON) {
+    if (state.kittyTree) {
+      return { ...state, kittyTree: null };
+    }
+    return state;
+  }
+  const reader = typeof options.readKittyTree === 'function' ? options.readKittyTree : readKittyTree;
+  let tree;
+  try {
+    tree = reader({
+      env,
+      repoRoot: state.repoPath,
+      runner: options.kittyTreeRunner,
+      timeoutMs: options.kittyTreeTimeoutMs,
+    });
+  } catch (_error) {
+    return state;
+  }
+  if (!tree || tree.error) return state;
+  return { ...state, kittyTree: tree };
 }
 
 function refreshMsFrom(options, state) {
@@ -1079,10 +1106,12 @@ module.exports = {
   SETTINGS_FIELDS,
   applyCockpitAction,
   applyCockpitKey: applyKey,
+  attachKittyTree,
   buildCockpitActionContext,
   normalizeControlState,
   normalizeKey,
   readCockpitSettings,
+  readControlSnapshot,
   renderControlFrame,
   resolveSelectedSession,
   runCockpitAction,
