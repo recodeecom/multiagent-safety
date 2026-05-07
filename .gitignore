@@ -76,6 +76,8 @@ openspec/plan/*
 !openspec/plan/migrate-multica-runtime-model/**
 !openspec/plan/role-artifact-smoke-main/
 !openspec/plan/role-artifact-smoke-main/**
+!openspec/plan/agent-claude-submodule-aware-gx-2026-05-07-18-46/
+!openspec/plan/agent-claude-submodule-aware-gx-2026-05-07-18-46/**
 
 # multiagent-safety:START
 .omx/
