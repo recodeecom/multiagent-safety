@@ -650,6 +650,12 @@ If anything blocks, append a `BLOCKED:` note and stop. Do not half-finish.
 
 OMX completion policy: when a task is done, the agent must run `gx branch finish --branch "<agent-branch>" --via-pr --wait-for-merge --cleanup` (or `gx finish --all`) instead of standalone `git push` / `gh pr` commands. The finish flow owns commit, push, PR creation/update, merge wait, and sandbox cleanup.
 
+External approval boundary:
+
+- Guardex cannot bypass Codex host approval prompts or external-remote policy decisions.
+- When the host blocks a publish or finish command, request approval for the narrow `gx branch finish ...` command, or for the exact session wrapper that invokes it, and continue after approval.
+- Do not replace the finish flow with repeated standalone `git push` / `gh pr` attempts. That increases approval churn and can strand PR, merge, or cleanup state.
+
 ### Parallel safety
 
 Assume other agents edit nearby.

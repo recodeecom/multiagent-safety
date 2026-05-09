@@ -871,6 +871,9 @@ test('install configures AGENTS managed policy block with GX contract wording', 
     /OMX completion policy: when a task is done, the agent must run `gx branch finish --branch "<agent-branch>" --via-pr --wait-for-merge --cleanup`/,
   );
   assert.match(agentsContent, /instead of standalone `git push` \/ `gh pr` commands/);
+  assert.match(agentsContent, /External approval boundary:/);
+  assert.match(agentsContent, /Guardex cannot bypass Codex host approval prompts/);
+  assert.match(agentsContent, /request approval for the narrow `gx branch finish \.\.\.` command/);
   assert.match(agentsContent, /### Colony coordination loop/);
   assert.match(agentsContent, /### Token \/ context budget/);
   assert.match(agentsContent, /### Caveman style/);
