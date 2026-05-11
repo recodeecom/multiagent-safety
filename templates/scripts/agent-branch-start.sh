@@ -9,7 +9,7 @@ WORKTREE_ROOT_REL=""
 WORKTREE_ROOT_EXPLICIT=0
 NODE_BIN="${GUARDEX_NODE_BIN:-node}"
 CLI_ENTRY="${GUARDEX_CLI_ENTRY:-}"
-OPENSPEC_AUTO_INIT_RAW="${GUARDEX_OPENSPEC_AUTO_INIT:-false}"
+OPENSPEC_AUTO_INIT_RAW="${GUARDEX_OPENSPEC_AUTO_INIT:-true}"
 OPENSPEC_PLAN_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_PLAN_SLUG:-}"
 OPENSPEC_CHANGE_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CHANGE_SLUG:-}"
 OPENSPEC_CAPABILITY_SLUG_OVERRIDE="${GUARDEX_OPENSPEC_CAPABILITY_SLUG:-}"
@@ -899,12 +899,16 @@ fi
 echo "[agent-branch-start] Created branch: ${branch_name}"
 echo "[agent-branch-start] Worktree: ${worktree_path}"
 echo "[agent-branch-start] OpenSpec tier: ${OPENSPEC_TIER}"
-if [[ "$OPENSPEC_SKIP_CHANGE" -eq 1 ]]; then
+if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]]; then
+  echo "[agent-branch-start] OpenSpec change: skipped (GUARDEX_OPENSPEC_AUTO_INIT disabled)"
+elif [[ "$OPENSPEC_SKIP_CHANGE" -eq 1 ]]; then
   echo "[agent-branch-start] OpenSpec change: skipped by tier ${OPENSPEC_TIER}"
 else
   echo "[agent-branch-start] OpenSpec change: openspec/changes/${openspec_change_slug}"
 fi
-if [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]]; then
+if [[ "$OPENSPEC_AUTO_INIT" -ne 1 ]]; then
+  echo "[agent-branch-start] OpenSpec plan: skipped (GUARDEX_OPENSPEC_AUTO_INIT disabled)"
+elif [[ "$OPENSPEC_SKIP_PLAN" -eq 1 ]]; then
   echo "[agent-branch-start] OpenSpec plan: skipped by tier ${OPENSPEC_TIER}"
 else
   echo "[agent-branch-start] OpenSpec plan: openspec/plan/${openspec_plan_slug}"
