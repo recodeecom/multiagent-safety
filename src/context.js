@@ -171,7 +171,10 @@ const TEMPLATE_FILES = [
   'scripts/guardex-env.sh',
   'scripts/install-vscode-active-agents-extension.js',
   'github/pull.yml.example',
+  'github/workflows/ci.yml',
+  'github/workflows/ci-full.yml',
   'github/workflows/cr.yml',
+  'github/workflows/README.md',
   'vscode/guardex-active-agents/package.json',
   'vscode/guardex-active-agents/extension.js',
   'vscode/guardex-active-agents/session-schema.js',
@@ -415,6 +418,7 @@ const SUGGESTIBLE_COMMANDS = [
   'print-agents-snippet',
   'release',
   'budget',
+  'ci-init',
 ];
 // CLI_COMMAND_GROUPS is the grouped source of truth the `gx --help` /
 // `gx` no-args renderer uses. Each group is ordered roughly by how often a

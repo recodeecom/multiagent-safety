@@ -12,6 +12,7 @@ const agentCleanupSessions = require('../agents/cleanup-sessions');
 const { finishAgentSession } = require('../agents/finish');
 const sessionSeverityReport = require('../report/session-severity');
 const budgetModule = require('../budget');
+const ciInitModule = require('../ci-init');
 const cockpitModule = require('../cockpit');
 const agentsStart = require('../agents/start');
 const prReviewModule = require('../pr-review');
@@ -3973,6 +3974,7 @@ async function main() {
   if (command === 'cleanup') return cleanup(rest);
   if (command === 'release') return release(rest);
   if (command === 'budget') return budgetModule.runBudgetCommand(rest);
+  if (command === 'ci-init') return ciInitModule.runCiInitCommand(rest);
 
   const suggestion = maybeSuggestCommand(command);
   if (suggestion) {
