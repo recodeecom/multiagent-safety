@@ -2,14 +2,28 @@ name: Code Review
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
   pull-requests: write
 
+# Budget-friendly default for gitguardex-managed projects: cancel
+# superseded runs on the same PR so rapid agent pushes don't fan-out
+# the OpenAI bill.
+concurrency:
+  group: cr-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
+    # Skip on draft PRs and on `agent/*` head branches. Gitguardex
+    # agent flows land high-volume PRs that don't benefit from AI
+    # review; skipping them is the single largest CR-bill cut.
+    # Review fires on `ready_for_review` automatically for human PRs.
+    if: >-
+      github.event.pull_request.draft == false &&
+      !startsWith(github.event.pull_request.head.ref, 'agent/')
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

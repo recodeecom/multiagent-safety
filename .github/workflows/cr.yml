@@ -2,14 +2,30 @@ name: Code Review
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
   pull-requests: write
 
+# Code review runs OpenAI API calls — cancel superseded runs on the
+# same PR so rapid pushes don't fan-out the model bill.
+concurrency:
+  group: cr-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
+    # Draft PRs and automated agent-lane PRs (head branch `agent/*`)
+    # skip review. The agent flow lands hundreds of PRs per month; AI
+    # review on each one burns both Actions minutes and OpenAI tokens
+    # without adding signal. Human-authored PRs (any non-`agent/*`
+    # head branch) still get reviewed; agent PRs can opt-in by adding
+    # a `needs-review` label, which a maintainer can re-run via
+    # `workflow_dispatch`-style label trigger if desired.
+    if: >-
+      github.event.pull_request.draft == false &&
+      !startsWith(github.event.pull_request.head.ref, 'agent/')
     runs-on: ubuntu-latest
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

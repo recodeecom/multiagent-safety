@@ -1,0 +1,56 @@
+# Budget-friendly CI default for gitguardex-managed projects.
+#
+# Four trims keep Actions minutes low while agent branches iterate:
+#   1. `concurrency: cancel-in-progress` — rapid pushes to the same ref
+#      kill the prior run instead of letting both finish.
+#   2. Job-level `if: pull_request.draft == false` plus the
+#      `ready_for_review` PR trigger — draft PRs skip CI, and CI fires
+#      automatically the moment the PR is promoted out of draft.
+#   3. `paths-ignore` for docs / openspec / template-only changes —
+#      skip CI on changes that don't affect runtime behavior.
+#   4. No `push: main` trigger — branch-protection-required PR runs
+#      already cover correctness, and post-merge CI on main is pure
+#      duplication. Use `workflow_dispatch` for ad-hoc full runs.
+#
+# Copy this file to `.github/workflows/ci.yml` in your project and
+# replace the placeholder `steps:` block with your build/test/lint
+# commands.
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, reopened, synchronize, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'openspec/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - '.changeset/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      # Replace below with your build/test/lint steps. Examples:
+      # - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      #   with: { node-version: '20' }
+      # - run: npm ci
+      # - run: npm test
+      - name: Project verification placeholder
+        run: echo "Replace this step with your build/test/lint commands."

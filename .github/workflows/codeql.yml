@@ -1,17 +1,21 @@
 name: CodeQL
 
+# CodeQL is the single most expensive workflow per run on this repo.
+# Per-PR / per-push triggers were the biggest line item on the monthly
+# Actions bill, so they are dropped here. The weekly schedule keeps
+# security coverage; `workflow_dispatch` is the on-demand escape hatch
+# for ad-hoc audits.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   schedule:
     - cron: '35 3 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:

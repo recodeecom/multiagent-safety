@@ -1,11 +1,13 @@
 name: OpenSSF Scorecard
 
+# Scorecard ran on every push to main, which compounded the per-merge
+# Actions bill. The weekly schedule + branch-protection-rule trigger
+# keeps the OpenSSF result fresh; `workflow_dispatch` covers ad-hoc
+# audits.
 on:
   branch_protection_rule:
   schedule:
     - cron: '25 3 * * 1'
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions: read-all
