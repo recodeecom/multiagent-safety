@@ -203,7 +203,7 @@ test('agent-branch-start skips a merged-and-cleaned worktree instead of reusing 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.doesNotMatch(result.stdout, /Matched dirty managed worktree for requested task/);
   assert.match(result.stderr, /Skipping merged-and-cleaned worktree/);
-  assert.match(result.stdout, /Created branch: agent\/codex\/tui-plan-validator-/);
+  assert.match(result.stdout, /Created branch: agent\/(codex|claude)\/tui-plan-validator-/);
   assert.notEqual(extractCreatedBranch(result.stdout), firstBranch);
   assert.notEqual(extractCreatedWorktree(result.stdout), firstWorktree);
 });
