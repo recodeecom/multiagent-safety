@@ -324,7 +324,6 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   exit 1
 fi
 repo_root="$(git rev-parse --show-toplevel)"
-active_session_state_script="${repo_root}/scripts/agent-session-state.js"
 
 guardex_env_helper="${repo_root}/scripts/guardex-env.sh"
 if [[ -f "$guardex_env_helper" ]]; then
@@ -636,78 +635,6 @@ fi
 
 has_origin_remote() {
   git -C "$repo_root" remote get-url origin >/dev/null 2>&1
-}
-
-run_active_session_state() {
-  local action="$1"
-  shift
-
-  if [[ ! -f "$active_session_state_script" ]]; then
-    return 0
-  fi
-  if ! command -v "$NODE_BIN" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  "$NODE_BIN" "$active_session_state_script" "$action" "$@" >/dev/null 2>&1 || true
-}
-
-record_active_session_state() {
-  local wt="$1"
-  local branch="$2"
-
-  run_active_session_state \
-    start \
-    --repo "$repo_root" \
-    --branch "$branch" \
-    --task "$TASK_NAME" \
-    --agent "$AGENT_NAME" \
-    --worktree "$wt" \
-    --pid "$$" \
-    --cli "$CODEX_BIN" \
-    --task-mode "$TASK_MODE" \
-    --openspec-tier "$OPENSPEC_TIER" \
-    --routing-reason "$TASK_ROUTING_REASON"
-}
-
-clear_active_session_state() {
-  local branch="$1"
-  run_active_session_state stop --repo "$repo_root" --branch "$branch"
-}
-
-heartbeat_active_session_state() {
-  local branch="$1"
-  run_active_session_state heartbeat --repo "$repo_root" --branch "$branch" --state working
-}
-
-normalize_heartbeat_interval_seconds() {
-  local raw="${GUARDEX_ACTIVE_SESSION_HEARTBEAT_INTERVAL_SECONDS:-15}"
-  if [[ "$raw" =~ ^[0-9]+$ ]] && [[ "$raw" -ge 1 ]]; then
-    printf '%s' "$raw"
-    return 0
-  fi
-  printf '15'
-}
-
-start_active_session_heartbeat() {
-  local branch="$1"
-  local interval
-  interval="$(normalize_heartbeat_interval_seconds)"
-  (
-    while true; do
-      sleep "$interval" || break
-      heartbeat_active_session_state "$branch"
-    done
-  ) &
-  active_session_heartbeat_pid="$!"
-}
-
-stop_active_session_heartbeat() {
-  if [[ -n "${active_session_heartbeat_pid:-}" ]]; then
-    kill "$active_session_heartbeat_pid" >/dev/null 2>&1 || true
-    wait "$active_session_heartbeat_pid" >/dev/null 2>&1 || true
-    active_session_heartbeat_pid=""
-  fi
 }
 
 origin_remote_supports_pr_finish() {
@@ -1103,22 +1030,6 @@ fi
 
 echo "[codex-agent] Task routing: $(describe_task_routing) (${TASK_ROUTING_REASON})"
 
-active_session_recorded=0
-active_session_heartbeat_pid=""
-cleanup_active_session_state_on_exit() {
-  set +e
-  if [[ "${active_session_recorded:-0}" -eq 1 && -n "${worktree_branch:-}" && "${worktree_branch:-}" != "HEAD" ]]; then
-    stop_active_session_heartbeat
-    clear_active_session_state "$worktree_branch"
-    active_session_recorded=0
-  fi
-}
-
-record_active_session_state "$worktree_path" "$worktree_branch"
-active_session_recorded=1
-start_active_session_heartbeat "$worktree_branch"
-trap cleanup_active_session_state_on_exit EXIT INT TERM
-
 echo "[codex-agent] Launching ${CODEX_BIN} in sandbox: $worktree_path"
 cd "$worktree_path"
 set +e
@@ -1131,8 +1042,6 @@ codex_exit="$?"
 set -e
 
 cd "$repo_root"
-cleanup_active_session_state_on_exit
-trap - EXIT INT TERM
 final_exit="$codex_exit"
 auto_finish_completed=0
 

@@ -62,8 +62,6 @@ const {
   defineSpawnSuite,
 } = require('./helpers/install-test-helpers');
 
-const packageRepoRoot = path.resolve(__dirname, '..');
-
 defineSpawnSuite('setup integration suite', () => {
 
 test('setup provisions workflow files and repo config', () => {
@@ -84,10 +82,8 @@ test('setup provisions workflow files and repo config', () => {
     '.omc/agent-worktrees',
     '.omx/notepad.md',
     '.omx/project-memory.json',
-    'scripts/agent-session-state.js',
     'scripts/guardex-docker-loader.sh',
     'scripts/guardex-env.sh',
-    'scripts/install-vscode-active-agents-extension.js',
     '.githooks/pre-commit',
     '.githooks/pre-push',
     '.githooks/post-merge',
@@ -156,10 +152,8 @@ test('setup provisions workflow files and repo config', () => {
 
   const gitignoreContent = fs.readFileSync(path.join(repoDir, '.gitignore'), 'utf8');
   assert.match(gitignoreContent, /# multiagent-safety:START/);
-  assert.match(gitignoreContent, /^scripts\/agent-session-state\.js$/m);
   assert.match(gitignoreContent, /^scripts\/guardex-docker-loader\.sh$/m);
   assert.match(gitignoreContent, /^scripts\/guardex-env\.sh$/m);
-  assert.match(gitignoreContent, /^scripts\/install-vscode-active-agents-extension\.js$/m);
   assert.doesNotMatch(gitignoreContent, /^scripts\/\*$/m);
   assert.doesNotMatch(gitignoreContent, /^scripts\/agent-branch-start\.sh$/m);
   assert.doesNotMatch(gitignoreContent, /^scripts\/agent-file-locks\.py$/m);
@@ -181,31 +175,6 @@ test('setup provisions workflow files and repo config', () => {
 
   const secondRun = runNode(['setup', '--target', repoDir, '--no-global-install'], repoDir);
   assert.equal(secondRun.status, 0, secondRun.stderr || secondRun.stdout);
-
-  const canonicalBundleFiles = [
-    'vscode/guardex-active-agents/package.json',
-    'vscode/guardex-active-agents/README.md',
-    'vscode/guardex-active-agents/extension.js',
-    'vscode/guardex-active-agents/session-schema.js',
-    'vscode/guardex-active-agents/icon.png',
-    'vscode/guardex-active-agents/fileicons/gitguardex-fileicons.json',
-    'vscode/guardex-active-agents/fileicons/icons/agent.svg',
-    'vscode/guardex-active-agents/fileicons/icons/branch.svg',
-    'vscode/guardex-active-agents/fileicons/icons/config.svg',
-    'vscode/guardex-active-agents/fileicons/icons/hook.svg',
-    'vscode/guardex-active-agents/fileicons/icons/openspec.svg',
-    'vscode/guardex-active-agents/fileicons/icons/plan.svg',
-    'vscode/guardex-active-agents/fileicons/icons/spec.svg',
-  ];
-  for (const relativePath of canonicalBundleFiles) {
-    const installedPath = path.join(repoDir, relativePath);
-    const expectedPath = path.join(packageRepoRoot, relativePath);
-    assert.equal(
-      Buffer.compare(fs.readFileSync(installedPath), fs.readFileSync(expectedPath)),
-      0,
-      `${relativePath} should match the package repo canonical bundle`,
-    );
-  }
 });
 
 test('setup preserves an existing root CLAUDE.md instead of replacing it', () => {
@@ -821,7 +790,7 @@ test('setup refreshes initialized protected main through a sandbox and prunes it
   const initialGitignore = fs.readFileSync(gitignorePath, 'utf8');
   fs.writeFileSync(
     gitignorePath,
-    initialGitignore.replace(/^scripts\/agent-session-state\.js\n/m, ''),
+    initialGitignore.replace(/^scripts\/guardex-docker-loader\.sh\n/m, ''),
     'utf8',
   );
 
@@ -843,7 +812,7 @@ test('setup refreshes initialized protected main through a sandbox and prunes it
   assert.equal(sandboxBranchCheck.stdout.trim(), '', 'setup sandbox branch should be pruned');
 
   const refreshedGitignore = fs.readFileSync(gitignorePath, 'utf8');
-  assert.match(refreshedGitignore, /^scripts\/agent-session-state\.js$/m);
+  assert.match(refreshedGitignore, /^scripts\/guardex-docker-loader\.sh$/m);
 });
 
 

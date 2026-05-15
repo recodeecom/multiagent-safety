@@ -140,10 +140,8 @@ function assertZeroCopyManagedGitignore(content) {
   assert.match(content, /^!\.vscode\/$/m);
   assert.match(content, /^\.vscode\/\*$/m);
   assert.match(content, /^!\.vscode\/settings\.json$/m);
-  assert.match(content, /^scripts\/agent-session-state\.js$/m);
   assert.match(content, /^scripts\/guardex-docker-loader\.sh$/m);
   assert.match(content, /^scripts\/guardex-env\.sh$/m);
-  assert.match(content, /^scripts\/install-vscode-active-agents-extension\.js$/m);
   assert.doesNotMatch(content, /^scripts\/\*$/m);
   assert.doesNotMatch(content, /^scripts\/agent-branch-start\.sh$/m);
   assert.doesNotMatch(content, /^scripts\/agent-file-locks\.py$/m);

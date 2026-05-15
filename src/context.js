@@ -138,9 +138,6 @@ function toDestinationPath(relativeTemplatePath) {
   if (relativeTemplatePath.startsWith('github/')) {
     return `.${relativeTemplatePath}`;
   }
-  if (relativeTemplatePath.startsWith('vscode/')) {
-    return relativeTemplatePath;
-  }
   throw new Error(`Unsupported template path: ${relativeTemplatePath}`);
 }
 
@@ -153,7 +150,7 @@ function toDestinationPath(relativeTemplatePath) {
 //    replaced with a regular file. Edit only the templates/scripts/ copy;
 //    the symlink propagates.
 //
-// 2. SCAFFOLD-ONLY files (the 4 below + workflows + vscode extension):
+// 2. SCAFFOLD-ONLY files (the 3 below + workflows):
 //    tracked only under templates/; scaffolded into gitignored
 //    scripts/<file> (or .githooks/<file>, etc.) by `gx setup`. Consumer
 //    repos receive a regular file copy at the destination; gitguardex
@@ -165,48 +162,17 @@ function toDestinationPath(relativeTemplatePath) {
 // pattern (2), append the destination path to .gitignore's multiagent-
 // safety block (auto-managed by syncManagedGitignoreLines below).
 const TEMPLATE_FILES = [
-  'scripts/agent-session-state.js',
   'scripts/agent-preflight.sh',
   'scripts/guardex-docker-loader.sh',
   'scripts/guardex-env.sh',
-  'scripts/install-vscode-active-agents-extension.js',
   'github/pull.yml.example',
   'github/workflows/ci.yml',
   'github/workflows/ci-full.yml',
   'github/workflows/cr.yml',
   'github/workflows/README.md',
-  'vscode/guardex-active-agents/package.json',
-  'vscode/guardex-active-agents/extension.js',
-  'vscode/guardex-active-agents/session-schema.js',
-  'vscode/guardex-active-agents/README.md',
-  'vscode/guardex-active-agents/icon.png',
-  'vscode/guardex-active-agents/fileicons/gitguardex-fileicons.json',
-  'vscode/guardex-active-agents/fileicons/icons/agent.svg',
-  'vscode/guardex-active-agents/fileicons/icons/branch.svg',
-  'vscode/guardex-active-agents/fileicons/icons/config.svg',
-  'vscode/guardex-active-agents/fileicons/icons/hook.svg',
-  'vscode/guardex-active-agents/fileicons/icons/openspec.svg',
-  'vscode/guardex-active-agents/fileicons/icons/plan.svg',
-  'vscode/guardex-active-agents/fileicons/icons/spec.svg',
 ];
 
-const PACKAGE_ROOT_SOURCE_OVERRIDES = new Set([
-  'scripts/agent-session-state.js',
-  'scripts/install-vscode-active-agents-extension.js',
-  'vscode/guardex-active-agents/package.json',
-  'vscode/guardex-active-agents/extension.js',
-  'vscode/guardex-active-agents/session-schema.js',
-  'vscode/guardex-active-agents/README.md',
-  'vscode/guardex-active-agents/icon.png',
-  'vscode/guardex-active-agents/fileicons/gitguardex-fileicons.json',
-  'vscode/guardex-active-agents/fileicons/icons/agent.svg',
-  'vscode/guardex-active-agents/fileicons/icons/branch.svg',
-  'vscode/guardex-active-agents/fileicons/icons/config.svg',
-  'vscode/guardex-active-agents/fileicons/icons/hook.svg',
-  'vscode/guardex-active-agents/fileicons/icons/openspec.svg',
-  'vscode/guardex-active-agents/fileicons/icons/plan.svg',
-  'vscode/guardex-active-agents/fileicons/icons/spec.svg',
-]);
+const PACKAGE_ROOT_SOURCE_OVERRIDES = new Set();
 
 const LEGACY_WORKFLOW_SHIM_SPECS = [
   { relativePath: 'scripts/agent-branch-start.sh', kind: 'shell', command: ['branch', 'start'] },
@@ -229,9 +195,7 @@ const MANAGED_TEMPLATE_SCRIPT_FILES = MANAGED_TEMPLATE_DESTINATIONS.filter((entr
 
 const LEGACY_MANAGED_REPO_FILES = [
   ...LEGACY_WORKFLOW_SHIMS,
-  'scripts/agent-session-state.js',
   'scripts/guardex-docker-loader.sh',
-  'scripts/install-vscode-active-agents-extension.js',
   'scripts/guardex-env.sh',
   'scripts/install-agent-git-hooks.sh',
   '.githooks/pre-commit',
@@ -280,7 +244,6 @@ const PACKAGE_SCRIPT_ASSETS = {
   branchMerge: path.join(TEMPLATE_ROOT, 'scripts', 'agent-branch-merge.sh'),
   codexAgent: path.join(TEMPLATE_ROOT, 'scripts', 'codex-agent.sh'),
   reviewBot: path.join(TEMPLATE_ROOT, 'scripts', 'review-bot-watch.sh'),
-  sessionState: path.join(TEMPLATE_ROOT, 'scripts', 'agent-session-state.js'),
   worktreePrune: path.join(TEMPLATE_ROOT, 'scripts', 'agent-worktree-prune.sh'),
   lockTool: path.join(TEMPLATE_ROOT, 'scripts', 'agent-file-locks.py'),
   planInit: path.join(TEMPLATE_ROOT, 'scripts', 'openspec', 'init-plan-workspace.sh'),
@@ -344,10 +307,8 @@ const MANAGED_GITIGNORE_PATHS = [
   '!.vscode/',
   '.vscode/*',
   '!.vscode/settings.json',
-  'scripts/agent-session-state.js',
   'scripts/guardex-docker-loader.sh',
   'scripts/guardex-env.sh',
-  'scripts/install-vscode-active-agents-extension.js',
   '.githooks',
   'oh-my-codex/',
   LOCK_FILE_RELATIVE,

@@ -220,28 +220,13 @@ test('frontend mirror workflow skips cleanly when the mirror PAT is missing', ()
   assert.match(workflow, /if:\s+\$\{\{\s*env\.SYNC_TOKEN != ''\s*\}\}/);
 });
 
-test('critical runtime helper scripts and active-agents sources stay in sync with templates', () => {
+test('critical runtime helper scripts stay in sync with templates', () => {
   const pairs = [
     ['templates/scripts/agent-branch-start.sh', 'scripts/agent-branch-start.sh'],
     ['templates/scripts/agent-branch-finish.sh', 'scripts/agent-branch-finish.sh'],
     ['templates/scripts/codex-agent.sh', 'scripts/codex-agent.sh'],
     ['templates/scripts/openspec/init-plan-workspace.sh', 'scripts/openspec/init-plan-workspace.sh'],
     ['templates/scripts/openspec/init-change-workspace.sh', 'scripts/openspec/init-change-workspace.sh'],
-    ['templates/scripts/agent-session-state.js', 'scripts/agent-session-state.js'],
-    ['templates/scripts/install-vscode-active-agents-extension.js', 'scripts/install-vscode-active-agents-extension.js'],
-    ['templates/vscode/guardex-active-agents/package.json', 'vscode/guardex-active-agents/package.json'],
-    ['templates/vscode/guardex-active-agents/README.md', 'vscode/guardex-active-agents/README.md'],
-    ['templates/vscode/guardex-active-agents/extension.js', 'vscode/guardex-active-agents/extension.js'],
-    ['templates/vscode/guardex-active-agents/session-schema.js', 'vscode/guardex-active-agents/session-schema.js'],
-    ['templates/vscode/guardex-active-agents/icon.png', 'vscode/guardex-active-agents/icon.png'],
-    ['templates/vscode/guardex-active-agents/fileicons/gitguardex-fileicons.json', 'vscode/guardex-active-agents/fileicons/gitguardex-fileicons.json'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/agent.svg', 'vscode/guardex-active-agents/fileicons/icons/agent.svg'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/branch.svg', 'vscode/guardex-active-agents/fileicons/icons/branch.svg'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/config.svg', 'vscode/guardex-active-agents/fileicons/icons/config.svg'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/hook.svg', 'vscode/guardex-active-agents/fileicons/icons/hook.svg'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/openspec.svg', 'vscode/guardex-active-agents/fileicons/icons/openspec.svg'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/plan.svg', 'vscode/guardex-active-agents/fileicons/icons/plan.svg'],
-    ['templates/vscode/guardex-active-agents/fileicons/icons/spec.svg', 'vscode/guardex-active-agents/fileicons/icons/spec.svg'],
   ];
 
   for (const [templatePath, runtimePath] of pairs) {
