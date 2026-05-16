@@ -1,4 +1,5 @@
 const { TOOL_NAME, LOCK_FILE_RELATIVE, path, fs } = require('../context');
+const { isTerseMode } = require('../output');
 const { run, runPackageAsset } = require('../core/runtime');
 const {
   resolveRepoRoot,
@@ -286,12 +287,19 @@ function finish(rawArgs, defaults = {}) {
   let succeeded = 0;
   let failed = 0;
   let autoCommitted = 0;
+  const terse = isTerseMode();
 
   for (const candidate of candidates) {
     const { branch, baseBranch, worktreePath } = candidate;
-    console.log(
-      `[${TOOL_NAME}] Finishing '${branch}' -> '${baseBranch}'${worktreePath ? ` (${worktreePath})` : ''}...`,
-    );
+    // In terse mode, defer the "Finishing X -> Y" line until we know whether
+    // we also need to announce an auto-commit, then emit a single combined
+    // line per branch. Keep branch + base + worktree path so agents still see
+    // the load-bearing literals.
+    if (!terse) {
+      console.log(
+        `[${TOOL_NAME}] Finishing '${branch}' -> '${baseBranch}'${worktreePath ? ` (${worktreePath})` : ''}...`,
+      );
+    }
 
     try {
       let commitState = { changed: false, committed: false };
@@ -299,7 +307,17 @@ function finish(rawArgs, defaults = {}) {
         commitState = autoCommitWorktreeForFinish(repoRoot, worktreePath, branch, options);
       }
 
-      if (commitState.committed) {
+      if (terse) {
+        const suffix = commitState.committed
+          ? ' [auto-committed]'
+          : (commitState.changed && commitState.dryRun ? ' [dry-run: would auto-commit]' : '');
+        console.log(
+          `[${TOOL_NAME}] Finishing '${branch}' -> '${baseBranch}'${worktreePath ? ` (${worktreePath})` : ''}${suffix}`,
+        );
+        if (commitState.committed) {
+          autoCommitted += 1;
+        }
+      } else if (commitState.committed) {
         autoCommitted += 1;
         console.log(`[${TOOL_NAME}] Auto-committed '${branch}' before finish.`);
       } else if (commitState.changed && commitState.dryRun) {

@@ -32,6 +32,48 @@ function supportsAnsiColors() {
   return Boolean(process.stdout.isTTY) && process.env.TERM !== 'dumb';
 }
 
+// envTruthy returns true when an env var is set to a truthy-ish string. Used
+// by isTerseMode so callers can flip terse / verbose without parsing flags.
+function envTruthy(name) {
+  const value = String(process.env[name] || '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+// argvHasFlag scans the current process argv for a literal flag. This avoids
+// re-parsing every command's argument table just to learn whether the caller
+// asked for verbose / terse output.
+function argvHasFlag(flag) {
+  const argv = process.argv || [];
+  for (let index = 2; index < argv.length; index += 1) {
+    if (argv[index] === flag) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// isTerseMode collapses noisy human-friendly narration when stdout is being
+// piped (typical for AI coding agents that read CLI output into a conversation
+// transcript). Explicit verbose flags / env vars always win so operators can
+// recover full output. Decorative blank lines, banners, and "[OK] default
+// chosen" confirmations should be gated through this helper; errors, blockers,
+// PR URLs, branch names, and file paths must stay visible in both modes.
+function isTerseMode() {
+  if (envTruthy('GUARDEX_VERBOSE')) {
+    return false;
+  }
+  if (argvHasFlag('--verbose')) {
+    return false;
+  }
+  if (envTruthy('GUARDEX_TERSE')) {
+    return true;
+  }
+  if (argvHasFlag('--terse')) {
+    return true;
+  }
+  return !process.stdout.isTTY;
+}
+
 function colorize(text, colorCode) {
   if (!supportsAnsiColors()) {
     return text;
@@ -231,7 +273,9 @@ function getInvokedCliName() {
 
 function printToolLogsSummary(options = {}) {
   const invoked = options.invokedBasename || getInvokedCliName();
-  const compact = Boolean(options.compact);
+  // Terse mode collapses the full help tree into a single hint line so agents
+  // reading non-TTY output don't pay for the decorative banners.
+  const compact = Boolean(options.compact) || isTerseMode();
 
   if (compact) {
     const helpLine = `Try '${invoked} help' for commands, or '${invoked} status --verbose' for full service details.`;
@@ -319,6 +363,27 @@ function printToolLogsSummary(options = {}) {
 function usage(options = {}) {
   const { outsideGitRepo = false } = options;
   const invoked = options.invokedBasename || getInvokedCliName();
+
+  // In terse mode (default when stdout is non-TTY, e.g. agents piping output),
+  // drop the long NOTES / VERSION / QUICKSTART / REPO TOGGLE sections and emit
+  // just usage + command catalog. Errors and the outside-git-repo hint stay so
+  // agents still see actionable next steps.
+  if (isTerseMode()) {
+    const groupedCommandLinesTerse = groupedCommandCatalogLines('  ', {
+      colorizeLabel: (text) => text,
+    })
+      .map((line) => (line == null ? '' : line))
+      .join('\n');
+    console.log(`USAGE: ${invoked} <command> [options]
+COMMANDS
+${groupedCommandLinesTerse}`);
+    if (outsideGitRepo) {
+      console.log(
+        `[${TOOL_NAME}] No git repository detected. Re-run from a repo root or pass --target <path>.`,
+      );
+    }
+    return;
+  }
 
   const groupedCommandLines = groupedCommandCatalogLines('  ', {
     colorizeLabel: (text) => colorize(text, '1;36'),
@@ -578,6 +643,7 @@ function printAutoFinishSummary(summary, options = {}) {
 module.exports = {
   runtimeVersion,
   supportsAnsiColors,
+  isTerseMode,
   colorize,
   doctorOutputColorCode,
   colorizeDoctorOutput,

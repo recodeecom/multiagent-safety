@@ -31,7 +31,7 @@ const {
   cleanupProtectedBaseSandbox,
 } = require('../sandbox');
 const { ensureOmxScaffold, configureHooks } = require('../scaffold');
-const { detectRecoverableAutoFinishConflict, printAutoFinishSummary } = require('../output');
+const { detectRecoverableAutoFinishConflict, printAutoFinishSummary, isTerseMode } = require('../output');
 const { autoCommitWorktreeForFinish } = require('../finish');
 
 /**
@@ -1152,6 +1152,7 @@ function emitDoctorSandboxJsonOutput(nestedResult, execution) {
 }
 
 function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult, nestedResult, execution) {
+  const terse = isTerseMode();
   console.log(
     `[${TOOL_NAME}] doctor detected protected branch '${blocked.branch}'. ` +
     `Running repairs in sandbox branch '${metadata.branch || 'agent/<auto>'}'.`,
@@ -1164,6 +1165,10 @@ function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult,
     return;
   }
 
+  // Terse mode: drop "[OK] X skipped because of Y" / "already in sync"
+  // confirmations. Keep committed/failed/pending/merged states verbose so
+  // operators still see action-required hints, PR URLs, branch names, and
+  // file paths.
   if (execution.autoCommit.status === 'committed') {
     console.log(
       `[${TOOL_NAME}] Auto-committed doctor repairs in sandbox branch '${metadata.branch}'.`,
@@ -1172,22 +1177,24 @@ function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult,
     console.log(`[${TOOL_NAME}] Doctor sandbox auto-commit failed; branch left for manual follow-up.`);
     if (execution.autoCommit.stdout) process.stdout.write(execution.autoCommit.stdout);
     if (execution.autoCommit.stderr) process.stderr.write(execution.autoCommit.stderr);
-  } else {
+  } else if (!terse) {
     console.log(`[${TOOL_NAME}] Doctor sandbox auto-commit skipped: ${execution.autoCommit.note}.`);
   }
 
   if (execution.protectedBaseRepairSync.status === 'merged') {
     console.log(`[${TOOL_NAME}] Fast-forwarded tracked doctor repairs into the protected branch workspace.`);
-  } else if (execution.protectedBaseRepairSync.status === 'unchanged') {
-    console.log(`[${TOOL_NAME}] Protected branch workspace already had the tracked doctor repairs.`);
   } else if (execution.protectedBaseRepairSync.status === 'would-merge') {
     console.log(`[${TOOL_NAME}] Dry run: would fast-forward tracked doctor repairs into the protected branch workspace.`);
   } else if (execution.protectedBaseRepairSync.status === 'failed') {
     console.log(`[${TOOL_NAME}] Protected branch tracked repair merge failed: ${execution.protectedBaseRepairSync.note}.`);
     if (execution.protectedBaseRepairSync.stdout) process.stdout.write(execution.protectedBaseRepairSync.stdout);
     if (execution.protectedBaseRepairSync.stderr) process.stderr.write(execution.protectedBaseRepairSync.stderr);
-  } else {
-    console.log(`[${TOOL_NAME}] Protected branch tracked repair merge skipped: ${execution.protectedBaseRepairSync.note}.`);
+  } else if (!terse) {
+    if (execution.protectedBaseRepairSync.status === 'unchanged') {
+      console.log(`[${TOOL_NAME}] Protected branch workspace already had the tracked doctor repairs.`);
+    } else {
+      console.log(`[${TOOL_NAME}] Protected branch tracked repair merge skipped: ${execution.protectedBaseRepairSync.note}.`);
+    }
   }
 
   if (execution.lockSync.status === 'synced') {
@@ -1195,8 +1202,10 @@ function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult,
       `[${TOOL_NAME}] Synced repaired lock registry back to protected branch workspace (${LOCK_FILE_RELATIVE}).`,
     );
   } else if (execution.lockSync.status === 'unchanged') {
+    // Kept verbose in terse mode too: downstream consumers (and tests) rely
+    // on seeing the lock-registry sync stage reach a terminal state line.
     console.log(`[${TOOL_NAME}] Lock registry already synced in protected branch workspace.`);
-  } else {
+  } else if (!terse) {
     console.log(`[${TOOL_NAME}] Lock registry sync skipped: ${execution.lockSync.note}.`);
   }
 
@@ -1217,7 +1226,7 @@ function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult,
     console.log(`[${TOOL_NAME}] Auto-finish flow failed for sandbox branch '${metadata.branch}'.`);
     if (execution.finish.stdout) process.stdout.write(execution.finish.stdout);
     if (execution.finish.stderr) process.stderr.write(execution.finish.stderr);
-  } else {
+  } else if (!terse) {
     console.log(`[${TOOL_NAME}] Auto-finish skipped: ${execution.finish.note}.`);
   }
 
@@ -1227,12 +1236,14 @@ function emitDoctorSandboxConsoleOutput(options, blocked, metadata, startResult,
   });
   if (execution.omxScaffoldSync.status === 'synced') {
     console.log(`[${TOOL_NAME}] Synced .omx scaffold back to protected branch workspace.`);
-  } else if (execution.omxScaffoldSync.status === 'unchanged') {
-    console.log(`[${TOOL_NAME}] .omx scaffold already aligned in protected branch workspace.`);
   } else if (execution.omxScaffoldSync.status === 'would-sync') {
     console.log(`[${TOOL_NAME}] Dry run: would sync .omx scaffold back to protected branch workspace.`);
-  } else {
-    console.log(`[${TOOL_NAME}] .omx scaffold sync skipped: ${execution.omxScaffoldSync.note}.`);
+  } else if (!terse) {
+    if (execution.omxScaffoldSync.status === 'unchanged') {
+      console.log(`[${TOOL_NAME}] .omx scaffold already aligned in protected branch workspace.`);
+    } else {
+      console.log(`[${TOOL_NAME}] .omx scaffold sync skipped: ${execution.omxScaffoldSync.note}.`);
+    }
   }
 }
 
