@@ -254,3 +254,197 @@ The VS Code Active Agents companion SHALL stop live sessions through the matched
 - **THEN** the extension falls back to `gx agents stop --pid <pid>`
 - **AND** it preserves the existing repo-targeted stop behavior for that fallback path.
 
+### Requirement: Active Agents local installs use a canonical extension directory
+The Active Agents install flow SHALL publish the companion into one canonical local VS Code extension directory instead of making the newest versioned patch directory the only live copy.
+
+#### Scenario: Installer refreshes the canonical install path
+- **WHEN** `scripts/install-vscode-active-agents-extension.js` installs the companion
+- **THEN** it writes the current extension payload into a stable local extension directory derived from the extension id
+- **AND** that directory contains the current manifest, runtime entrypoint, session schema, and packaged assets
+- **AND** focused regression coverage validates the installed payload.
+
+### Requirement: Recent patch-version install paths stay loadable until reload
+The Active Agents install flow SHALL keep recent same-major/minor patch-version install paths resolvable so already-open VS Code windows do not lose the companion because an older cached location was pruned before reload.
+
+#### Scenario: Installer refreshes compatibility copies for recent patch paths
+- **WHEN** the current companion version is `X.Y.Z`
+- **THEN** the installer refreshes compatibility directories for a bounded recent patch window within `X.Y.*`
+- **AND** the current patch-version directory stays loadable
+- **AND** already-open windows that still point at a recent earlier patch path can continue resolving the extension until the window reloads.
+
+### Requirement: Install output tells users to reload already-open windows
+The Active Agents install flow SHALL tell the user that every already-open VS Code window needs a reload after install or auto-update.
+
+#### Scenario: Install completes successfully
+- **WHEN** the installer finishes copying the companion
+- **THEN** stdout includes the installed version and canonical target directory
+- **AND** stdout explicitly tells the user to reload each already-open VS Code window to pick up the newest companion.
+
+### Requirement: Worktree-first Active Agents rows
+
+The VS Code `gitguardex.activeAgents` view MUST group agent session rows under their owning worktree rows before rendering session-owned file details.
+
+#### Scenario: ACTIVE AGENTS shows worktree rows inside activity groups
+
+- **GIVEN** the companion reads one or more live sessions for the same repo
+- **WHEN** it renders an activity bucket such as `WORKING NOW` or `THINKING`
+- **THEN** each child row under that bucket is a worktree row derived from `worktreePath`
+- **AND** expanding the worktree row reveals the agent/session rows for that worktree
+- **AND** expanding a session row reveals that session's touched-file rows.
+
+#### Scenario: CHANGES shows worktree rows before session-owned files
+
+- **GIVEN** repo changes belong to managed agent worktrees
+- **WHEN** the companion renders `CHANGES`
+- **THEN** it groups those changes under worktree rows first
+- **AND** expanding a worktree row reveals the owning session row
+- **AND** expanding that session row reveals the localized changed-file rows
+- **AND** files not owned by any active worktree remain under `Repo root`.
+
+### Requirement: Canonical Active Agents source
+The system SHALL treat `vscode/guardex-active-agents/` as the single editable
+source of truth for the Active Agents VS Code companion bundle.
+
+#### Scenario: Editing the extension bundle
+- **WHEN** maintainers change the Active Agents extension implementation
+- **THEN** the authoritative edits happen under
+  `vscode/guardex-active-agents/`
+- **AND** the workflow does not require manual mirror edits under
+  `templates/vscode/guardex-active-agents/`.
+
+### Requirement: Derived template bundle parity
+The system SHALL provide an explicit repo-managed path that refreshes
+`templates/vscode/guardex-active-agents/` from the canonical source and guards
+parity for the full shipped bundle.
+
+#### Scenario: Refreshing the managed template bundle
+- **WHEN** the canonical Active Agents source changes
+- **THEN** the managed template bundle is refreshed from that canonical source
+- **AND** parity protection covers `package.json`, `README.md`, `icon.png`,
+  `extension.js`, and `session-schema.js`.
+
+### Requirement: Existing install and session-state consumers stay stable
+The system SHALL preserve the current local install and session-state behavior
+while the template bundle becomes derived.
+
+#### Scenario: Installing the extension locally
+- **WHEN** `node scripts/install-vscode-active-agents-extension.js` runs
+- **THEN** it installs the canonical Active Agents bundle
+- **AND** operators do not need template-only edits for local VS Code installs.
+
+#### Scenario: Resolving session state helpers
+- **WHEN** `node scripts/agent-session-state.js` loads the session schema module
+- **THEN** it resolves the canonical runtime bundle first
+- **AND** any retained template fallback stays behaviorally equivalent to the
+  canonical source.
+
+### Requirement: Guardex writes active session presence for sandboxed Codex runs
+The system SHALL write repo-local active session presence records while `scripts/codex-agent.sh` is running an interactive sandbox session.
+
+#### Scenario: Session start records live metadata
+- **WHEN** `scripts/codex-agent.sh` launches Codex in a sandbox worktree
+- **THEN** Guardex writes a JSON record under `.omx/state/active-sessions/`
+- **AND** the record includes the repo root, sandbox branch, task name, agent name, worktree path, launch PID, CLI name, and start timestamp.
+
+#### Scenario: Session exit removes presence record
+- **WHEN** the wrapper exits after Codex finishes
+- **THEN** the corresponding `.omx/state/active-sessions/` record is removed
+- **AND** later launches for the same branch can recreate it cleanly.
+
+### Requirement: VS Code companion shows active Guardex lanes in Source Control
+The system SHALL provide a VS Code companion extension that surfaces live Guardex sessions in the Source Control container.
+
+#### Scenario: Live sessions render with native spinner
+- **WHEN** the companion finds live session records for the current workspace
+- **THEN** it shows an `Active Agents` view in the Source Control container
+- **AND** each live session renders with a native animated VS Code icon equivalent to `loading~spin`
+- **AND** the row includes the branch identity plus an elapsed-time description.
+
+#### Scenario: Dead or stale sessions are ignored
+- **WHEN** a session record references a PID that is no longer running or contains invalid JSON
+- **THEN** the companion does not render it as an active agent row
+- **AND** valid rows continue to render.
+
+### Requirement: Local install path enables the companion without Marketplace publishing
+The system SHALL provide a local install path for the companion extension from the repo checkout.
+
+#### Scenario: Local install copies the extension to the VS Code extensions directory
+- **WHEN** the local install helper is run
+- **THEN** it copies the companion extension into the target VS Code extensions directory using the extension package version
+- **AND** it replaces older local installs for the same extension identifier so reload picks up the newest sources.
+
+### Requirement: Active Agents exposes a restart action from extension management surfaces
+The VS Code `recodeee.gitguardex-active-agents` extension MUST expose a `Restart Active Agents` action anywhere VS Code allows contributed extension-management commands, so operators can restart the extension host without reloading the full window.
+
+#### Scenario: Restart command appears on the extension details gear menu
+- **GIVEN** GitGuardex Active Agents is installed
+- **WHEN** the operator opens the extension details page or extension context menu
+- **THEN** the extension contributes a `Restart Active Agents` action for `recodeee.gitguardex-active-agents`
+- **AND** the action does not appear for unrelated extensions.
+
+#### Scenario: Restart command restarts the extension host
+- **GIVEN** the operator invokes `Restart Active Agents`
+- **WHEN** the command runs
+- **THEN** it executes `workbench.action.restartExtensionHost`
+- **AND** it does not require `workbench.action.reloadWindow`.
+
+### Requirement: Active Agents exposes restart from its own sidebar
+The VS Code `gitguardex.activeAgents` view MUST expose the same `Restart Active Agents` action from the view title so operators can restart the extension without leaving the sidebar.
+
+#### Scenario: Restart command appears in the Active Agents view title
+- **GIVEN** the Active Agents view is visible
+- **WHEN** the view title actions render
+- **THEN** `Restart Active Agents` is available alongside the other view-level actions.
+
+### Requirement: Active Agents rows reflect live sandbox worktree activity
+The system SHALL describe whether each live Guardex sandbox is still thinking or is actively working inside its worktree.
+
+#### Scenario: Clean worktree stays thinking
+- **WHEN** a live session points at a clean sandbox worktree
+- **THEN** the Active Agents row description begins with `thinking`
+- **AND** it still includes the elapsed time for that live lane.
+
+#### Scenario: Dirty worktree surfaces working state
+- **WHEN** a live session points at a sandbox worktree with tracked or untracked file changes
+- **THEN** the Active Agents row description begins with `working`
+- **AND** it includes the changed-file count before the elapsed time
+- **AND** the row tooltip includes a preview of the changed paths.
+
+#### Scenario: Activity inference falls back safely
+- **WHEN** the companion cannot inspect the worktree git state for an otherwise live session
+- **THEN** the row still renders as an active agent
+- **AND** the description falls back to `thinking` instead of crashing or disappearing.
+
+### Requirement: Active Agents rows expose synthetic branch decoration URIs
+The VS Code Active Agents companion SHALL assign each session row a synthetic `gitguardex-agent://<sanitized-branch>` resource URI so tree decorations can target live Guardex branches without pointing at a real file on disk.
+
+#### Scenario: Session rows use sanitized branch identity
+- **WHEN** the companion renders a live session row
+- **THEN** the row `resourceUri` uses the `gitguardex-agent` scheme
+- **AND** the URI path is derived from the branch name with the same sanitization used for session-state filenames.
+
+### Requirement: Idle clean sessions are color-coded by elapsed time
+The VS Code Active Agents companion SHALL decorate clean live sessions according to how long they have stayed idle.
+
+#### Scenario: Clean session idle longer than ten minutes warns in yellow
+- **WHEN** a live session has no working changes and has been running for more than 10 minutes but not more than 30 minutes
+- **THEN** the session row decoration uses a yellow warning color
+- **AND** the decoration tooltip reads `idle 10m+`.
+
+#### Scenario: Clean session idle longer than thirty minutes warns in red
+- **WHEN** a live session has no working changes and has been running for more than 30 minutes
+- **THEN** the session row decoration uses a red error color
+- **AND** the decoration tooltip reads `idle 30m+`.
+
+#### Scenario: Working sessions keep their existing styling
+- **WHEN** a live session currently has working changes in its sandbox worktree
+- **THEN** the decoration provider returns no color override for that row.
+
+### Requirement: Tree refreshes also refresh idle decorations
+The VS Code Active Agents companion SHALL invalidate session decorations whenever the tree data refreshes.
+
+#### Scenario: Refresh path fires decoration updates
+- **WHEN** the tree refresh callback runs because of timers, watchers, or manual refresh
+- **THEN** the file-decoration provider emits `onDidChangeFileDecorations`
+- **AND** idle decoration colors can update without reloading the extension host.
+
