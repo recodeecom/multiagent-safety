@@ -5,6 +5,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const CARGO_JOBS = Math.max(2, Math.floor((os.cpus().length || 8) / 4));
+const CARGO = `CARGO_BUILD_JOBS=${CARGO_JOBS}`;
+
 function loadStartWithMocks({
   runPackageAsset,
   createAgentSession,
@@ -95,7 +98,7 @@ test('agents start creates canonical session after successful branch start', () 
         base: 'main',
         claims: [],
         metadata: {},
-        launchCommand: "cd '/repo/.omx/agent-worktrees/repo__codex__fix-auth' && 'codex' 'fix auth'",
+        launchCommand: `cd '/repo/.omx/agent-worktrees/repo__codex__fix-auth' && ${CARGO} 'codex' 'fix auth'`,
         tmux: null,
         status: 'active',
       },
@@ -183,7 +186,7 @@ test('agents start claim failure updates canonical session to claim-failed', () 
         base: 'main',
         claims: ['src/auth.js'],
         metadata: {},
-        launchCommand: "cd '/repo/.omx/agent-worktrees/repo__codex__fix-auth' && 'codex' 'fix auth'",
+        launchCommand: `cd '/repo/.omx/agent-worktrees/repo__codex__fix-auth' && ${CARGO} 'codex' 'fix auth'`,
         tmux: null,
         status: 'claim-failed',
         claimFailure: {

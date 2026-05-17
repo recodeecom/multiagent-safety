@@ -31,7 +31,7 @@ test('gx agents start dry-run prints the planned codex branch, worktree, and lau
     result.stdout,
     new RegExp(`worktree: ${repoDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.omx/agent-worktrees/[^\\n]*codex__fix-auth-tests-2026-04-29-21-30`),
   );
-  assert.match(result.stdout, /launch: cd '.*' && 'codex' 'fix auth tests'/);
+  assert.match(result.stdout, /launch: cd '.*' && CARGO_BUILD_JOBS=\d+ 'codex' 'fix auth tests'/);
   assert.match(result.stdout, /No branch, worktree, session metadata, or agent process was created\./);
 
   const branchCheck = runCmd(
@@ -64,7 +64,7 @@ test('gx agents start dry-run supports claude worktree planning and rejects unkn
   assert.equal(claudeResult.status, 0, claudeResult.stderr || claudeResult.stdout);
   assert.match(claudeResult.stdout, /branch: agent\/claude\/update-docs-2026-04-29-21-31/);
   assert.match(claudeResult.stdout, /\.omc\/agent-worktrees\/[^ \n]*claude__update-docs-2026-04-29-21-31/);
-  assert.match(claudeResult.stdout, /launch: cd '.*' && 'claude' 'update docs'/);
+  assert.match(claudeResult.stdout, /launch: cd '.*' && CARGO_BUILD_JOBS=\d+ 'claude' 'update docs'/);
 
   const invalidResult = runNode(
     ['agents', 'start', 'update docs', '--agent', 'bogus', '--dry-run'],
@@ -164,7 +164,7 @@ test('gx agents start --dry-run --json emits Colony-ready launch plan', () => {
   assert.equal(payload.branch, 'agent/codex/colony-dry-run-2026-04-30-00-05');
   assert.match(payload.worktree, /\.omx\/agent-worktrees\/repo__codex__colony-dry-run-2026-04-30-00-05$/);
   assert.deepEqual(payload.claimedFiles, ['README.md']);
-  assert.match(payload.launchCommand, /cd '.*' && 'codex' 'colony dry run'/);
+  assert.match(payload.launchCommand, /cd '.*' && CARGO_BUILD_JOBS=\d+ 'codex' 'colony dry run'/);
   assert.equal(payload.tmuxSession, null);
   assert.equal(payload.tmuxTarget, null);
   assert.deepEqual(payload.metadata, {
@@ -300,5 +300,5 @@ test('interactive launcher panel asks for a task when opened empty', () => {
   const output = stdout.chunks.join('');
   assert.match(output, /task: fix auth/);
   assert.match(output, /branch: agent\/codex\/fix-auth-/);
-  assert.match(output, /launch: cd '.*' && 'codex' 'fix auth'/);
+  assert.match(output, /launch: cd '.*' && CARGO_BUILD_JOBS=\d+ 'codex' 'fix auth'/);
 });

@@ -2,11 +2,15 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const os = require('node:os');
 
 const {
   buildAgentLaunchCommand,
   buildAgentResumeCommand,
 } = require('../src/agents/launch');
+
+const JOBS = Math.max(2, Math.floor((os.cpus().length || 8) / 4));
+const CARGO = `CARGO_BUILD_JOBS=${JOBS}`;
 
 test('builds codex launch commands with positional prompts', () => {
   assert.equal(
@@ -17,7 +21,7 @@ test('builds codex launch commands with positional prompts', () => {
       permissionMode: 'workspace-write',
       sessionId: 'session-1',
     }),
-    "cd '/tmp/work tree' && OMX_SESSION_ID='session-1' 'codex' '--permission-mode' 'workspace-write' 'fix tests'",
+    `cd '/tmp/work tree' && ${CARGO} OMX_SESSION_ID='session-1' 'codex' '--permission-mode' 'workspace-write' 'fix tests'`,
   );
 });
 
@@ -28,7 +32,7 @@ test('builds claude launch commands with argument prompts', () => {
       prompt: 'review code',
       permissionMode: 'acceptEdits',
     }),
-    "'claude' '--permission-mode' 'acceptEdits' 'review code'",
+    `${CARGO} 'claude' '--permission-mode' 'acceptEdits' 'review code'`,
   );
 });
 
@@ -38,7 +42,7 @@ test('builds opencode launch commands with positional prompts', () => {
       agentId: 'opencode',
       prompt: 'implement feature',
     }),
-    "'opencode' 'implement feature'",
+    `${CARGO} 'opencode' 'implement feature'`,
   );
 });
 
@@ -49,7 +53,7 @@ test('builds cursor launch commands with argument prompts', () => {
       prompt: 'inspect current branch',
       worktreePath: '/repo/worktree',
     }),
-    "cd '/repo/worktree' && 'cursor-agent' 'inspect current branch'",
+    `cd '/repo/worktree' && ${CARGO} 'cursor-agent' 'inspect current branch'`,
   );
 });
 
@@ -60,7 +64,7 @@ test('builds gemini launch commands with argument prompts', () => {
       prompt: 'summarize repo',
       sessionId: 'session-2',
     }),
-    "OMX_SESSION_ID='session-2' 'gemini' 'summarize repo'",
+    `${CARGO} OMX_SESSION_ID='session-2' 'gemini' 'summarize repo'`,
   );
 });
 
@@ -69,25 +73,34 @@ test('quotes prompts with single quotes, newlines, and dollar signs safely', () 
 
   assert.equal(
     buildAgentLaunchCommand({ agentId: 'codex', prompt }),
-    "'codex' 'say '\\''hello'\\''\nthen echo $HOME'",
+    `${CARGO} 'codex' 'say '\\''hello'\\''\nthen echo $HOME'`,
   );
 
   assert.equal(
     buildAgentLaunchCommand({ agentId: 'gemini', prompt }),
-    "'gemini' 'say '\\''hello'\\''\nthen echo $HOME'",
+    `${CARGO} 'gemini' 'say '\\''hello'\\''\nthen echo $HOME'`,
   );
 
   assert.equal(
     buildAgentLaunchCommand({ agentId: 'cursor', prompt }),
-    "'cursor-agent' 'say '\\''hello'\\''\nthen echo $HOME'",
+    `${CARGO} 'cursor-agent' 'say '\\''hello'\\''\nthen echo $HOME'`,
   );
 });
 
 test('omits prompts when none are supplied', () => {
   assert.equal(
     buildAgentLaunchCommand({ agentId: 'codex', worktreePath: '/repo' }),
-    "cd '/repo' && 'codex'",
+    `cd '/repo' && ${CARGO} 'codex'`,
   );
+});
+
+test('caps CARGO_BUILD_JOBS at floor(cpus/4), minimum 2', () => {
+  const cmd = buildAgentLaunchCommand({ agentId: 'codex', prompt: 'x' });
+  const match = cmd.match(/CARGO_BUILD_JOBS=(\d+)/);
+  assert.ok(match, 'CARGO_BUILD_JOBS env var must be present');
+  const jobs = Number(match[1]);
+  assert.ok(jobs >= 2, `expected jobs >= 2, got ${jobs}`);
+  assert.equal(jobs, JOBS);
 });
 
 test('builds resume commands for supported agents', () => {

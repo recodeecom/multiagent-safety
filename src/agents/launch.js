@@ -185,6 +185,14 @@ function buildPromptCommand(parts, agent, prompt) {
   return commandToShell([...parts, prompt]);
 }
 
+function buildResourceEnv() {
+  const cpus = require('node:os').cpus().length || 8;
+  // Cap each agent's cargo parallelism to avoid overwhelming the system
+  // when multiple agents build concurrently.
+  const jobs = Math.max(2, Math.floor(cpus / 4));
+  return [`CARGO_BUILD_JOBS=${jobs}`];
+}
+
 function buildAgentLaunchCommand(options) {
   if (!options || typeof options !== 'object') {
     throw new TypeError('options are required');
@@ -207,7 +215,8 @@ function buildAgentLaunchCommand(options) {
   }
 
   const launchCommand = buildPromptCommand(baseParts, agent, prompt);
-  const envPrefix = buildSessionEnv(agent, sessionId).join(' ');
+  const envParts = [...buildResourceEnv(), ...buildSessionEnv(agent, sessionId)];
+  const envPrefix = envParts.join(' ');
   const launchWithEnv = envPrefix ? `${envPrefix} ${launchCommand}` : launchCommand;
   if (!worktreePath) return launchWithEnv;
   return `cd ${shellQuote(worktreePath)} && ${launchWithEnv}`;
